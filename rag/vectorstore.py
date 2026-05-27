@@ -29,6 +29,9 @@ class VectorStoreManager:
     def create_vectorstore(self, docs: list[Document]) -> Any:
         """Create a persistent Chroma store from documents."""
 
+        if not docs:
+            raise EmptyVectorStoreError("Cannot create vector store without documents.")
+
         self.settings.chroma_persist_dir.mkdir(parents=True, exist_ok=True)
         chroma_cls = _load_chroma_class()
         self.store = chroma_cls.from_documents(
@@ -67,7 +70,9 @@ class VectorStoreManager:
         """Run similarity search and return documents with optional scores."""
 
         store = self.load_vectorstore()
-        k = top_k or self.settings.top_k
+        k = top_k if top_k is not None else self.settings.top_k
+        if k <= 0:
+            raise ValueError("top_k must be a positive integer.")
 
         if hasattr(store, "similarity_search_with_relevance_scores"):
             return store.similarity_search_with_relevance_scores(query, k=k)
