@@ -9,6 +9,19 @@ from agent.edges import route_after_grading
 from agent.state import create_initial_state
 
 
+def test_route_after_grading_generates_when_relevant_without_settings_lookup(monkeypatch):
+    def fail_get_settings():
+        raise AssertionError("get_settings should not be called for relevant state")
+
+    monkeypatch.setattr("agent.edges.get_settings", fail_get_settings)
+    state = create_initial_state("question")
+    state["is_relevant"] = True
+
+    route = route_after_grading(state)
+
+    assert route == "generate_answer"
+
+
 def test_route_after_grading_generates_when_relevant():
     state = create_initial_state("question")
     state["is_relevant"] = True
