@@ -124,12 +124,45 @@ def build_citations(documents: list[RetrievedDocument]) -> list[Citation]:
 def _parse_relevance(raw_result: str) -> bool:
     """Parse a relevance grading JSON response."""
 
-    try:
-        parsed = json.loads(raw_result)
-    except json.JSONDecodeError:
+    parsed = _extract_first_json_object(raw_result)
+    if parsed is None:
         return False
 
     return bool(parsed.get("relevant") is True)
+
+
+def _extract_first_json_object(raw_result: str) -> dict[str, Any] | None:
+    """Extract the first JSON object from an LLM response."""
+
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(raw_result):
+        if character != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(raw_result[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _coerce_content_text(content: Any) -> str:
+    """Extract text from LangChain message content."""
+
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return str(content)
 
 
 def _coerce_llm_text(response: Any) -> str:
@@ -138,11 +171,8 @@ def _coerce_llm_text(response: Any) -> str:
     if isinstance(response, str):
         return response
     if isinstance(response, BaseMessage):
-        content = response.content
-        if isinstance(content, str):
-            return content
-        return str(content)
+        return _coerce_content_text(response.content)
     content = getattr(response, "content", None)
     if content is not None:
-        return str(content)
+        return _coerce_content_text(content)
     return str(response)
