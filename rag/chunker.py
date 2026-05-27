@@ -19,7 +19,7 @@ def split_documents(
 
     settings = get_settings()
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size or settings.chunk_size,
+        chunk_size=chunk_size if chunk_size is not None else settings.chunk_size,
         chunk_overlap=chunk_overlap if chunk_overlap is not None else settings.chunk_overlap,
     )
 
