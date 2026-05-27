@@ -135,7 +135,7 @@ agentic-rag-document-qa/
 ## Roadmap
 
 - RAG core implemented: loading, chunking, embeddings, Chroma indexing, and retrieval.
-- Implement LangGraph agent workflow.
+- LangGraph agent workflow implemented: query rewriting, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
 - Implement full Gradio upload and QA flow.
 - Implement evaluation runner.
 - Add FastAPI API layer.
