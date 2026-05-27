@@ -1,0 +1,12 @@
+[
+  {
+    "question": "What is Agentic RAG?",
+    "expected_keywords": ["agent", "retrieval", "query rewrite"],
+    "expected_source": "sample.md"
+  },
+  {
+    "question": "How does retrieval grading improve RAG reliability?",
+    "expected_keywords": ["relevant", "grading", "retrieved chunks"],
+    "expected_source": "sample.md"
+  }
+]
