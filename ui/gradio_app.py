@@ -44,7 +44,7 @@ def answer_question(
     chat_history: list[dict[str, str]] | None = None,
     run_agent_fn=run_agent,
 ) -> tuple[str, list[Any], list[Any], str, int, str, list[dict[str, str]]]:
-    """Run the Agentic RAG workflow and format a UI-safe response tuple."""
+    """Return answer, citations, chunks, rewritten question, rewrite count, diagnostics, and history."""
 
     history = list(chat_history or [])
     normalized_question = (question or "").strip()
@@ -106,40 +106,77 @@ def create_app() -> gr.Blocks:
             """
             # Agentic RAG Document QA System
 
-            This project will support PDF, Markdown, and TXT upload, local
-            vector indexing, LangGraph-based query rewriting, retrieval grading,
-            conditional retries, and citation-aware answers.
+            Upload PDF, Markdown, or TXT documents, build a local index, and ask
+            citation-aware questions with Agentic RAG.
             """
         )
+
+        chat_history = gr.State([])
 
         with gr.Row():
             with gr.Column():
                 gr.Markdown("## Document Indexing")
-                gr.File(
+                uploaded_files = gr.File(
                     label="Upload documents",
                     file_count="multiple",
                     file_types=[".pdf", ".md", ".markdown", ".txt"],
                 )
-                gr.Button("Build Index", interactive=False)
-                gr.Textbox(
+                build_button = gr.Button("Build Index", variant="primary")
+                index_status = gr.Textbox(
                     label="Index status",
-                    value="RAG indexing will be enabled in the RAG core phase.",
+                    value="Upload documents, then build the index.",
                     interactive=False,
                 )
 
             with gr.Column():
                 gr.Markdown("## Question Answering")
-                gr.Textbox(label="Question", lines=3)
-                gr.Button("Ask", interactive=False)
-                gr.Textbox(
+                question = gr.Textbox(label="Question", lines=3)
+                ask_button = gr.Button("Ask", variant="primary")
+                answer = gr.Textbox(
                     label="Answer",
-                    value=(
-                        "Agentic answering will be enabled after the LangGraph "
-                        "workflow is implemented."
-                    ),
                     lines=6,
                     interactive=False,
                 )
+
+        with gr.Row():
+            citations = gr.JSON(label="Citations")
+            retrieved_chunks = gr.JSON(label="Retrieved chunks")
+
+        with gr.Row():
+            rewritten_question = gr.Textbox(
+                label="Rewritten question",
+                interactive=False,
+            )
+            rewrite_count = gr.Number(
+                label="Rewrite count",
+                value=0,
+                precision=0,
+                interactive=False,
+            )
+
+        diagnostics = gr.Markdown(
+            label="Diagnostics",
+            value=_format_diagnostics(rewrite_count=0, is_relevant=False),
+        )
+
+        build_button.click(
+            fn=build_document_index,
+            inputs=uploaded_files,
+            outputs=index_status,
+        )
+        ask_button.click(
+            fn=answer_question,
+            inputs=[question, chat_history],
+            outputs=[
+                answer,
+                citations,
+                retrieved_chunks,
+                rewritten_question,
+                rewrite_count,
+                diagnostics,
+                chat_history,
+            ],
+        )
 
         gr.Markdown(
             f"""
@@ -174,5 +211,6 @@ def _format_diagnostics(rewrite_count: int, is_relevant: bool) -> str:
     relevant_chunks = "Yes" if is_relevant else "No"
     return (
         f"Rewrite triggered: {rewrite_triggered}\n"
+        f"Retry count: {rewrite_count}\n"
         f"Relevant chunks accepted: {relevant_chunks}"
     )

@@ -132,3 +132,13 @@ def test_answer_question_returns_clear_error_when_agent_fails():
     assert rewrite_count == 0
     assert "Rewrite triggered: No" in diagnostics
     assert history == []
+
+
+def test_create_app_returns_gradio_blocks():
+    import gradio as gr
+
+    from ui.gradio_app import create_app
+
+    app = create_app()
+
+    assert isinstance(app, gr.Blocks)
