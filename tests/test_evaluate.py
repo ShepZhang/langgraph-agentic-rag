@@ -261,3 +261,18 @@ def test_main_prints_report_with_injected_runner(tmp_path, capsys):
     assert exit_code == 0
     assert "Evaluation Report" in captured.out
     assert "total_questions: 1" in captured.out
+
+
+def test_main_reports_question_load_errors_without_traceback(tmp_path, capsys):
+    missing_path = tmp_path / "missing.json"
+
+    def fake_run_agent(question):
+        return {"answer": "unused"}
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--questions", str(missing_path)], run_agent_fn=fake_run_agent)
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "Unable to load evaluation questions" in captured.err
+    assert "Traceback" not in captured.err

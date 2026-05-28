@@ -108,7 +108,11 @@ def main(
     )
     args = parser.parse_args(argv)
 
-    questions = load_eval_questions(args.questions)
+    try:
+        questions = load_eval_questions(args.questions)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        parser.error(f"Unable to load evaluation questions: {exc}")
+
     report = evaluate_questions(questions, run_agent_fn=run_agent_fn)
     print(format_report(report))
     return 0
