@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from pathlib import Path
@@ -67,6 +68,52 @@ def evaluate_questions(
     return {"summary": _summarize(results, questions), "results": results}
 
 
+def format_report(report: dict[str, Any]) -> str:
+    """Format an evaluation report for terminal output."""
+
+    lines = ["Evaluation Report", "", "Summary"]
+    for key, value in report.get("summary", {}).items():
+        lines.append(f"{key}: {value}")
+
+    lines.extend(["", "Questions"])
+    for index, result in enumerate(report.get("results", []), start=1):
+        lines.append(
+            (
+                f"{index}. {result.get('question', '')} | "
+                f"answer={_format_bool(result.get('answer_returned'))} | "
+                f"citation={_format_bool(result.get('citation_returned'))} | "
+                f"source_hit={_format_bool(result.get('source_hit'))} | "
+                f"keyword_hit={_format_bool(result.get('keyword_hit'))} | "
+                f"rewrite={_format_bool(result.get('rewrite_triggered'))} | "
+                f"latency={float(result.get('latency', 0)):.4f}s | "
+                f"error={result.get('error') or ''}"
+            )
+        )
+
+    return "\n".join(lines)
+
+
+def main(
+    argv: list[str] | None = None,
+    run_agent_fn: Callable[[str], dict[str, Any]] = run_agent,
+) -> int:
+    """CLI entrypoint."""
+
+    parser = argparse.ArgumentParser(description="Run Agentic RAG evaluations.")
+    parser.add_argument(
+        "--questions",
+        default=DEFAULT_EVAL_PATH,
+        type=Path,
+        help="Path to evaluation questions JSON.",
+    )
+    args = parser.parse_args(argv)
+
+    questions = load_eval_questions(args.questions)
+    report = evaluate_questions(questions, run_agent_fn=run_agent_fn)
+    print(format_report(report))
+    return 0
+
+
 def _normalize_expected_keywords_for_loader(value: Any) -> list[str]:
     if value is None:
         return []
@@ -77,6 +124,10 @@ def _normalize_expected_keywords_for_loader(value: Any) -> list[str]:
             return value
         raise ValueError("expected_keywords must contain only strings")
     raise ValueError("expected_keywords must be a string or list of strings")
+
+
+def _format_bool(value: Any) -> str:
+    return "true" if value else "false"
 
 
 def _normalize_expected_keywords(value: Any) -> list[Any]:
@@ -213,3 +264,7 @@ def _rate(count: int, denominator: int) -> float:
     if denominator == 0:
         return 0
     return round(count / denominator, 4)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

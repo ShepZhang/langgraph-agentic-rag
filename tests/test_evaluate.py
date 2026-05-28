@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from evaluation.evaluate import evaluate_questions, load_eval_questions
+from evaluation.evaluate import evaluate_questions, format_report, load_eval_questions, main
 
 
 def test_load_eval_questions_reads_json_file(tmp_path):
@@ -202,3 +202,62 @@ def test_evaluate_questions_error_message_includes_type_for_empty_message():
     report = evaluate_questions(questions, run_agent_fn=failing_run_agent, timer=fake_timer)
 
     assert report["results"][0]["error"] == "RuntimeError"
+
+
+def test_format_report_includes_summary_and_question_rows():
+    report = {
+        "summary": {
+            "total_questions": 1,
+            "answer_rate": 1.0,
+            "citation_rate": 1.0,
+            "source_hit_rate": 1.0,
+            "average_latency": 0.25,
+            "rewrite_triggered_count": 1,
+            "keyword_hit_rate": 1.0,
+            "error_count": 0,
+        },
+        "results": [
+            {
+                "question": "What is Agentic RAG?",
+                "answer_returned": True,
+                "citation_returned": True,
+                "source_hit": True,
+                "keyword_hit": True,
+                "rewrite_triggered": True,
+                "latency": 0.25,
+                "error": "",
+            }
+        ],
+    }
+
+    text = format_report(report)
+
+    assert "Evaluation Report" in text
+    assert "total_questions: 1" in text
+    assert "source_hit_rate: 1.0" in text
+    assert "What is Agentic RAG?" in text
+
+
+def test_main_prints_report_with_injected_runner(tmp_path, capsys):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps([{"question": "What is Agentic RAG?", "expected_source": "notes.md"}]),
+        encoding="utf-8",
+    )
+
+    def fake_run_agent(question):
+        return {
+            "answer": "Agentic RAG uses retrieval.",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [
+                {"source": "notes.md", "content": "Agentic RAG uses retrieval."}
+            ],
+            "rewrite_count": 0,
+        }
+
+    exit_code = main(["--questions", str(path)], run_agent_fn=fake_run_agent)
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Evaluation Report" in captured.out
+    assert "total_questions: 1" in captured.out
