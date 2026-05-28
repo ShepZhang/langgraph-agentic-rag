@@ -137,7 +137,7 @@ agentic-rag-document-qa/
 - RAG core implemented: loading, chunking, embeddings, Chroma indexing, and retrieval.
 - LangGraph agent workflow implemented: query rewriting, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and rewrite diagnostics.
-- Implement evaluation runner.
+- Evaluation runner implemented: answer rate, citation rate, source hit rate, latency, keyword hit rate, and rewrite-trigger metrics.
 - Add FastAPI API layer.
 - Add Ollama local LLM support.
 - Add reranking and richer evaluation.
