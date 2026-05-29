@@ -16,7 +16,7 @@ def main() -> None:
     print(f"Chroma path: {settings.chroma_persist_dir}")
     print(f"Top K: {settings.top_k}")
     print(f"Max rewrite attempts: {settings.max_rewrite_attempts}")
-    print("Run `python app.py` to start the Gradio UI.")
+    print("Run `.venv/bin/python app.py` to start the Gradio UI.")
 
 
 if __name__ == "__main__":
