@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from config import Settings, get_settings
 from agent.state import AgentState
 
 AgentRoute = Literal["generate_answer", "rewrite_query", "fallback"]
+logger = logging.getLogger(__name__)
 
 
 def route_after_grading(
@@ -16,11 +18,23 @@ def route_after_grading(
 ) -> AgentRoute:
     """Route after retrieval grading."""
 
-    if state.get("is_relevant") is True:
+    if state.get("relevant_documents"):
+        logger.info("Route decision: generate_answer")
         return "generate_answer"
 
     resolved_settings = settings or get_settings()
+    max_retry_count = state.get("max_retry_count", resolved_settings.max_retry_count)
 
-    if state.get("rewrite_count", 0) < resolved_settings.max_rewrite_attempts:
+    if state.get("retry_count", 0) < max_retry_count:
+        logger.info(
+            "Route decision: rewrite_query retry_count=%s max_retry_count=%s",
+            state.get("retry_count", 0),
+            max_retry_count,
+        )
         return "rewrite_query"
+    logger.info(
+        "Route decision: fallback retry_count=%s max_retry_count=%s",
+        state.get("retry_count", 0),
+        max_retry_count,
+    )
     return "fallback"

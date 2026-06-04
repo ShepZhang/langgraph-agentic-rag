@@ -64,15 +64,29 @@ def run_agent(
         retriever_fn=retriever_fn,
         settings=settings,
     )
-    final_state = compiled_graph.invoke(create_initial_state(question, chat_history))
+    resolved_settings = settings or get_settings()
+    final_state = compiled_graph.invoke(
+        create_initial_state(
+            question,
+            chat_history,
+            max_retry_count=resolved_settings.max_retry_count,
+        )
+    )
 
     return {
         "answer": final_state["answer"],
         "citations": final_state["citations"],
         "retrieved_documents": final_state["documents"],
+        "relevant_documents": final_state["relevant_documents"],
+        "current_query": final_state["current_query"],
         "rewritten_question": final_state["rewritten_question"],
         "rewrite_count": final_state["rewrite_count"],
+        "retry_count": final_state["retry_count"],
+        "retrieval_attempt": final_state["retrieval_attempt"],
         "is_relevant": final_state["is_relevant"],
+        "grading_reason": final_state["grading_reason"],
+        "fallback_reason": final_state["fallback_reason"],
+        "route": final_state["route"],
     }
 
 
@@ -84,5 +98,5 @@ def _create_chat_model(settings: Settings) -> ChatOpenAI:
         model=settings.openai_model,
         api_key=settings.openai_api_key,
         base_url=settings.openai_base_url,
-        temperature=0,
+        temperature=settings.temperature,
     )

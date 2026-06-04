@@ -73,6 +73,7 @@ def test_answer_question_requires_non_empty_question():
     assert rewritten == ""
     assert rewrite_count == 0
     assert "Rewrite triggered: No" in diagnostics
+    assert "Retrieval attempts: 0" in diagnostics
     assert history == []
 
 
@@ -86,11 +87,17 @@ def test_answer_question_returns_agent_payload_and_updates_history():
                     "page": None,
                     "chunk_id": "notes.txt:pNA:c1",
                     "score": 0.9,
+                    "snippet": "context",
                 }
             ],
             "retrieved_documents": [{"content": "context", "source": "notes.txt"}],
+            "relevant_documents": [{"content": "context", "source": "notes.txt"}],
+            "current_query": "What is Agentic RAG?",
             "rewritten_question": "What is Agentic RAG?",
-            "rewrite_count": 1,
+            "rewrite_count": 0,
+            "retry_count": 0,
+            "retrieval_attempt": 1,
+            "grading_reason": "Chunk 1 directly answers the question.",
             "is_relevant": True,
         }
 
@@ -105,9 +112,11 @@ def test_answer_question_returns_agent_payload_and_updates_history():
     assert citations[0]["source"] == "notes.txt"
     assert chunks[0]["content"] == "context"
     assert rewritten == "What is Agentic RAG?"
-    assert rewrite_count == 1
-    assert "Rewrite triggered: Yes" in diagnostics
-    assert "Relevant chunks accepted: Yes" in diagnostics
+    assert rewrite_count == 0
+    assert "Rewrite triggered: No" in diagnostics
+    assert "Retrieval attempts: 1" in diagnostics
+    assert "Relevant chunks accepted: 1" in diagnostics
+    assert "Chunk 1 directly answers" in diagnostics
     assert history[-2]["role"] == "user"
     assert history[-1]["role"] == "assistant"
 
@@ -131,6 +140,7 @@ def test_answer_question_returns_clear_error_when_agent_fails():
     assert rewritten == ""
     assert rewrite_count == 0
     assert "Rewrite triggered: No" in diagnostics
+    assert "Retrieval attempts: 0" in diagnostics
     assert history == []
 
 

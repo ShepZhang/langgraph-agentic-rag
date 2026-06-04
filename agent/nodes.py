@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from langchain_core.messages import BaseMessage
@@ -10,6 +11,7 @@ from langchain_core.messages import BaseMessage
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
     QUERY_REWRITE_PROMPT,
+    RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
     format_chat_history,
     format_documents,
@@ -19,6 +21,7 @@ from agent.tools import create_retriever_tool
 
 
 FALLBACK_ANSWER = "根据当前已索引文档，无法可靠回答这个问题。请补充相关文档，或换一种更具体的问法。"
+logger = logging.getLogger(__name__)
 
 
 class AgentNodes:
@@ -29,85 +32,183 @@ class AgentNodes:
         self.retriever_tool = create_retriever_tool(retriever_fn)
 
     def rewrite_query_node(self, state: AgentState) -> dict[str, Any]:
-        """Rewrite the user question for retrieval."""
+        """Normalize the first query or rewrite after failed retrieval."""
 
-        prompt = QUERY_REWRITE_PROMPT.format(
-            chat_history=format_chat_history(state.get("chat_history", [])),
-            question=state["question"],
-        )
+        is_retry = state.get("retrieval_attempt", 0) > 0
+        if is_retry:
+            prompt = RETRY_QUERY_REWRITE_PROMPT.format(
+                question=state["question"],
+                current_query=state.get("current_query") or state["question"],
+                previous_queries=_format_previous_queries(
+                    state.get("previous_queries", [])
+                ),
+                grading_reason=state.get("grading_reason") or "No grading reason.",
+                documents=format_documents(state.get("documents", [])),
+            )
+        else:
+            prompt = QUERY_REWRITE_PROMPT.format(
+                chat_history=format_chat_history(state.get("chat_history", [])),
+                question=state["question"],
+            )
+
         rewritten_question = _coerce_llm_text(self.llm.invoke(prompt)).strip()
         if not rewritten_question:
-            rewritten_question = state["question"]
+            rewritten_question = state.get("current_query") or state["question"]
+
+        previous_queries = list(state.get("previous_queries", []))
+        if is_retry and rewritten_question in previous_queries:
+            logger.warning("Retry rewrite repeated a previous query: %s", rewritten_question)
+        if not previous_queries or previous_queries[-1] != rewritten_question:
+            previous_queries.append(rewritten_question)
+
+        retry_count = state.get("retry_count", 0) + 1 if is_retry else state.get(
+            "retry_count",
+            0,
+        )
+        logger.info(
+            "Prepared retrieval query retry=%s retry_count=%s query=%s",
+            is_retry,
+            retry_count,
+            rewritten_question,
+        )
 
         return {
+            "current_query": rewritten_question,
             "rewritten_question": rewritten_question,
-            "rewrite_count": state.get("rewrite_count", 0) + 1,
+            "previous_queries": previous_queries,
+            "retry_count": retry_count,
+            "rewrite_count": retry_count,
+            "route": "retrieve",
         }
 
     def retrieve_node(self, state: AgentState) -> dict[str, Any]:
         """Retrieve relevant chunks with the retriever tool."""
 
-        query = state.get("rewritten_question") or state["question"]
+        query = state.get("current_query") or state.get("rewritten_question") or state[
+            "question"
+        ]
         documents = self.retriever_tool.invoke({"query": query})
-        return {"documents": documents}
+        retrieval_attempt = state.get("retrieval_attempt", 0) + 1
+        logger.info(
+            "Retrieved documents count=%s attempt=%s query=%s",
+            len(documents),
+            retrieval_attempt,
+            query,
+        )
+        return {
+            "documents": documents,
+            "retrieval_attempt": retrieval_attempt,
+        }
 
     def grade_documents_node(self, state: AgentState) -> dict[str, Any]:
         """Grade whether retrieved chunks are relevant enough to answer."""
 
         documents = state.get("documents", [])
         if not documents:
-            return {"is_relevant": False, "route": "rewrite_query"}
+            reason = "No documents retrieved."
+            logger.info("Retrieval grading skipped: %s", reason)
+            return {
+                "is_relevant": False,
+                "relevant_documents": [],
+                "grading_reason": reason,
+                "route": "rewrite_query",
+            }
 
         prompt = RETRIEVAL_GRADING_PROMPT.format(
-            question=state.get("rewritten_question") or state["question"],
+            question=state.get("current_query") or state["question"],
             documents=format_documents(documents),
         )
         raw_result = _coerce_llm_text(self.llm.invoke(prompt))
-        is_relevant = _parse_relevance(raw_result)
+        grading = _parse_grading_result(raw_result, document_count=len(documents))
+        relevant_documents = [
+            documents[index - 1] for index in grading["relevant_indices"]
+        ]
+        is_relevant = bool(relevant_documents)
+        logger.info(
+            "Retrieval grading relevant=%s relevant_count=%s reason=%s",
+            is_relevant,
+            len(relevant_documents),
+            grading["reason"],
+        )
         return {
             "is_relevant": is_relevant,
+            "relevant_documents": relevant_documents,
+            "grading_reason": grading["reason"],
             "route": "generate_answer" if is_relevant else "rewrite_query",
         }
 
     def generate_answer_node(self, state: AgentState) -> dict[str, Any]:
         """Generate a grounded answer and citations."""
 
-        documents = state.get("documents", [])
+        documents = state.get("relevant_documents", [])
+        if not documents:
+            reason = "No relevant documents available for answer generation."
+            logger.info("Answer generation skipped: %s", reason)
+            return _fallback_update(reason)
+
         prompt = ANSWER_GENERATION_PROMPT.format(
-            question=state.get("rewritten_question") or state["question"],
+            question=state.get("current_query") or state["question"],
             documents=format_documents(documents),
         )
-        answer = _coerce_llm_text(self.llm.invoke(prompt)).strip()
+        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
+        parsed_answer = _parse_answer_result(raw_result, document_count=len(documents))
+        if parsed_answer is None:
+            logger.warning("Answer generation returned invalid JSON.")
+            return _fallback_update("Answer generation returned invalid JSON.")
+
+        answer = parsed_answer["answer"].strip()
         if not answer:
-            answer = FALLBACK_ANSWER
+            return _fallback_update("Answer generation returned an empty answer.")
+
+        citations = build_citations(
+            documents,
+            used_citation_indices=parsed_answer["used_citation_indices"],
+        )
+        logger.info(
+            "Generated answer citation_count=%s used_indices=%s",
+            len(citations),
+            parsed_answer["used_citation_indices"],
+        )
 
         return {
             "answer": answer,
-            "citations": build_citations(documents),
+            "citations": citations,
+            "route": "end",
         }
 
     def fallback_node(self, state: AgentState) -> dict[str, Any]:
         """Return a safe fallback answer when retrieval is insufficient."""
 
-        return {
-            "answer": FALLBACK_ANSWER,
-            "citations": [],
-            "is_relevant": False,
-            "route": "fallback",
-        }
+        reason = state.get("grading_reason") or "No reliable supporting evidence found."
+        logger.info("Fallback answer returned: %s", reason)
+        return _fallback_update(reason)
 
 
-def build_citations(documents: list[RetrievedDocument]) -> list[Citation]:
-    """Build citations from retrieved document metadata."""
+def build_citations(
+    documents: list[RetrievedDocument],
+    used_citation_indices: list[int] | None = None,
+) -> list[Citation]:
+    """Build citations from selected document metadata."""
 
     citations: list[Citation] = []
     seen: set[tuple[Any, Any, Any]] = set()
-    for document in documents:
+    if used_citation_indices is None:
+        selected_documents = documents
+    else:
+        selected_documents = []
+        for citation_index in used_citation_indices:
+            if citation_index < 1 or citation_index > len(documents):
+                logger.warning("Ignoring out-of-range citation index: %s", citation_index)
+                continue
+            selected_documents.append(documents[citation_index - 1])
+
+    for document in selected_documents:
         citation: Citation = {
             "source": document.get("source"),
             "page": document.get("page"),
             "chunk_id": document.get("chunk_id"),
             "score": document.get("score"),
+            "snippet": _make_snippet(document.get("content", "")),
         }
         key = (
             citation.get("source"),
@@ -121,14 +222,82 @@ def build_citations(documents: list[RetrievedDocument]) -> list[Citation]:
     return citations
 
 
-def _parse_relevance(raw_result: str) -> bool:
-    """Parse a relevance grading JSON response."""
+def _parse_grading_result(
+    raw_result: str,
+    document_count: int,
+) -> dict[str, Any]:
+    """Parse a chunk-level relevance grading JSON response."""
 
     parsed = _extract_first_json_object(raw_result)
     if parsed is None:
-        return False
+        logger.warning("Could not parse retrieval grading JSON: %s", raw_result)
+        return {
+            "relevant": False,
+            "relevant_indices": [],
+            "reason": "Could not parse retrieval grading JSON.",
+        }
 
-    return bool(parsed.get("relevant") is True)
+    reason = str(parsed.get("reason") or "").strip()
+    raw_indices = parsed.get("relevant_indices", [])
+    if not isinstance(raw_indices, list):
+        raw_indices = []
+
+    relevant_indices: list[int] = []
+    for raw_index in raw_indices:
+        if isinstance(raw_index, bool) or not isinstance(raw_index, int):
+            continue
+        if raw_index < 1 or raw_index > document_count:
+            logger.warning("Ignoring out-of-range relevant chunk index: %s", raw_index)
+            continue
+        if raw_index not in relevant_indices:
+            relevant_indices.append(raw_index)
+
+    relevant = parsed.get("relevant") is True and bool(relevant_indices)
+    if not reason:
+        reason = "Relevant chunks found." if relevant else "No relevant chunks found."
+    if parsed.get("relevant") is True and not relevant_indices:
+        reason = (
+            reason
+            if reason
+            else "Model marked retrieval relevant but did not provide valid indices."
+        )
+
+    return {
+        "relevant": relevant,
+        "relevant_indices": relevant_indices if relevant else [],
+        "reason": reason,
+    }
+
+
+def _parse_answer_result(
+    raw_result: str,
+    document_count: int,
+) -> dict[str, Any] | None:
+    """Parse answer generation JSON and validate citation indices."""
+
+    parsed = _extract_first_json_object(raw_result)
+    if parsed is None:
+        return None
+
+    answer = parsed.get("answer")
+    raw_indices = parsed.get("used_citation_indices", [])
+    if not isinstance(answer, str) or not isinstance(raw_indices, list):
+        return None
+
+    used_citation_indices: list[int] = []
+    for raw_index in raw_indices:
+        if isinstance(raw_index, bool) or not isinstance(raw_index, int):
+            continue
+        if raw_index < 1 or raw_index > document_count:
+            logger.warning("Ignoring out-of-range answer citation index: %s", raw_index)
+            continue
+        if raw_index not in used_citation_indices:
+            used_citation_indices.append(raw_index)
+
+    return {
+        "answer": answer,
+        "used_citation_indices": used_citation_indices,
+    }
 
 
 def _extract_first_json_object(raw_result: str) -> dict[str, Any] | None:
@@ -176,3 +345,32 @@ def _coerce_llm_text(response: Any) -> str:
     if content is not None:
         return _coerce_content_text(content)
     return str(response)
+
+
+def _fallback_update(reason: str) -> dict[str, Any]:
+    """Build a fallback node update with a consistent reason."""
+
+    return {
+        "answer": FALLBACK_ANSWER,
+        "citations": [],
+        "is_relevant": False,
+        "route": "fallback",
+        "fallback_reason": reason,
+    }
+
+
+def _format_previous_queries(previous_queries: list[str]) -> str:
+    """Format previous retrieval queries for the retry prompt."""
+
+    if not previous_queries:
+        return "No previous queries."
+    return "\n".join(f"- {query}" for query in previous_queries)
+
+
+def _make_snippet(content: str, limit: int = 240) -> str:
+    """Create a short citation snippet without exposing full chunks."""
+
+    normalized = " ".join(content.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3].rstrip() + "..."

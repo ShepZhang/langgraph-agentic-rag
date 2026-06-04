@@ -9,22 +9,24 @@ from agent.edges import route_after_grading
 from agent.state import create_initial_state
 
 
-def test_route_after_grading_generates_when_relevant_without_settings_lookup(monkeypatch):
+def test_route_after_grading_generates_when_relevant_documents_exist_without_settings_lookup(
+    monkeypatch,
+):
     def fail_get_settings():
         raise AssertionError("get_settings should not be called for relevant state")
 
     monkeypatch.setattr("agent.edges.get_settings", fail_get_settings)
     state = create_initial_state("question")
-    state["is_relevant"] = True
+    state["relevant_documents"] = [{"content": "answer context"}]
 
     route = route_after_grading(state)
 
     assert route == "generate_answer"
 
 
-def test_route_after_grading_generates_when_relevant():
+def test_route_after_grading_generates_when_relevant_documents_exist():
     state = create_initial_state("question")
-    state["is_relevant"] = True
+    state["relevant_documents"] = [{"content": "answer context"}]
 
     route = route_after_grading(state)
 
@@ -32,10 +34,10 @@ def test_route_after_grading_generates_when_relevant():
 
 
 def test_route_after_grading_rewrites_when_under_attempt_limit():
-    settings = replace(get_settings(), max_rewrite_attempts=2)
+    settings = replace(get_settings(), max_retry_count=2)
     state = create_initial_state("question")
-    state["is_relevant"] = False
-    state["rewrite_count"] = 1
+    state["relevant_documents"] = []
+    state["retry_count"] = 1
 
     route = route_after_grading(state, settings=settings)
 
@@ -43,11 +45,21 @@ def test_route_after_grading_rewrites_when_under_attempt_limit():
 
 
 def test_route_after_grading_falls_back_at_attempt_limit():
-    settings = replace(get_settings(), max_rewrite_attempts=2)
+    settings = replace(get_settings(), max_retry_count=2)
     state = create_initial_state("question")
-    state["is_relevant"] = False
-    state["rewrite_count"] = 2
+    state["relevant_documents"] = []
+    state["retry_count"] = 2
 
     route = route_after_grading(state, settings=settings)
+
+    assert route == "fallback"
+
+
+def test_route_after_grading_uses_state_max_retry_count_when_present():
+    state = create_initial_state("question", max_retry_count=1)
+    state["relevant_documents"] = []
+    state["retry_count"] = 1
+
+    route = route_after_grading(state)
 
     assert route == "fallback"

@@ -14,6 +14,7 @@ from rag.vectorstore import EmptyVectorStoreError, VectorStoreManager
 
 class FakeChroma:
     created_with = None
+    deleted_collections = []
 
     def __init__(self, collection_name, embedding_function, persist_directory):
         self.collection_name = collection_name
@@ -34,6 +35,14 @@ class FakeChroma:
         }
         return instance
 
+    def delete_collection(self):
+        self.__class__.deleted_collections.append(
+            {
+                "collection_name": self.collection_name,
+                "persist_directory": self.persist_directory,
+            }
+        )
+
     def add_documents(self, documents):
         self.documents.extend(documents)
         return ["id-1"]
@@ -50,6 +59,7 @@ def test_create_vectorstore_uses_configured_chroma_settings(tmp_path, monkeypatc
         chroma_collection_name="test_collection",
     )
     embedding_model = object()
+    FakeChroma.deleted_collections = []
     monkeypatch.setattr(vectorstore, "_load_chroma_class", lambda: FakeChroma)
     manager = VectorStoreManager(settings=settings, embedding_model=embedding_model)
     docs = [Document(page_content="hello", metadata={"source": "a.md"})]
@@ -57,6 +67,12 @@ def test_create_vectorstore_uses_configured_chroma_settings(tmp_path, monkeypatc
     store = manager.create_vectorstore(docs)
 
     assert store is manager.store
+    assert FakeChroma.deleted_collections == [
+        {
+            "collection_name": "test_collection",
+            "persist_directory": str(tmp_path / "chroma"),
+        }
+    ]
     assert FakeChroma.created_with["documents"] == docs
     assert FakeChroma.created_with["embedding"] is embedding_model
     assert FakeChroma.created_with["collection_name"] == "test_collection"

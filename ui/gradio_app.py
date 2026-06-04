@@ -56,7 +56,11 @@ def answer_question(
             [],
             "",
             0,
-            _format_diagnostics(rewrite_count=0, is_relevant=False),
+            _format_diagnostics(
+                retry_count=0,
+                retrieval_attempt=0,
+                relevant_doc_count=0,
+            ),
             history,
         )
 
@@ -69,16 +73,25 @@ def answer_question(
             [],
             "",
             0,
-            _format_diagnostics(rewrite_count=0, is_relevant=False),
+            _format_diagnostics(
+                retry_count=0,
+                retrieval_attempt=0,
+                relevant_doc_count=0,
+                fallback_reason=str(exc),
+            ),
             history,
         )
 
     answer = result.get("answer", "")
     citations = result.get("citations", [])
     chunks = result.get("retrieved_documents", [])
-    rewritten_question = result.get("rewritten_question", "")
+    relevant_chunks = result.get("relevant_documents", [])
+    rewritten_question = result.get("current_query") or result.get("rewritten_question", "")
     rewrite_count = int(result.get("rewrite_count", 0) or 0)
-    is_relevant = bool(result.get("is_relevant", False))
+    retry_count = int(result.get("retry_count", rewrite_count) or 0)
+    retrieval_attempt = int(result.get("retrieval_attempt", 0) or 0)
+    grading_reason = str(result.get("grading_reason", "") or "")
+    fallback_reason = str(result.get("fallback_reason", "") or "")
     updated_history = [
         *history,
         {"role": "user", "content": normalized_question},
@@ -91,7 +104,13 @@ def answer_question(
         chunks,
         rewritten_question,
         rewrite_count,
-        _format_diagnostics(rewrite_count=rewrite_count, is_relevant=is_relevant),
+        _format_diagnostics(
+            retry_count=retry_count,
+            retrieval_attempt=retrieval_attempt,
+            relevant_doc_count=len(relevant_chunks) if isinstance(relevant_chunks, list) else 0,
+            grading_reason=grading_reason,
+            fallback_reason=fallback_reason,
+        ),
         updated_history,
     )
 
@@ -148,7 +167,7 @@ def create_app() -> gr.Blocks:
                 interactive=False,
             )
             rewrite_count = gr.Number(
-                label="Rewrite count",
+                label="Retry count",
                 value=0,
                 precision=0,
                 interactive=False,
@@ -156,7 +175,11 @@ def create_app() -> gr.Blocks:
 
         diagnostics = gr.Markdown(
             label="Diagnostics",
-            value=_format_diagnostics(rewrite_count=0, is_relevant=False),
+            value=_format_diagnostics(
+                retry_count=0,
+                retrieval_attempt=0,
+                relevant_doc_count=0,
+            ),
         )
 
         build_button.click(
@@ -186,7 +209,7 @@ def create_app() -> gr.Blocks:
             - Embedding model: `{settings.embedding_model}`
             - Chroma path: `{settings.chroma_persist_dir}`
             - Top K: `{settings.top_k}`
-            - Max rewrite attempts: `{settings.max_rewrite_attempts}`
+            - Max retry count: `{settings.max_retry_count}`
             """
         )
 
@@ -204,13 +227,24 @@ def _normalize_uploaded_files(uploaded_files: list[Any] | None) -> list[str]:
     return paths
 
 
-def _format_diagnostics(rewrite_count: int, is_relevant: bool) -> str:
+def _format_diagnostics(
+    retry_count: int,
+    retrieval_attempt: int,
+    relevant_doc_count: int,
+    grading_reason: str = "",
+    fallback_reason: str = "",
+) -> str:
     """Format agent diagnostics for display in the UI."""
 
-    rewrite_triggered = "Yes" if rewrite_count > 0 else "No"
-    relevant_chunks = "Yes" if is_relevant else "No"
-    return (
-        f"Rewrite triggered: {rewrite_triggered}\n"
-        f"Retry count: {rewrite_count}\n"
-        f"Relevant chunks accepted: {relevant_chunks}"
-    )
+    rewrite_triggered = "Yes" if retry_count > 0 else "No"
+    lines = [
+        f"Rewrite triggered: {rewrite_triggered}",
+        f"Retry count: {retry_count}",
+        f"Retrieval attempts: {retrieval_attempt}",
+        f"Relevant chunks accepted: {relevant_doc_count}",
+    ]
+    if grading_reason:
+        lines.append(f"Grading reason: {grading_reason}")
+    if fallback_reason:
+        lines.append(f"Fallback reason: {fallback_reason}")
+    return "\n".join(lines)

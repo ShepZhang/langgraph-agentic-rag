@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from pathlib import Path
 from typing import Iterable, Protocol
 
@@ -9,6 +11,7 @@ from langchain_core.documents import Document
 
 
 SUPPORTED_EXTENSIONS = {".pdf", ".md", ".markdown", ".txt"}
+logger = logging.getLogger(__name__)
 
 
 class UnsupportedFileTypeError(ValueError):
@@ -47,9 +50,10 @@ def load_text_document(file_path: str | Path) -> Document:
 
     path = Path(file_path)
     text = path.read_text(encoding="utf-8", errors="replace")
+    logger.info("Loaded text document source=%s", path.name)
     return Document(
         page_content=text,
-        metadata={"source": path.name, "page": None},
+        metadata=_base_metadata(path, page=None),
     )
 
 
@@ -67,6 +71,7 @@ def load_pdf_document(
 
     reader = reader_cls(path)
     documents: list[Document] = []
+    base_metadata = _base_metadata(path, page=None)
 
     for page_number, page in enumerate(reader.pages, start=1):
         text = page.extract_text() or ""
@@ -77,8 +82,31 @@ def load_pdf_document(
         documents.append(
             Document(
                 page_content=text,
-                metadata={"source": path.name, "page": page_number},
+                metadata={**base_metadata, "page": page_number},
             )
         )
 
+    logger.info("Loaded PDF document source=%s pages=%s", path.name, len(documents))
     return documents
+
+
+def _base_metadata(path: Path, page: int | None) -> dict[str, object]:
+    """Build metadata shared by loaded document pages."""
+
+    resolved_path = path.resolve()
+    return {
+        "source": path.name,
+        "source_path": str(resolved_path),
+        "file_hash": _file_hash(resolved_path),
+        "page": page,
+    }
+
+
+def _file_hash(path: Path) -> str:
+    """Return a stable SHA-256 hash for a source file."""
+
+    digest = hashlib.sha256()
+    with path.open("rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

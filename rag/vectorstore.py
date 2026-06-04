@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from langchain_core.documents import Document
@@ -12,6 +13,9 @@ from rag.embeddings import get_embedding_model
 
 class EmptyVectorStoreError(RuntimeError):
     """Raised when a search is requested before a vector store is available."""
+
+
+logger = logging.getLogger(__name__)
 
 
 class VectorStoreManager:
@@ -34,11 +38,18 @@ class VectorStoreManager:
 
         self.settings.chroma_persist_dir.mkdir(parents=True, exist_ok=True)
         chroma_cls = _load_chroma_class()
+        self._reset_collection(chroma_cls)
         self.store = chroma_cls.from_documents(
             documents=docs,
             embedding=self.embedding_model,
             collection_name=self.settings.chroma_collection_name,
             persist_directory=str(self.settings.chroma_persist_dir),
+        )
+        logger.info(
+            "Created Chroma vector store collection=%s docs=%s path=%s",
+            self.settings.chroma_collection_name,
+            len(docs),
+            self.settings.chroma_persist_dir,
         )
         return self.store
 
@@ -74,11 +85,37 @@ class VectorStoreManager:
         if k <= 0:
             raise ValueError("top_k must be a positive integer.")
 
+        if hasattr(store, "similarity_search_with_score"):
+            return store.similarity_search_with_score(query, k=k)
+
         if hasattr(store, "similarity_search_with_relevance_scores"):
             return store.similarity_search_with_relevance_scores(query, k=k)
 
         docs = store.similarity_search(query, k=k)
         return [(doc, None) for doc in docs]
+
+    def _reset_collection(self, chroma_cls: type[Any]) -> None:
+        """Delete the existing Chroma collection before rebuilding the index."""
+
+        try:
+            existing_store = chroma_cls(
+                collection_name=self.settings.chroma_collection_name,
+                embedding_function=self.embedding_model,
+                persist_directory=str(self.settings.chroma_persist_dir),
+            )
+            if hasattr(existing_store, "delete_collection"):
+                existing_store.delete_collection()
+                logger.info(
+                    "Reset Chroma collection before rebuild collection=%s path=%s",
+                    self.settings.chroma_collection_name,
+                    self.settings.chroma_persist_dir,
+                )
+        except Exception as exc:  # pragma: no cover - depends on Chroma internals.
+            logger.info(
+                "Skipped Chroma collection reset collection=%s reason=%s",
+                self.settings.chroma_collection_name,
+                exc,
+            )
 
 
 _default_manager: VectorStoreManager | None = None

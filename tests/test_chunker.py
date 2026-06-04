@@ -12,7 +12,12 @@ def test_split_documents_preserves_metadata_and_adds_chunk_ids():
     docs = [
         Document(
             page_content="Alpha beta gamma. " * 20,
-            metadata={"source": "notes.md", "page": None},
+            metadata={
+                "source": "notes.md",
+                "page": None,
+                "source_path": "/tmp/notes.md",
+                "file_hash": "abc123",
+            },
         )
     ]
 
@@ -21,6 +26,8 @@ def test_split_documents_preserves_metadata_and_adds_chunk_ids():
     assert len(chunks) > 1
     assert all(chunk.metadata["source"] == "notes.md" for chunk in chunks)
     assert all(chunk.metadata["page"] is None for chunk in chunks)
+    assert all(chunk.metadata["source_path"] == "/tmp/notes.md" for chunk in chunks)
+    assert all(chunk.metadata["file_hash"] == "abc123" for chunk in chunks)
     assert [chunk.metadata["chunk_id"] for chunk in chunks] == [
         f"notes.md:pNA:c{index}" for index in range(1, len(chunks) + 1)
     ]

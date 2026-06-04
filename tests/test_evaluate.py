@@ -9,7 +9,7 @@ import pytest
 from evaluation.evaluate import evaluate_questions, format_report, load_eval_questions, main
 
 
-def test_load_eval_questions_reads_json_file(tmp_path):
+def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):
     path = tmp_path / "eval.json"
     path.write_text(
         json.dumps(
@@ -17,8 +17,13 @@ def test_load_eval_questions_reads_json_file(tmp_path):
                 {
                     "question": "What is Agentic RAG?",
                     "expected_keywords": ["agent", "retrieval"],
-                    "expected_source": "notes.md",
-                }
+                    "expected_source": "legacy.md",
+                },
+                {
+                    "question": "What is not covered?",
+                    "expected_sources": [],
+                    "should_answer": False,
+                },
             ]
         ),
         encoding="utf-8",
@@ -30,41 +35,51 @@ def test_load_eval_questions_reads_json_file(tmp_path):
         {
             "question": "What is Agentic RAG?",
             "expected_keywords": ["agent", "retrieval"],
-            "expected_source": "notes.md",
-        }
+            "expected_source": "legacy.md",
+            "expected_sources": ["legacy.md"],
+            "should_answer": True,
+        },
+        {
+            "question": "What is not covered?",
+            "expected_keywords": [],
+            "expected_sources": [],
+            "should_answer": False,
+        },
     ]
 
 
 def test_load_eval_questions_rejects_missing_question(tmp_path):
     path = tmp_path / "eval.json"
-    path.write_text(json.dumps([{"expected_source": "notes.md"}]), encoding="utf-8")
+    path.write_text(json.dumps([{"expected_sources": ["notes.md"]}]), encoding="utf-8")
 
     with pytest.raises(ValueError, match="question"):
         load_eval_questions(path)
 
 
-def test_load_eval_questions_rejects_non_string_keywords(tmp_path):
+def test_load_eval_questions_rejects_non_string_sources(tmp_path):
     path = tmp_path / "eval.json"
     path.write_text(
-        json.dumps([{"question": "What?", "expected_keywords": ["valid", 5]}]),
+        json.dumps([{"question": "What?", "expected_sources": ["valid", 5]}]),
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="expected_keywords"):
+    with pytest.raises(ValueError, match="expected_sources"):
         load_eval_questions(path)
 
 
-def test_evaluate_questions_computes_summary_metrics():
+def test_evaluate_questions_computes_agentic_summary_metrics():
     questions = [
         {
             "question": "What is Agentic RAG?",
             "expected_keywords": ["agentic", "retrieval"],
-            "expected_source": "notes.md",
+            "expected_sources": ["notes.md"],
+            "should_answer": True,
         },
         {
             "question": "What is missing?",
-            "expected_keywords": ["missing"],
-            "expected_source": "missing.md",
+            "expected_keywords": [],
+            "expected_sources": [],
+            "should_answer": False,
         },
     ]
     timer_values = iter([0.0, 1.0, 1.0, 3.0])
@@ -78,15 +93,21 @@ def test_evaluate_questions_computes_summary_metrics():
                 "answer": "Agentic RAG uses retrieval.",
                 "citations": [{"source": "notes.md"}],
                 "retrieved_documents": [
+                    {"source": "notes.md", "content": "Agentic RAG uses retrieval."},
+                    {"source": "other.md", "content": "Other content."},
+                ],
+                "relevant_documents": [
                     {"source": "notes.md", "content": "Agentic RAG uses retrieval."}
                 ],
-                "rewrite_count": 1,
+                "retry_count": 1,
             }
         return {
-            "answer": "",
+            "answer": "根据当前已索引文档，无法可靠回答这个问题。",
             "citations": [],
             "retrieved_documents": [{"source": "other.md", "content": "Other content"}],
-            "rewrite_count": 0,
+            "relevant_documents": [],
+            "retry_count": 2,
+            "fallback_reason": "No relevant chunks found.",
         }
 
     report = evaluate_questions(questions, run_agent_fn=fake_run_agent, timer=fake_timer)
@@ -94,20 +115,26 @@ def test_evaluate_questions_computes_summary_metrics():
     assert report["summary"] == {
         "total_questions": 2,
         "answer_rate": 0.5,
+        "fallback_rate": 0.5,
         "citation_rate": 0.5,
-        "source_hit_rate": 0.5,
+        "source_hit_rate": 1.0,
+        "keyword_hit_rate": 1.0,
+        "fallback_correctness_rate": 1.0,
+        "average_retry_count": 1.5,
+        "average_retrieved_docs": 1.5,
+        "average_relevant_docs": 0.5,
         "average_latency": 1.5,
-        "rewrite_triggered_count": 1,
-        "keyword_hit_rate": 0.5,
+        "rewrite_triggered_count": 2,
         "error_count": 0,
     }
     assert report["results"][0]["source_hit"] is True
     assert report["results"][0]["keyword_hit"] is True
-    assert report["results"][1]["answer_returned"] is False
+    assert report["results"][1]["fallback_triggered"] is True
+    assert report["results"][1]["fallback_correct"] is True
 
 
 def test_evaluate_questions_records_agent_errors():
-    questions = [{"question": "Broken?", "expected_source": "notes.md"}]
+    questions = [{"question": "Broken?", "expected_sources": ["notes.md"]}]
     timer_values = iter([0.0, 0.25])
 
     def fake_timer():
@@ -131,7 +158,7 @@ def test_evaluate_questions_records_malformed_agent_payload_errors():
         return next(timer_values)
 
     def malformed_run_agent(question):
-        return {"answer": "x", "rewrite_count": "many"}
+        return {"answer": "x", "retry_count": "many"}
 
     report = evaluate_questions(
         questions,
@@ -154,7 +181,7 @@ def test_evaluate_questions_uses_expected_field_denominators_for_hit_rates():
     questions = [
         {
             "question": "Source expected and hit",
-            "expected_source": "notes.md",
+            "expected_sources": ["notes.md"],
         },
         {
             "question": "No expected source",
@@ -174,6 +201,7 @@ def test_evaluate_questions_uses_expected_field_denominators_for_hit_rates():
         if question == "Source expected and hit":
             return {
                 "answer": "No keyword expectation here.",
+                "citations": [{"source": "notes.md"}],
                 "retrieved_documents": [{"source": "notes.md"}],
             }
         if question == "No expected source":
@@ -209,21 +237,30 @@ def test_format_report_includes_summary_and_question_rows():
         "summary": {
             "total_questions": 1,
             "answer_rate": 1.0,
+            "fallback_rate": 0.0,
             "citation_rate": 1.0,
             "source_hit_rate": 1.0,
+            "keyword_hit_rate": 1.0,
+            "fallback_correctness_rate": 1.0,
+            "average_retry_count": 1.0,
+            "average_retrieved_docs": 2.0,
+            "average_relevant_docs": 1.0,
             "average_latency": 0.25,
             "rewrite_triggered_count": 1,
-            "keyword_hit_rate": 1.0,
             "error_count": 0,
         },
         "results": [
             {
                 "question": "What is Agentic RAG?",
                 "answer_returned": True,
+                "fallback_triggered": False,
                 "citation_returned": True,
                 "source_hit": True,
                 "keyword_hit": True,
                 "rewrite_triggered": True,
+                "retry_count": 1,
+                "retrieved_doc_count": 2,
+                "relevant_doc_count": 1,
                 "latency": 0.25,
                 "error": "",
             }
@@ -235,13 +272,21 @@ def test_format_report_includes_summary_and_question_rows():
     assert "Evaluation Report" in text
     assert "total_questions: 1" in text
     assert "source_hit_rate: 1.0" in text
+    assert "retry_count=1" in text
     assert "What is Agentic RAG?" in text
 
 
 def test_main_prints_report_with_injected_runner(tmp_path, capsys):
     path = tmp_path / "eval.json"
     path.write_text(
-        json.dumps([{"question": "What is Agentic RAG?", "expected_source": "notes.md"}]),
+        json.dumps(
+            [
+                {
+                    "question": "What is Agentic RAG?",
+                    "expected_sources": ["notes.md"],
+                }
+            ]
+        ),
         encoding="utf-8",
     )
 
@@ -252,7 +297,10 @@ def test_main_prints_report_with_injected_runner(tmp_path, capsys):
             "retrieved_documents": [
                 {"source": "notes.md", "content": "Agentic RAG uses retrieval."}
             ],
-            "rewrite_count": 0,
+            "relevant_documents": [
+                {"source": "notes.md", "content": "Agentic RAG uses retrieval."}
+            ],
+            "retry_count": 0,
         }
 
     exit_code = main(["--questions", str(path)], run_agent_fn=fake_run_agent)

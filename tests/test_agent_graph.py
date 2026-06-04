@@ -25,8 +25,11 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
     llm = FakeLLM(
         [
             "rewritten agentic rag question",
-            '{"relevant": true, "reason": "matches"}',
-            "Agentic RAG uses retrieval and agent control flow.",
+            '{"relevant": true, "relevant_indices": [1], "reason": "matches"}',
+            (
+                '{"answer": "Agentic RAG uses retrieval and agent control flow [1].", '
+                '"used_citation_indices": [1]}'
+            ),
         ]
     )
     documents = [
@@ -47,31 +50,39 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
         settings=get_settings(),
     )
 
-    assert result["answer"] == "Agentic RAG uses retrieval and agent control flow."
+    assert result["answer"] == "Agentic RAG uses retrieval and agent control flow [1]."
     assert result["rewritten_question"] == "rewritten agentic rag question"
-    assert result["rewrite_count"] == 1
+    assert result["current_query"] == "rewritten agentic rag question"
+    assert result["rewrite_count"] == 0
+    assert result["retry_count"] == 0
+    assert result["retrieval_attempt"] == 1
     assert result["is_relevant"] is True
+    assert result["grading_reason"] == "matches"
     assert result["citations"] == [
         {
             "source": "agentic-rag.md",
             "page": 3,
             "chunk_id": "agentic-rag.md:p3:c1",
             "score": 0.91,
+            "snippet": "Agentic RAG uses retrieval and agent control flow.",
         }
     ]
     assert result["retrieved_documents"] == documents
+    assert result["relevant_documents"] == documents
 
 
 def test_run_agent_retries_then_falls_back_when_documents_are_irrelevant():
     from agent.graph import run_agent
 
-    settings = replace(get_settings(), max_rewrite_attempts=2)
+    settings = replace(get_settings(), max_retry_count=2)
     llm = FakeLLM(
         [
             "first rewritten question",
-            '{"relevant": false, "reason": "wrong topic"}',
+            '{"relevant": false, "relevant_indices": [], "reason": "wrong topic"}',
             "second rewritten question",
-            '{"relevant": false, "reason": "still wrong"}',
+            '{"relevant": false, "relevant_indices": [], "reason": "still wrong"}',
+            "third rewritten question",
+            '{"relevant": false, "relevant_indices": [], "reason": "still wrong again"}',
         ]
     )
     retriever_queries = []
@@ -87,9 +98,16 @@ def test_run_agent_retries_then_falls_back_when_documents_are_irrelevant():
         settings=settings,
     )
 
-    assert retriever_queries == ["first rewritten question", "second rewritten question"]
+    assert retriever_queries == [
+        "first rewritten question",
+        "second rewritten question",
+        "third rewritten question",
+    ]
     assert result["rewrite_count"] == 2
+    assert result["retry_count"] == 2
+    assert result["retrieval_attempt"] == 3
     assert result["is_relevant"] is False
+    assert result["grading_reason"] == "still wrong again"
     assert "无法可靠回答" in result["answer"]
     assert result["citations"] == []
 

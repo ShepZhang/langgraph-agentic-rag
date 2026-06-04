@@ -22,6 +22,9 @@ uploads/
 *.sqlite3
 *.db
 
+# Agent working notes
+docs/superpowers/
+
 # OS/editor files
 .DS_Store
 .idea/

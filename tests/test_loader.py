@@ -19,8 +19,14 @@ def test_load_text_and_markdown_documents_preserves_metadata(tmp_path):
         "plain text content",
         "# Guide\n\nmarkdown content",
     ]
-    assert docs[0].metadata == {"source": "notes.txt", "page": None}
-    assert docs[1].metadata == {"source": "guide.md", "page": None}
+    assert docs[0].metadata["source"] == "notes.txt"
+    assert docs[0].metadata["page"] is None
+    assert docs[0].metadata["source_path"] == str(txt_path.resolve())
+    assert len(docs[0].metadata["file_hash"]) == 64
+    assert docs[1].metadata["source"] == "guide.md"
+    assert docs[1].metadata["page"] is None
+    assert docs[1].metadata["source_path"] == str(md_path.resolve())
+    assert len(docs[1].metadata["file_hash"]) == 64
 
 
 def test_load_pdf_document_with_injected_reader_preserves_page_metadata(tmp_path):
@@ -41,8 +47,14 @@ def test_load_pdf_document_with_injected_reader_preserves_page_metadata(tmp_path
     docs = load_pdf_document(pdf_path, reader_cls=FakeReader)
 
     assert [doc.page_content for doc in docs] == ["page one", "page three"]
-    assert docs[0].metadata == {"source": "paper.pdf", "page": 1}
-    assert docs[1].metadata == {"source": "paper.pdf", "page": 3}
+    assert docs[0].metadata["source"] == "paper.pdf"
+    assert docs[0].metadata["page"] == 1
+    assert docs[0].metadata["source_path"] == str(pdf_path.resolve())
+    assert len(docs[0].metadata["file_hash"]) == 64
+    assert docs[1].metadata["source"] == "paper.pdf"
+    assert docs[1].metadata["page"] == 3
+    assert docs[1].metadata["source_path"] == str(pdf_path.resolve())
+    assert docs[0].metadata["file_hash"] == docs[1].metadata["file_hash"]
 
 
 def test_load_documents_rejects_unsupported_file_type(tmp_path):

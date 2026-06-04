@@ -2,7 +2,7 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-This project is a lightweight, resume-ready Agentic RAG system. Users can upload private documents, build a local vector index, ask questions, and receive grounded answers with source citations. The focus is the Agentic RAG workflow, not backend authentication or production deployment infrastructure.
+This project is a lightweight Agentic RAG prototype for private document QA, focusing on explicit LangGraph-based retrieval control, query rewriting, retrieval grading, retry routing, and citation-aware answer generation. The focus is the Agentic RAG workflow, not backend authentication or production deployment infrastructure.
 
 ## Why This Is Not a Naive RAG Demo
 
@@ -51,31 +51,42 @@ START
 -> retrieve
 -> grade_documents
 -> if relevant: generate_answer -> END
--> if not relevant and rewrite_count < max_rewrite_attempts: rewrite_query
--> if not relevant and rewrite_count >= max_rewrite_attempts: fallback -> END
+-> if no relevant chunks and retry_count < max_retry_count: rewrite_query
+-> if no relevant chunks and retry_count >= max_retry_count: fallback -> END
 ```
 
 Implemented LangGraph nodes:
 
-- `rewrite_query_node`: rewrites contextual or vague questions into standalone retrieval queries.
+- `rewrite_query_node`: normalizes the first query, then uses failed retrieval context for retry rewrites.
 - `retrieve_node`: calls the `retrieve_context` tool over the private Chroma index.
-- `grade_documents_node`: asks the LLM whether retrieved chunks are sufficient.
-- `generate_answer_node`: generates citation-aware answers from retrieved chunks only.
+- `grade_documents_node`: asks the LLM for chunk-level `relevant_indices`, then filters `relevant_documents`.
+- `generate_answer_node`: generates JSON answers from relevant chunks only and returns citations selected by `used_citation_indices`.
 - `fallback_node`: returns a clear message when the indexed documents do not support an answer.
+
+Key state fields:
+
+- `current_query`: query currently used for retrieval.
+- `previous_queries`: retrieval queries already attempted.
+- `retrieval_attempt`: number of actual retriever calls.
+- `retry_count`: number of failed-retrieval rewrites. Initial query normalization does not count as retry.
+- `documents`: raw retrieved chunks.
+- `relevant_documents`: chunks accepted by retrieval grading.
+- `grading_reason`: LLM reason for accepting or rejecting retrieved evidence.
+- `citations`: final answer evidence chunks selected by `used_citation_indices`.
 
 ## Features
 
 - PDF, Markdown, and TXT document loading.
-- Recursive chunking with source, page, and chunk id metadata.
+- Recursive chunking with source, source path, file hash, page, and chunk id metadata.
 - Local sentence-transformers embeddings by default.
-- Persistent Chroma vector store.
+- Persistent Chroma vector store with rebuild-on-index strategy to avoid duplicate chunks.
 - Retriever exposed as an Agent tool named `retrieve_context`.
 - Query rewriting for vague or context-dependent questions.
-- Retrieval grading with conservative handling for invalid grading output.
-- Conditional retry with configurable max rewrite attempts.
-- Citation-aware grounded answer generation.
-- Gradio UI for upload, indexing, question answering, citations, retrieved chunks, and rewrite diagnostics.
-- Lightweight evaluation runner for answer, citation, source-hit, keyword-hit, latency, and rewrite metrics.
+- Chunk-level retrieval grading with conservative handling for invalid grading output.
+- Conditional retry with configurable max retry count.
+- Citation-aware grounded answer generation using only selected evidence chunks.
+- Gradio UI for upload, indexing, question answering, citations, retrieved chunks, and retry diagnostics.
+- Lightweight evaluation runner for answer, fallback, citation, source-hit, keyword-hit, retry, retrieved-doc, relevant-doc, latency, and error metrics.
 
 ## Tech Stack
 
@@ -141,10 +152,20 @@ python app.py
    - citations
    - retrieved chunks
    - rewritten question
-   - rewrite count
+   - retry count
    - retrieval diagnostics
 
 The chat LLM is required for query rewriting, retrieval grading, and answer generation. If `OPENAI_API_KEY` or `OPENAI_MODEL` is missing, the app returns a clear configuration error instead of producing offline fake answers.
+
+## Tests
+
+Run the test suite:
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+Tests use fake LLMs and mocked vector stores, so they do not require real OpenAI-compatible API calls.
 
 ## Evaluation
 
@@ -157,14 +178,20 @@ Run the lightweight evaluation script:
 Reported metrics:
 
 - `answer_rate`
+- `fallback_rate`
 - `citation_rate`
 - `source_hit_rate`
 - `keyword_hit_rate`
+- `fallback_correctness_rate`
+- `average_retry_count`
+- `average_retrieved_docs`
+- `average_relevant_docs`
 - `average_latency`
 - `rewrite_triggered_count`
 - `error_count`
 
 If the LLM config or vector index is missing, evaluation records errors per question and still prints a report.
+The current evaluation set is intentionally small and is meant to demonstrate measurement structure, not provide a rigorous benchmark.
 
 ## Example Output
 
@@ -182,7 +209,9 @@ Example answer payload:
     }
   ],
   "rewritten_question": "What is Agentic RAG?",
-  "rewrite_count": 1,
+  "current_query": "What is Agentic RAG?",
+  "retry_count": 0,
+  "retrieval_attempt": 1,
   "is_relevant": true
 }
 ```
@@ -195,11 +224,16 @@ Evaluation Report
 Summary
 total_questions: 2
 answer_rate: 1.0
+fallback_rate: 0.0
 citation_rate: 1.0
 source_hit_rate: 1.0
+keyword_hit_rate: 0.5
+fallback_correctness_rate: 1.0
+average_retry_count: 0.5
+average_retrieved_docs: 4.0
+average_relevant_docs: 2.0
 average_latency: 1.2345
 rewrite_triggered_count: 1
-keyword_hit_rate: 0.5
 error_count: 0
 ```
 
@@ -208,12 +242,13 @@ error_count: 0
 - `OPENAI_API_KEY`: API key for the OpenAI-compatible LLM.
 - `OPENAI_BASE_URL`: Base URL for the OpenAI-compatible API.
 - `OPENAI_MODEL`: Chat model used by the agent.
+- `OPENAI_TEMPERATURE`: Chat model temperature. Default is `0`.
 - `EMBEDDING_PROVIDER`: Embedding backend. MVP default is `sentence_transformers`.
 - `EMBEDDING_MODEL`: Local embedding model. Default is `sentence-transformers/all-MiniLM-L6-v2`.
 - `CHUNK_SIZE`: Text chunk size.
 - `CHUNK_OVERLAP`: Text chunk overlap.
 - `TOP_K`: Number of chunks retrieved per query.
-- `MAX_REWRITE_ATTEMPTS`: Maximum rewrite and retrieve attempts.
+- `MAX_RETRY_COUNT`: Maximum failed-retrieval retry rewrites.
 - `CHROMA_PERSIST_DIR`: Local Chroma persistence path.
 - `CHROMA_COLLECTION_NAME`: Chroma collection name.
 - `GRADIO_SERVER_NAME`: Gradio host.
@@ -249,6 +284,8 @@ agentic-rag-document-qa/
 │   └── gradio_app.py
 ├── assets/
 │   └── architecture.png
+├── sample_docs/
+│   └── agentic_rag_notes.md
 └── tests/
 ```
 
@@ -256,17 +293,26 @@ agentic-rag-document-qa/
 
 - Built an Agentic RAG workflow with LangGraph, decomposing document QA into query rewriting, retrieval, retrieval grading, answer generation, and fallback nodes.
 - Wrapped vector retrieval as an Agent tool so the workflow can explicitly call a private knowledge base instead of relying on model parameters alone.
-- Implemented retrieval grading and conditional retry to improve reliability on vague or poorly matched questions.
-- Designed citation-aware answer generation that requires answers to be grounded in retrieved chunks.
+- Implemented chunk-level retrieval grading and conditional retry to improve reliability on vague or poorly matched questions.
+- Designed citation-aware answer generation where the model returns `used_citation_indices`, so final citations map only to evidence chunks used in the answer.
 - Supported PDF, Markdown, and TXT ingestion with chunk metadata, local embeddings, Chroma indexing, and Gradio-based document QA.
-- Added lightweight evaluation for answer rate, citation rate, source hit rate, latency, keyword hit rate, and rewrite behavior.
+- Added lightweight evaluation for answer rate, fallback rate, citation rate, source hit rate, keyword hit rate, retry count, retrieved-doc count, and relevant-doc count.
+
+## Current Limitations
+
+- Citation currently maps generated answers to selected evidence chunks, but does not yet perform full claim-level verification.
+- Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
+- Evaluation uses a lightweight local QA set and should be expanded for more rigorous benchmarking.
+- The Chroma index currently uses a rebuild-on-index strategy. This avoids duplicate chunks for the MVP, but deterministic chunk IDs would be better for incremental indexing.
+- The project is a prototype and is not intended for production deployment without further hardening.
 
 ## Roadmap
 
 - RAG core implemented: loading, chunking, embeddings, Chroma indexing, and retrieval.
 - LangGraph agent workflow implemented: query rewriting, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
-- Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and rewrite diagnostics.
+- Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
 - Evaluation runner implemented: answer rate, citation rate, source hit rate, latency, keyword hit rate, and rewrite-trigger metrics.
+- Add a minimal naive RAG baseline in evaluation for side-by-side comparison.
 - Add FastAPI API layer.
 - Add Ollama local LLM support.
 - Add reranking and richer evaluation.

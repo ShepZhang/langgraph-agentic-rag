@@ -20,12 +20,41 @@ Original question:
 Standalone retrieval question:"""
 
 
+RETRY_QUERY_REWRITE_PROMPT = """You are improving a failed private knowledge-base retrieval query.
+
+The previous retrieval did not find enough relevant evidence. Rewrite the query to improve retrieval.
+Avoid repeating the same query. Keep it concise, specific, and search-oriented.
+
+Original question:
+{question}
+
+Previous retrieval query:
+{current_query}
+
+Previous queries:
+{previous_queries}
+
+Previous grading reason:
+{grading_reason}
+
+Previously retrieved chunks:
+{documents}
+
+Improved retrieval query:"""
+
+
 RETRIEVAL_GRADING_PROMPT = """You are grading whether retrieved chunks can answer a user's question.
 
 Do not mark chunks relevant just because they share keywords.
 Mark them relevant only if they contain enough factual information to answer the question.
 Return JSON only in this shape:
-{{"relevant": true, "reason": "short reason"}}
+{{"relevant": true, "relevant_indices": [1, 3], "reason": "short reason"}}
+
+Rules:
+- relevant_indices must use 1-based indexes matching the retrieved chunk numbers.
+- If no chunks are relevant, return:
+  {{"relevant": false, "relevant_indices": [], "reason": "short reason"}}
+- Return JSON only. No markdown fences.
 
 Question:
 {question}
@@ -41,9 +70,12 @@ ANSWER_GENERATION_PROMPT = """You answer questions using only the retrieved chun
 Rules:
 - Use only facts from the retrieved chunks.
 - Do not invent facts that are not present in the retrieved chunks.
-- For key facts, include source references in the answer when possible.
+- For key facts, include citation markers like [1] and [2] that correspond to chunk numbers.
 - If the retrieved chunks do not contain the answer, say you cannot answer from the current documents.
 - Keep the answer concise and useful.
+- Return JSON only in this shape:
+  {{"answer": "Final answer text with citation markers like [1].", "used_citation_indices": [1]}}
+- used_citation_indices must contain only the 1-based chunk numbers actually used as evidence.
 
 Question:
 {question}
@@ -51,7 +83,7 @@ Question:
 Retrieved chunks:
 {documents}
 
-Answer:"""
+JSON:"""
 
 
 def format_chat_history(chat_history: list[ChatMessage]) -> str:

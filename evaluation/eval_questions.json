@@ -2,11 +2,19 @@
   {
     "question": "What is Agentic RAG?",
     "expected_keywords": ["agent", "retrieval", "query rewrite"],
-    "expected_source": "sample.md"
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true
   },
   {
     "question": "How does retrieval grading improve RAG reliability?",
     "expected_keywords": ["relevant", "grading", "retrieved chunks"],
-    "expected_source": "sample.md"
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true
+  },
+  {
+    "question": "What is the company's private payroll policy?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "should_answer": false
   }
 ]

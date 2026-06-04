@@ -5,6 +5,7 @@ from __future__ import annotations
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
     QUERY_REWRITE_PROMPT,
+    RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
     format_chat_history,
     format_documents,
@@ -16,14 +17,22 @@ def test_create_initial_state_sets_defaults():
     state = create_initial_state("What is RAG?")
 
     assert state["question"] == "What is RAG?"
+    assert state["current_query"] == ""
     assert state["rewritten_question"] == ""
     assert state["chat_history"] == []
+    assert state["previous_queries"] == []
     assert state["documents"] == []
+    assert state["relevant_documents"] == []
+    assert state["grading_reason"] == ""
     assert state["answer"] == ""
     assert state["citations"] == []
     assert state["rewrite_count"] == 0
+    assert state["retry_count"] == 0
+    assert state["retrieval_attempt"] == 0
+    assert state["max_retry_count"] == 2
     assert state["is_relevant"] is False
     assert state["route"] == ""
+    assert state["fallback_reason"] == ""
 
 
 def test_create_initial_state_preserves_chat_history():
@@ -71,6 +80,10 @@ def test_format_documents_includes_metadata_and_content():
 
 def test_prompts_contain_required_guardrails():
     assert "standalone" in QUERY_REWRITE_PROMPT.lower()
+    assert "previous retrieval query" in RETRY_QUERY_REWRITE_PROMPT.lower()
+    assert "avoid repeating" in RETRY_QUERY_REWRITE_PROMPT.lower()
     assert "retrieved chunks" in ANSWER_GENERATION_PROMPT.lower()
+    assert "used_citation_indices" in ANSWER_GENERATION_PROMPT
     assert "json" in RETRIEVAL_GRADING_PROMPT.lower()
+    assert "relevant_indices" in RETRIEVAL_GRADING_PROMPT
     assert "keyword" in RETRIEVAL_GRADING_PROMPT.lower()
