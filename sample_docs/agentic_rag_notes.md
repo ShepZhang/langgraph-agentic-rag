@@ -44,9 +44,9 @@ There are two different weak-evidence cases. Weak retrieval evidence can trigger
 
 When the retrieved chunks are relevant, the answer generation step must use only the selected relevant context. The answer should include citation markers such as `[1]` and `[2]`, and the model must return `used_citation_indices` so the program can map those indices back to source chunks.
 
-This project performs selected evidence citation. The program returns citations only for chunks that the model says it used. Each citation can include source filename, page number when available, chunk id, similarity score, and a short snippet.
+This project performs selected evidence citation. The program returns citations only for chunks that the model says it used. It also checks that citation markers in the answer text, such as `[1]`, match `used_citation_indices`. Each citation can include source filename, page number when available, chunk id, similarity score, and a short snippet.
 
-If the model returns a normal answer without valid supporting citation indices, the system falls back instead of returning an unsupported answer. If the model explicitly says it cannot answer from the current documents, citations may be empty.
+If the model returns a normal answer without valid supporting citation indices or matching citation markers, the system falls back instead of returning an unsupported answer. If the model explicitly says it cannot answer from the current documents, citations may be empty.
 
 ## Claim-Level Verification
 

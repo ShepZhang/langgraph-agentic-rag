@@ -316,11 +316,11 @@ def test_generate_answer_node_extracts_text_from_content_blocks():
                     {
                         "type": "text",
                         "text": '{"answer": "Grounded ',
-                    },
-                    {
-                        "type": "text",
-                        "text": 'answer.", "used_citation_indices": [1]}',
-                    },
+                        },
+                        {
+                            "type": "text",
+                            "text": 'answer [1].", "used_citation_indices": [1]}',
+                        },
                 ]
             ),
             '{"verified": true, "claims": [{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}], "reason": "supported"}',
@@ -332,7 +332,7 @@ def test_generate_answer_node_extracts_text_from_content_blocks():
 
     update = nodes.generate_answer_node(state)
 
-    assert update["answer"] == "Grounded answer."
+    assert update["answer"] == "Grounded answer [1]."
 
 
 def test_generate_answer_node_deduplicates_selected_citations():
@@ -485,6 +485,51 @@ def test_generate_answer_node_falls_back_for_normal_answer_without_citations():
     assert "无法可靠回答" in update["answer"]
     assert update["citations"] == []
     assert "citation" in update["fallback_reason"].lower()
+
+
+def test_generate_answer_node_falls_back_when_answer_markers_do_not_match_used_indices():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Agentic RAG uses retrieval grading [1].", '
+                '"used_citation_indices": [1, 2]}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["relevant_documents"] = [
+        {"content": "retrieval grading context", "source": "paper.pdf"},
+        {"content": "fallback context", "source": "paper.pdf"},
+    ]
+
+    update = nodes.generate_answer_node(state)
+
+    assert "无法可靠回答" in update["answer"]
+    assert update["citations"] == []
+    assert "citation marker" in update["fallback_reason"].lower()
+    assert len(llm.prompts) == 1
+
+
+def test_generate_answer_node_falls_back_when_answer_marker_is_out_of_range():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Agentic RAG uses retrieval grading [3].", '
+                '"used_citation_indices": [1]}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["relevant_documents"] = [{"content": "context", "source": "paper.pdf"}]
+
+    update = nodes.generate_answer_node(state)
+
+    assert "无法可靠回答" in update["answer"]
+    assert update["citations"] == []
+    assert "citation marker" in update["fallback_reason"].lower()
+    assert len(llm.prompts) == 1
 
 
 def test_generate_answer_node_falls_back_when_all_citation_indices_are_invalid():

@@ -86,6 +86,7 @@ Rules:
 - Return JSON only in this shape:
   {{"answer": "Final answer text with citation markers like [1].", "used_citation_indices": [1]}}
 - used_citation_indices must contain only the 1-based chunk numbers actually used as evidence.
+- The citation markers in answer must exactly match used_citation_indices.
 
 Original user question:
 {question}

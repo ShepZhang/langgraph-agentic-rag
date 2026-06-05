@@ -92,6 +92,7 @@ def test_prompts_contain_required_guardrails():
     assert "Retrieval query" in ANSWER_GENERATION_PROMPT
     assert "answer the original user question" in ANSWER_GENERATION_PROMPT
     assert "used_citation_indices" in ANSWER_GENERATION_PROMPT
+    assert "citation markers in answer must exactly match" in ANSWER_GENERATION_PROMPT
     assert "weak retrieval evidence" in ANSWER_GENERATION_PROMPT
     assert "citation safety fallback" in ANSWER_GENERATION_PROMPT
     assert "Original user question" in RETRIEVAL_GRADING_PROMPT

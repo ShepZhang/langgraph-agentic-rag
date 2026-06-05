@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from langchain_core.messages import BaseMessage
@@ -163,6 +164,15 @@ class AgentNodes:
         if not answer:
             return _fallback_update("Answer generation returned an empty answer.")
 
+        marker_error = _validate_answer_citation_markers(
+            answer=answer,
+            used_citation_indices=parsed_answer["used_citation_indices"],
+            document_count=len(documents),
+        )
+        if marker_error:
+            logger.warning("Answer citation marker validation failed: %s", marker_error)
+            return _fallback_update(marker_error)
+
         citations = build_citations(
             documents,
             used_citation_indices=parsed_answer["used_citation_indices"],
@@ -317,6 +327,51 @@ def is_unable_to_answer(answer: str) -> bool:
         "当前文档无法回答",
     ]
     return any(marker in normalized for marker in markers)
+
+
+def _validate_answer_citation_markers(
+    answer: str,
+    used_citation_indices: list[int],
+    document_count: int,
+) -> str:
+    """Return an error message when answer markers and used indices disagree."""
+
+    if is_unable_to_answer(answer):
+        return ""
+
+    citation_markers = _extract_answer_citation_markers(answer)
+    if not citation_markers:
+        return "Answer citation markers are missing for a normal answer."
+
+    invalid_markers = [
+        marker for marker in citation_markers if marker < 1 or marker > document_count
+    ]
+    if invalid_markers:
+        return (
+            "Answer citation markers reference out-of-range chunks: "
+            f"{sorted(set(invalid_markers))}."
+        )
+
+    marker_set = set(citation_markers)
+    used_index_set = set(used_citation_indices)
+    if marker_set != used_index_set:
+        return (
+            "Answer citation markers do not match used_citation_indices: "
+            f"markers={sorted(marker_set)}, used={sorted(used_index_set)}."
+        )
+
+    return ""
+
+
+def _extract_answer_citation_markers(answer: str) -> list[int]:
+    """Extract numeric citation markers like [1] and [2] from answer text."""
+
+    markers: list[int] = []
+    for raw_marker in re.findall(r"\[(\d+)\]", answer):
+        marker = int(raw_marker)
+        if marker not in markers:
+            markers.append(marker)
+    return markers
 
 
 def _parse_grading_result(

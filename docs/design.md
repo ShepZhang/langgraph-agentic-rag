@@ -62,11 +62,12 @@ The implementation combines citation-aware generation with lightweight claim-lev
 
 1. The LLM returns JSON with `answer` and `used_citation_indices`.
 2. The program maps those indices back to `relevant_documents`.
-3. Normal answers without valid supporting citation indices are rejected and converted to fallback.
-4. Explicit unable-to-answer responses may have empty citations.
-5. Normal cited answers are passed to a claim verifier.
-6. The claim verifier splits the answer into factual claims and checks each claim against selected citation chunks.
-7. If any important claim is unsupported, the system falls back instead of returning the answer.
+3. The program checks that citation markers in the answer text, such as `[1]`, exactly match `used_citation_indices`.
+4. Normal answers without valid supporting citation indices or matching citation markers are rejected and converted to fallback.
+5. Explicit unable-to-answer responses may have empty citations.
+6. Normal cited answers are passed to a claim verifier.
+7. The claim verifier splits the answer into factual claims and checks each claim against selected citation chunks.
+8. If any important claim is unsupported, the system falls back instead of returning the answer.
 
 This reduces unsupported answers, but the verification is still LLM-based. It is a practical prototype mechanism, not a formal proof system.
 
@@ -94,7 +95,7 @@ Both modes create the same chat-model interface for query rewriting, retrieval g
 
 ## Future Work
 
-- Stricter deterministic citation validation and human-reviewed claim labels.
+- Human-reviewed claim labels for stricter citation validation.
 - Reranking before grading.
 - Deterministic chunk IDs for incremental indexing.
 - Larger evaluation set with human-reviewed expected answers.

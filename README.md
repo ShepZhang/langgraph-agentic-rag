@@ -62,7 +62,7 @@ Implemented LangGraph nodes:
 - `rewrite_query_node`: normalizes the first query, then uses failed retrieval context for retry rewrites.
 - `retrieve_node`: calls the `retrieve_context` tool over the private Chroma index.
 - `grade_documents_node`: asks the LLM for chunk-level `relevant_indices`, then filters `relevant_documents`.
-- `generate_answer_node`: generates JSON answers from relevant chunks, maps `used_citation_indices` to evidence, and verifies cited claims before returning normal answers.
+- `generate_answer_node`: generates JSON answers from relevant chunks, checks citation marker consistency, maps `used_citation_indices` to evidence, and verifies cited claims before returning normal answers.
 - `fallback_node`: returns a clear message when the indexed documents do not support an answer.
 
 Key state fields:
@@ -90,7 +90,7 @@ Key state fields:
 - Chunk-level retrieval grading with conservative handling for invalid grading output.
 - Conditional retry with configurable max retry count.
 - Citation-aware grounded answer generation using only selected evidence chunks.
-- Citation safety: normal answers without valid supporting citation indices fall back instead of returning unsupported answers.
+- Citation safety: normal answers without valid supporting citation indices or matching answer citation markers fall back instead of returning unsupported answers.
 - Lightweight claim-level verification: normal cited answers are split into claims and checked against selected citation chunks.
 - Gradio UI for upload, indexing, question answering, citations, retrieved chunks, and retry diagnostics.
 - Lightweight evaluation runner comparing naive RAG and Agentic RAG on answer, fallback, citation, source-hit, keyword-hit, retry, relevant filtering, latency, and error metrics.
@@ -346,6 +346,7 @@ agentic-rag-document-qa/
 - Wrapped vector retrieval as an Agent tool so the workflow can explicitly call a private knowledge base instead of relying on model parameters alone.
 - Implemented chunk-level retrieval grading and conditional retry to improve reliability on vague or poorly matched questions.
 - Designed citation-aware answer generation where the model returns `used_citation_indices`, so final citations map only to evidence chunks used in the answer.
+- Added deterministic citation marker consistency checks so answer markers like `[1]` must match `used_citation_indices` before claim verification runs.
 - Added lightweight claim-level citation verification that checks whether generated answer claims are supported by selected evidence chunks before returning a normal answer.
 - Added provider-aware LLM configuration for remote OpenAI-compatible APIs and local Ollama models without changing the LangGraph workflow.
 - Supported PDF, Markdown, and TXT ingestion with chunk metadata, local embeddings, Chroma indexing, and Gradio-based document QA.
@@ -354,6 +355,7 @@ agentic-rag-document-qa/
 ## Current Limitations
 
 - Claim-level citation verification is lightweight and LLM-based. It checks claims against selected evidence chunks, but it is not a formal proof system.
+- Citation marker consistency is deterministic, but it only checks marker/index alignment. It does not prove that every cited claim is true.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
 - Evaluation uses a lightweight local QA set and should be expanded with larger datasets for more rigorous benchmarking.
 - The Chroma index currently uses a rebuild-on-index strategy. This avoids duplicate chunks for the MVP, but deterministic chunk IDs would be better for incremental indexing.
@@ -366,8 +368,9 @@ agentic-rag-document-qa/
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
 - Evaluation runner implemented: naive-vs-agentic comparison, answer/fallback/citation/source/keyword metrics, retry metrics, and relevant filtering metrics.
 - Claim-level verification implemented: cited normal answers are checked against selected evidence before being returned.
+- Deterministic citation marker consistency implemented: answer markers must match selected citation indices.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - Add FastAPI API layer.
 - Add model-specific prompt tuning and cost/latency evaluation for local Ollama models.
-- Add stricter deterministic citation validation and human-reviewed claim labels.
+- Add human-reviewed claim labels for stricter citation validation.
 - Add reranking and richer evaluation.
