@@ -138,7 +138,9 @@ def test_grade_documents_node_parses_relevant_indices_and_filters_documents():
     assert update["relevant_documents"] == [{"content": "answer context", "source": "b.md"}]
     assert update["grading_reason"] == "Chunk 2 directly answers the question."
     assert update["route"] == "generate_answer"
-    assert "rewritten question" in llm.prompts[0]
+    assert "Original user question:\nquestion" in llm.prompts[0]
+    assert "Retrieval query:\nrewritten question" in llm.prompts[0]
+    assert "grade the retrieved chunks against the original user question" in llm.prompts[0]
 
 
 def test_grade_documents_node_parses_fenced_relevance_json():
@@ -239,7 +241,8 @@ def test_generate_answer_node_uses_relevant_documents_and_selected_citations_onl
         ]
     )
     nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
-    state = create_initial_state("question")
+    state = create_initial_state("What reliability controls does Agentic RAG use?")
+    state["current_query"] = "agentic rag retrieval grading fallback"
     state["documents"] = [
         {
             "content": "irrelevant context",
@@ -280,6 +283,12 @@ def test_generate_answer_node_uses_relevant_documents_and_selected_citations_onl
     ]
     assert "irrelevant context" not in llm.prompts[0]
     assert "second relevant context" in llm.prompts[0]
+    assert (
+        "Original user question:\nWhat reliability controls does Agentic RAG use?"
+        in llm.prompts[0]
+    )
+    assert "Retrieval query:\nagentic rag retrieval grading fallback" in llm.prompts[0]
+    assert "answer the original user question" in llm.prompts[0]
 
 
 def test_generate_answer_node_extracts_text_from_content_blocks():
@@ -349,7 +358,7 @@ def test_generate_answer_node_deduplicates_selected_citations():
     ]
 
 
-def test_generate_answer_node_ignores_out_of_range_citation_indices():
+def test_generate_answer_node_keeps_valid_citation_and_ignores_invalid_indices():
     llm = FakeLLM(
         [
             (
@@ -374,6 +383,66 @@ def test_generate_answer_node_ignores_out_of_range_citation_indices():
             "snippet": "context",
         }
     ]
+
+
+def test_generate_answer_node_falls_back_for_normal_answer_without_citations():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Agentic RAG uses retrieval grading to reduce hallucination.", '
+                '"used_citation_indices": []}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["relevant_documents"] = [{"content": "context", "source": "paper.pdf"}]
+
+    update = nodes.generate_answer_node(state)
+
+    assert "无法可靠回答" in update["answer"]
+    assert update["citations"] == []
+    assert "citation" in update["fallback_reason"].lower()
+
+
+def test_generate_answer_node_falls_back_when_all_citation_indices_are_invalid():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Agentic RAG uses retrieval grading [9].", '
+                '"used_citation_indices": [9]}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["relevant_documents"] = [{"content": "context", "source": "paper.pdf"}]
+
+    update = nodes.generate_answer_node(state)
+
+    assert "无法可靠回答" in update["answer"]
+    assert update["citations"] == []
+    assert "citation" in update["fallback_reason"].lower()
+
+
+def test_generate_answer_node_allows_unable_to_answer_without_citations():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "I cannot answer from the current documents.", '
+                '"used_citation_indices": []}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["relevant_documents"] = [{"content": "context", "source": "paper.pdf"}]
+
+    update = nodes.generate_answer_node(state)
+
+    assert update["answer"] == "I cannot answer from the current documents."
+    assert update["citations"] == []
+    assert "fallback_reason" not in update
 
 
 def test_generate_answer_node_falls_back_for_invalid_answer_json():

@@ -25,6 +25,8 @@ question
 
 The agent checks whether retrieved chunks can actually answer the question. If they are not relevant enough, it rewrites the query and retries retrieval before falling back with a clear unable-to-answer response.
 
+The system keeps a strict distinction between the original user question and the retrieval query. `current_query` is optimized for search; grading and answer generation still target the original user question.
+
 ## Architecture
 
 ![Architecture](assets/architecture.png)
@@ -66,6 +68,7 @@ Implemented LangGraph nodes:
 Key state fields:
 
 - `current_query`: query currently used for retrieval.
+- `question`: original user question. Grading and answer generation use this as the target.
 - `previous_queries`: retrieval queries already attempted.
 - `retrieval_attempt`: number of actual retriever calls.
 - `retry_count`: number of failed-retrieval rewrites. Initial query normalization does not count as retry.
@@ -85,8 +88,9 @@ Key state fields:
 - Chunk-level retrieval grading with conservative handling for invalid grading output.
 - Conditional retry with configurable max retry count.
 - Citation-aware grounded answer generation using only selected evidence chunks.
+- Citation safety: normal answers without valid supporting citation indices fall back instead of returning unsupported answers.
 - Gradio UI for upload, indexing, question answering, citations, retrieved chunks, and retry diagnostics.
-- Lightweight evaluation runner for answer, fallback, citation, source-hit, keyword-hit, retry, retrieved-doc, relevant-doc, latency, and error metrics.
+- Lightweight evaluation runner comparing naive RAG and Agentic RAG on answer, fallback, citation, source-hit, keyword-hit, retry, relevant filtering, latency, and error metrics.
 
 ## Tech Stack
 
@@ -175,7 +179,12 @@ Run the lightweight evaluation script:
 .venv/bin/python -m evaluation.evaluate --questions evaluation/eval_questions.json
 ```
 
-Reported metrics:
+By default, evaluation compares:
+
+- `Naive RAG`: question -> retrieve -> generate.
+- `Agentic RAG`: question -> rewrite -> retrieve -> grade -> retry or answer.
+
+Reported comparison metrics:
 
 - `answer_rate`
 - `fallback_rate`
@@ -183,15 +192,28 @@ Reported metrics:
 - `source_hit_rate`
 - `keyword_hit_rate`
 - `fallback_correctness_rate`
+- `naive_source_hit_rate`
+- `agentic_source_hit_rate`
+- `naive_keyword_hit_rate`
+- `agentic_keyword_hit_rate`
+- `naive_citation_rate`
+- `agentic_citation_rate`
+- `naive_fallback_correctness_rate`
+- `agentic_fallback_correctness_rate`
+- `naive_average_latency`
+- `agentic_average_latency`
+
+Agentic-specific metrics:
+
 - `average_retry_count`
 - `average_retrieved_docs`
 - `average_relevant_docs`
-- `average_latency`
+- `relevant_filtering_rate`
 - `rewrite_triggered_count`
 - `error_count`
 
 If the LLM config or vector index is missing, evaluation records errors per question and still prints a report.
-The current evaluation set is intentionally small and is meant to demonstrate measurement structure, not provide a rigorous benchmark.
+The current evaluation set is a lightweight local QA set for demonstration. It is useful for comparing behavior, but it is not a rigorous benchmark.
 
 ## Example Output
 
@@ -221,20 +243,15 @@ Example evaluation summary:
 ```text
 Evaluation Report
 
-Summary
-total_questions: 2
-answer_rate: 1.0
-fallback_rate: 0.0
-citation_rate: 1.0
-source_hit_rate: 1.0
-keyword_hit_rate: 0.5
-fallback_correctness_rate: 1.0
-average_retry_count: 0.5
-average_retrieved_docs: 4.0
-average_relevant_docs: 2.0
-average_latency: 1.2345
-rewrite_triggered_count: 1
-error_count: 0
+Comparison Summary
+
+| Metric | Naive RAG | Agentic RAG |
+|---|---:|---:|
+| Source Hit Rate | 0.6 | 0.8 |
+| Keyword Hit Rate | 0.5 | 0.7 |
+| Citation Rate | 0.55 | 0.75 |
+| Fallback Correctness | 0.7 | 0.85 |
+| Avg Latency | 2.1 | 4.8 |
 ```
 
 ## Environment Variables
@@ -278,8 +295,11 @@ agentic-rag-document-qa/
 │   ├── tools.py
 │   └── prompts.py
 ├── evaluation/
+│   ├── baselines.py
 │   ├── eval_questions.json
 │   └── evaluate.py
+├── docs/
+│   └── design.md
 ├── ui/
 │   └── gradio_app.py
 ├── assets/
@@ -296,13 +316,13 @@ agentic-rag-document-qa/
 - Implemented chunk-level retrieval grading and conditional retry to improve reliability on vague or poorly matched questions.
 - Designed citation-aware answer generation where the model returns `used_citation_indices`, so final citations map only to evidence chunks used in the answer.
 - Supported PDF, Markdown, and TXT ingestion with chunk metadata, local embeddings, Chroma indexing, and Gradio-based document QA.
-- Added lightweight evaluation for answer rate, fallback rate, citation rate, source hit rate, keyword hit rate, retry count, retrieved-doc count, and relevant-doc count.
+- Added lightweight evaluation comparing naive RAG and Agentic RAG across source hit rate, keyword hit rate, citation rate, fallback correctness, retry behavior, and relevant chunk filtering.
 
 ## Current Limitations
 
-- Citation currently maps generated answers to selected evidence chunks, but does not yet perform full claim-level verification.
+- Citation currently maps generated answers to selected evidence chunks and falls back when normal answers lack valid citations, but it does not yet perform full claim-level verification.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
-- Evaluation uses a lightweight local QA set and should be expanded for more rigorous benchmarking.
+- Evaluation uses a lightweight local QA set and should be expanded with larger datasets for more rigorous benchmarking.
 - The Chroma index currently uses a rebuild-on-index strategy. This avoids duplicate chunks for the MVP, but deterministic chunk IDs would be better for incremental indexing.
 - The project is a prototype and is not intended for production deployment without further hardening.
 
@@ -311,8 +331,8 @@ agentic-rag-document-qa/
 - RAG core implemented: loading, chunking, embeddings, Chroma indexing, and retrieval.
 - LangGraph agent workflow implemented: query rewriting, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
-- Evaluation runner implemented: answer rate, citation rate, source hit rate, latency, keyword hit rate, and rewrite-trigger metrics.
-- Add a minimal naive RAG baseline in evaluation for side-by-side comparison.
+- Evaluation runner implemented: naive-vs-agentic comparison, answer/fallback/citation/source/keyword metrics, retry metrics, and relevant filtering metrics.
 - Add FastAPI API layer.
 - Add Ollama local LLM support.
+- Add claim-level citation verification.
 - Add reranking and richer evaluation.

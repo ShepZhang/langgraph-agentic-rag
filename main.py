@@ -15,7 +15,7 @@ def main() -> None:
     print(f"Embedding model: {settings.embedding_model}")
     print(f"Chroma path: {settings.chroma_persist_dir}")
     print(f"Top K: {settings.top_k}")
-    print(f"Max rewrite attempts: {settings.max_rewrite_attempts}")
+    print(f"Max retry count: {settings.max_retry_count}")
     print("Run `.venv/bin/python app.py` to start the Gradio UI.")
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent.graph import run_agent
+from evaluation.baselines import run_naive_rag
 
 
 DEFAULT_EVAL_PATH = Path(__file__).with_name("eval_questions.json")
@@ -35,6 +36,9 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
         should_answer = record.get("should_answer", True)
         if not isinstance(should_answer, bool):
             raise ValueError("should_answer must be a boolean")
+        requires_rewrite = record.get("requires_rewrite", False)
+        if not isinstance(requires_rewrite, bool):
+            raise ValueError("requires_rewrite must be a boolean")
 
         normalized = dict(record)
         normalized["expected_keywords"] = _normalize_string_list(
@@ -43,6 +47,7 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
         )
         normalized["expected_sources"] = _normalize_expected_sources(record)
         normalized["should_answer"] = should_answer
+        normalized["requires_rewrite"] = requires_rewrite
         questions.append(normalized)
 
     return questions
@@ -51,26 +56,22 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
 def evaluate_questions(
     questions: list[dict[str, Any]],
     run_agent_fn: Callable[[str], dict[str, Any]] = run_agent,
+    run_naive_fn: Callable[[str], dict[str, Any]] | None = None,
     timer: Callable[[], float] = time.perf_counter,
 ) -> dict[str, Any]:
     """Evaluate questions and return per-question results plus summary metrics."""
 
+    if run_naive_fn is not None:
+        return _evaluate_comparison(
+            questions=questions,
+            run_agent_fn=run_agent_fn,
+            run_naive_fn=run_naive_fn,
+            timer=timer,
+        )
+
     results: list[dict[str, Any]] = []
     for item in questions:
-        question = item["question"]
-        started_at = timer()
-        try:
-            agent_result = run_agent_fn(question)
-            result = _build_success_result(item, agent_result)
-            error = None
-        except Exception as exc:  # noqa: BLE001 - evaluation records agent failures.
-            result = _build_error_result(item)
-            error = _format_error(exc)
-        latency = timer() - started_at
-
-        result["latency"] = latency
-        result["error"] = error
-        results.append(result)
+        results.append(_evaluate_single_system(item, run_agent_fn, timer))
 
     return {"summary": _summarize(results, questions), "results": results}
 
@@ -78,8 +79,12 @@ def evaluate_questions(
 def format_report(report: dict[str, Any]) -> str:
     """Format an evaluation report for terminal output."""
 
+    summary = report.get("summary", {})
+    if summary.get("mode") == "comparison":
+        return _format_comparison_report(report)
+
     lines = ["Evaluation Report", "", "Summary"]
-    for key, value in report.get("summary", {}).items():
+    for key, value in summary.items():
         lines.append(f"{key}: {value}")
 
     lines.extend(["", "Questions"])
@@ -107,6 +112,7 @@ def format_report(report: dict[str, Any]) -> str:
 def main(
     argv: list[str] | None = None,
     run_agent_fn: Callable[[str], dict[str, Any]] = run_agent,
+    run_naive_fn: Callable[[str], dict[str, Any]] | None = run_naive_rag,
 ) -> int:
     """CLI entrypoint."""
 
@@ -124,9 +130,79 @@ def main(
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         parser.error(f"Unable to load evaluation questions: {exc}")
 
-    report = evaluate_questions(questions, run_agent_fn=run_agent_fn)
+    report = evaluate_questions(
+        questions,
+        run_agent_fn=run_agent_fn,
+        run_naive_fn=run_naive_fn,
+    )
     print(format_report(report))
     return 0
+
+
+def _evaluate_comparison(
+    questions: list[dict[str, Any]],
+    run_agent_fn: Callable[[str], dict[str, Any]],
+    run_naive_fn: Callable[[str], dict[str, Any]],
+    timer: Callable[[], float],
+) -> dict[str, Any]:
+    """Evaluate naive and agentic RAG on the same questions."""
+
+    paired_results: list[dict[str, Any]] = []
+    naive_results: list[dict[str, Any]] = []
+    agentic_results: list[dict[str, Any]] = []
+
+    for item in questions:
+        naive_result = _evaluate_single_system(item, run_naive_fn, timer)
+        agentic_result = _evaluate_single_system(item, run_agent_fn, timer)
+        naive_results.append(naive_result)
+        agentic_results.append(agentic_result)
+        paired_results.append(
+            {
+                "question": item["question"],
+                "requires_rewrite": item.get("requires_rewrite", False),
+                "naive": naive_result,
+                "agentic": agentic_result,
+            }
+        )
+
+    naive_summary = _summarize(naive_results, questions)
+    agentic_summary = _summarize(agentic_results, questions)
+    return {
+        "summary": {
+            "mode": "comparison",
+            "total_questions": len(questions),
+            "naive": naive_summary,
+            "agentic": agentic_summary,
+            "comparison": _build_comparison_summary(
+                naive_summary=naive_summary,
+                agentic_summary=agentic_summary,
+            ),
+        },
+        "results": paired_results,
+    }
+
+
+def _evaluate_single_system(
+    item: dict[str, Any],
+    runner: Callable[[str], dict[str, Any]],
+    timer: Callable[[], float],
+) -> dict[str, Any]:
+    """Evaluate one system for one question and record errors as data."""
+
+    question = item["question"]
+    started_at = timer()
+    try:
+        system_result = runner(question)
+        result = _build_success_result(item, system_result)
+        error = None
+    except Exception as exc:  # noqa: BLE001 - evaluation records system failures.
+        result = _build_error_result(item)
+        error = _format_error(exc)
+    latency = timer() - started_at
+
+    result["latency"] = latency
+    result["error"] = error
+    return result
 
 
 def _build_success_result(
@@ -227,6 +303,7 @@ def _summarize(
             "average_retry_count": 0,
             "average_retrieved_docs": 0,
             "average_relevant_docs": 0,
+            "relevant_filtering_rate": 0,
             "average_latency": 0,
             "rewrite_triggered_count": 0,
             "error_count": 0,
@@ -246,6 +323,8 @@ def _summarize(
     )
     rewrite_triggered_count = sum(1 for result in results if result["rewrite_triggered"])
     error_count = sum(1 for result in results if result["error"])
+    retrieved_doc_count = sum(result["retrieved_doc_count"] for result in results)
+    relevant_doc_count = sum(result["relevant_doc_count"] for result in results)
 
     return {
         "total_questions": total_questions,
@@ -264,9 +343,39 @@ def _summarize(
         "average_relevant_docs": _average(
             result["relevant_doc_count"] for result in results
         ),
+        "relevant_filtering_rate": _rate(
+            retrieved_doc_count - relevant_doc_count,
+            retrieved_doc_count,
+        ),
         "average_latency": _average(result["latency"] for result in results),
         "rewrite_triggered_count": rewrite_triggered_count,
         "error_count": error_count,
+    }
+
+
+def _build_comparison_summary(
+    naive_summary: dict[str, Any],
+    agentic_summary: dict[str, Any],
+) -> dict[str, Any]:
+    """Flatten core comparison metrics for easy JSON/report consumption."""
+
+    return {
+        "naive_source_hit_rate": naive_summary.get("source_hit_rate", "N/A"),
+        "agentic_source_hit_rate": agentic_summary.get("source_hit_rate", "N/A"),
+        "naive_keyword_hit_rate": naive_summary.get("keyword_hit_rate", "N/A"),
+        "agentic_keyword_hit_rate": agentic_summary.get("keyword_hit_rate", "N/A"),
+        "naive_citation_rate": naive_summary.get("citation_rate", "N/A"),
+        "agentic_citation_rate": agentic_summary.get("citation_rate", "N/A"),
+        "naive_fallback_correctness_rate": naive_summary.get(
+            "fallback_correctness_rate",
+            "N/A",
+        ),
+        "agentic_fallback_correctness_rate": agentic_summary.get(
+            "fallback_correctness_rate",
+            "N/A",
+        ),
+        "naive_average_latency": naive_summary.get("average_latency", "N/A"),
+        "agentic_average_latency": agentic_summary.get("average_latency", "N/A"),
     }
 
 
@@ -280,6 +389,72 @@ def _normalize_expected_sources(record: dict[str, Any]) -> list[str]:
         record.get("expected_source"),
         field_name="expected_source",
     )
+
+
+def _format_comparison_report(report: dict[str, Any]) -> str:
+    """Format a naive-vs-agentic report as readable markdown."""
+
+    summary = report.get("summary", {})
+    naive = summary.get("naive", {})
+    agentic = summary.get("agentic", {})
+
+    lines = [
+        "Evaluation Report",
+        "",
+        "Comparison Summary",
+        "",
+        "| Metric | Naive RAG | Agentic RAG |",
+        "|---|---:|---:|",
+        (
+            f"| Source Hit Rate | {naive.get('source_hit_rate', 'N/A')} | "
+            f"{agentic.get('source_hit_rate', 'N/A')} |"
+        ),
+        (
+            f"| Keyword Hit Rate | {naive.get('keyword_hit_rate', 'N/A')} | "
+            f"{agentic.get('keyword_hit_rate', 'N/A')} |"
+        ),
+        (
+            f"| Citation Rate | {naive.get('citation_rate', 'N/A')} | "
+            f"{agentic.get('citation_rate', 'N/A')} |"
+        ),
+        (
+            f"| Fallback Correctness | "
+            f"{naive.get('fallback_correctness_rate', 'N/A')} | "
+            f"{agentic.get('fallback_correctness_rate', 'N/A')} |"
+        ),
+        (
+            f"| Avg Latency | {naive.get('average_latency', 'N/A')} | "
+            f"{agentic.get('average_latency', 'N/A')} |"
+        ),
+        "",
+        "Agentic-specific Metrics",
+        f"average_retry_count: {agentic.get('average_retry_count', 'N/A')}",
+        f"rewrite_triggered_count: {agentic.get('rewrite_triggered_count', 'N/A')}",
+        f"average_retrieved_docs: {agentic.get('average_retrieved_docs', 'N/A')}",
+        f"average_relevant_docs: {agentic.get('average_relevant_docs', 'N/A')}",
+        f"relevant_filtering_rate: {agentic.get('relevant_filtering_rate', 'N/A')}",
+        "",
+        "Questions",
+    ]
+
+    for index, result in enumerate(report.get("results", []), start=1):
+        naive_result = result.get("naive", {})
+        agentic_result = result.get("agentic", {})
+        lines.append(
+            (
+                f"{index}. {result.get('question', '')} | "
+                f"naive_answer={_format_bool(naive_result.get('answer_returned'))} | "
+                f"agentic_answer={_format_bool(agentic_result.get('answer_returned'))} | "
+                f"naive_source_hit={_format_bool(naive_result.get('source_hit'))} | "
+                f"agentic_source_hit={_format_bool(agentic_result.get('source_hit'))} | "
+                f"retry_count={agentic_result.get('retry_count', 0)} | "
+                f"retrieved={agentic_result.get('retrieved_doc_count', 0)} | "
+                f"relevant={agentic_result.get('relevant_doc_count', 0)} | "
+                f"error={naive_result.get('error') or agentic_result.get('error') or ''}"
+            )
+        )
+
+    return "\n".join(lines)
 
 
 def _normalize_string_list(value: Any, field_name: str) -> list[str]:
@@ -343,9 +518,15 @@ def _is_fallback_answer(answer: str) -> bool:
     fallback_markers = [
         "cannot answer from the current documents",
         "cannot answer based on the current documents",
+        "provided documents do not contain enough information",
+        "documents do not contain enough information",
+        "do not contain enough information",
+        "don't have enough evidence from the current documents",
+        "do not have enough evidence from the current documents",
         "i cannot answer",
         "无法可靠回答",
         "无法根据当前文档回答",
+        "当前文档无法回答",
     ]
     return any(marker in lower_answer for marker in fallback_markers)
 

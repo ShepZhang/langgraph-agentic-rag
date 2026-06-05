@@ -43,21 +43,27 @@ Previously retrieved chunks:
 Improved retrieval query:"""
 
 
-RETRIEVAL_GRADING_PROMPT = """You are grading whether retrieved chunks can answer a user's question.
+RETRIEVAL_GRADING_PROMPT = """You are grading whether retrieved chunks can answer a user's original question.
 
 Do not mark chunks relevant just because they share keywords.
-Mark them relevant only if they contain enough factual information to answer the question.
+Mark them relevant only if they contain enough factual information to answer the original user question.
 Return JSON only in this shape:
 {{"relevant": true, "relevant_indices": [1, 3], "reason": "short reason"}}
 
 Rules:
+- The retrieval query is only used to explain how the chunks were searched.
+- You must grade the retrieved chunks against the original user question.
+- Do not grade the chunks as relevant only because they match the retrieval query.
 - relevant_indices must use 1-based indexes matching the retrieved chunk numbers.
 - If no chunks are relevant, return:
   {{"relevant": false, "relevant_indices": [], "reason": "short reason"}}
 - Return JSON only. No markdown fences.
 
-Question:
+Original user question:
 {question}
+
+Retrieval query:
+{current_query}
 
 Retrieved chunks:
 {documents}
@@ -68,6 +74,9 @@ JSON:"""
 ANSWER_GENERATION_PROMPT = """You answer questions using only the retrieved chunks.
 
 Rules:
+- You must answer the original user question.
+- The retrieval query is provided only to explain how the documents were searched.
+- Do not answer the retrieval query as if it were the user's question.
 - Use only facts from the retrieved chunks.
 - Do not invent facts that are not present in the retrieved chunks.
 - For key facts, include citation markers like [1] and [2] that correspond to chunk numbers.
@@ -77,8 +86,11 @@ Rules:
   {{"answer": "Final answer text with citation markers like [1].", "used_citation_indices": [1]}}
 - used_citation_indices must contain only the 1-based chunk numbers actually used as evidence.
 
-Question:
+Original user question:
 {question}
+
+Retrieval query:
+{current_query}
 
 Retrieved chunks:
 {documents}

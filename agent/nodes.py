@@ -115,7 +115,8 @@ class AgentNodes:
             }
 
         prompt = RETRIEVAL_GRADING_PROMPT.format(
-            question=state.get("current_query") or state["question"],
+            question=state["question"],
+            current_query=state.get("current_query") or state["question"],
             documents=format_documents(documents),
         )
         raw_result = _coerce_llm_text(self.llm.invoke(prompt))
@@ -147,7 +148,8 @@ class AgentNodes:
             return _fallback_update(reason)
 
         prompt = ANSWER_GENERATION_PROMPT.format(
-            question=state.get("current_query") or state["question"],
+            question=state["question"],
+            current_query=state.get("current_query") or state["question"],
             documents=format_documents(documents),
         )
         raw_result = _coerce_llm_text(self.llm.invoke(prompt))
@@ -164,6 +166,11 @@ class AgentNodes:
             documents,
             used_citation_indices=parsed_answer["used_citation_indices"],
         )
+        if not citations and not is_unable_to_answer(answer):
+            logger.warning("Answer generation returned a normal answer without citations.")
+            return _fallback_update(
+                "Answer generation did not return valid supporting citations."
+            )
         logger.info(
             "Generated answer citation_count=%s used_indices=%s",
             len(citations),
@@ -220,6 +227,25 @@ def build_citations(
         seen.add(key)
         citations.append(citation)
     return citations
+
+
+def is_unable_to_answer(answer: str) -> bool:
+    """Return True when an answer explicitly declines due to missing evidence."""
+
+    normalized = " ".join(answer.lower().split())
+    markers = [
+        "cannot answer from the current documents",
+        "cannot answer based on the current documents",
+        "provided documents do not contain enough information",
+        "do not contain enough information",
+        "don't have enough evidence from the current documents",
+        "do not have enough evidence from the current documents",
+        "i cannot answer",
+        "无法根据当前文档回答",
+        "无法可靠回答",
+        "当前文档无法回答",
+    ]
+    return any(marker in normalized for marker in markers)
 
 
 def _parse_grading_result(

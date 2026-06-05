@@ -1,13 +1,59 @@
 # Agentic RAG Notes
 
-Agentic RAG is a retrieval-augmented generation approach where an agent controls the retrieval workflow instead of following a single fixed retrieve-and-answer path.
+## What RAG Means
 
-In this project, the agent first rewrites unclear or context-dependent questions into standalone search queries. Then it calls a retriever tool named `retrieve_context` to search the indexed private knowledge base.
+Retrieval-Augmented Generation, or RAG, is a pattern where a system retrieves relevant external context before asking a language model to answer. The goal is to ground the answer in private or domain-specific documents instead of relying only on the model's parameters.
 
-After retrieval, the agent performs retrieval grading. Retrieval grading checks whether the retrieved chunks are truly relevant and sufficient to answer the user's question. A chunk should not be considered relevant just because it contains a matching keyword.
+In a basic RAG pipeline, the system usually follows one fixed path: receive a question, retrieve similar chunks, and generate an answer from those chunks. This approach is simple, but it can fail when the question is vague, when retrieval returns weak evidence, or when the model answers from irrelevant context.
+
+## What Agentic RAG Means
+
+Agentic RAG is a retrieval-augmented generation approach where an agent controls the retrieval workflow instead of following a single fixed retrieve-and-answer path. The agent can rewrite a query, call a retriever tool, grade retrieved chunks, retry retrieval, and fall back when evidence is insufficient.
+
+The main difference between naive RAG and Agentic RAG is control flow. Naive RAG usually retrieves once and immediately generates an answer. Agentic RAG can evaluate retrieval quality, improve the query, retry retrieval, and avoid answering when the evidence does not support the question.
+
+## Query Rewriting
+
+Query rewriting turns unclear, conversational, or context-dependent user questions into standalone retrieval queries. For example, if the user asks, "How does it improve reliability?" after discussing Agentic RAG, the system can rewrite the retrieval query to "How does Agentic RAG improve reliability with retrieval grading and fallback?"
+
+The rewritten query is only used for search. The system must still answer the original user question, not the rewritten retrieval query. This distinction matters because a retrieval query may include extra keywords that help search but should not change the user's intent.
+
+## Retriever Tool
+
+In this project, the retriever is exposed as an agent tool named `retrieve_context`. The tool searches the indexed private knowledge base and returns document chunks with metadata such as source filename, page number when available, chunk id, and similarity score.
+
+Treating retrieval as a tool makes the workflow easier to explain: the agent decides when to call the knowledge base, receives structured evidence, and then decides whether that evidence is good enough.
+
+## Retrieval Grading
+
+After retrieval, the agent performs retrieval grading. Retrieval grading checks whether the retrieved chunks are truly relevant and sufficient to answer the original user question. A chunk should not be considered relevant just because it contains a matching keyword.
+
+This project uses chunk-level grading. The model returns `relevant_indices`, which identify the retrieved chunks that contain useful evidence. The system then filters the raw retrieved documents into `relevant_documents`, so answer generation does not use unrelated chunks by default.
 
 If the retrieved chunks are not relevant enough, the agent rewrites the question and retrieves again. The system limits this retry loop with a maximum retry count. If the documents still do not provide reliable evidence, the agent returns a fallback message saying that the current documents cannot answer the question.
 
-When the retrieved chunks are relevant, the answer generation step must use only the retrieved context. The answer should include citations such as source filename, page number when available, chunk id, and retrieval score. This citation-aware answer generation helps reduce hallucination.
+## Fallback Handling
 
-The main difference between naive RAG and Agentic RAG is control flow. Naive RAG usually retrieves once and immediately generates an answer. Agentic RAG can rewrite the query, evaluate retrieval quality, retry retrieval, and fall back when the evidence is insufficient.
+Fallback handling is a reliability control. If no relevant evidence is found after the allowed retry attempts, the system should say that the current documents cannot answer the question. It should not invent facts about topics that are not present in the indexed knowledge base.
+
+Fallback is especially important for private knowledge-base QA because users may ask questions about policies, people, or systems that were never uploaded. A grounded system should prefer an explicit unable-to-answer response over a confident unsupported answer.
+
+## Citation-Aware Generation
+
+When the retrieved chunks are relevant, the answer generation step must use only the selected relevant context. The answer should include citation markers such as `[1]` and `[2]`, and the model must return `used_citation_indices` so the program can map those indices back to source chunks.
+
+This project performs selected evidence citation. The program returns citations only for chunks that the model says it used. Each citation can include source filename, page number when available, chunk id, similarity score, and a short snippet.
+
+If the model returns a normal answer without valid supporting citation indices, the system falls back instead of returning an unsupported answer. If the model explicitly says it cannot answer from the current documents, citations may be empty.
+
+## Current Limitations
+
+Citation-aware generation is not the same as full claim-level citation verification. This project maps selected evidence chunks to the generated answer, but it does not yet split the answer into individual claims and verify each claim against its cited chunk.
+
+Retrieval grading also depends on language-model judgment. The parser treats malformed JSON conservatively, but a stronger production system would add more deterministic checks, reranking, and claim verification.
+
+## Evaluation Metrics
+
+The evaluation runner tracks answer rate, fallback rate, citation rate, source hit rate, keyword hit rate, fallback correctness, retry count, retrieved document count, and relevant document count.
+
+The project can compare naive RAG and Agentic RAG. Naive RAG retrieves once and generates an answer. Agentic RAG uses query rewriting, retrieval grading, relevant chunk filtering, retry routing, and fallback handling.

@@ -23,6 +23,7 @@ def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):
                     "question": "What is not covered?",
                     "expected_sources": [],
                     "should_answer": False,
+                    "requires_rewrite": True,
                 },
             ]
         ),
@@ -38,14 +39,25 @@ def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):
             "expected_source": "legacy.md",
             "expected_sources": ["legacy.md"],
             "should_answer": True,
+            "requires_rewrite": False,
         },
         {
             "question": "What is not covered?",
             "expected_keywords": [],
             "expected_sources": [],
             "should_answer": False,
+            "requires_rewrite": True,
         },
     ]
+
+
+def test_load_eval_questions_defaults_requires_rewrite_false(tmp_path):
+    path = tmp_path / "eval.json"
+    path.write_text(json.dumps([{"question": "What is RAG?"}]), encoding="utf-8")
+
+    questions = load_eval_questions(path)
+
+    assert questions[0]["requires_rewrite"] is False
 
 
 def test_load_eval_questions_rejects_missing_question(tmp_path):
@@ -123,6 +135,7 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
         "average_retry_count": 1.5,
         "average_retrieved_docs": 1.5,
         "average_relevant_docs": 0.5,
+        "relevant_filtering_rate": 0.6667,
         "average_latency": 1.5,
         "rewrite_triggered_count": 2,
         "error_count": 0,
@@ -131,6 +144,86 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
     assert report["results"][0]["keyword_hit"] is True
     assert report["results"][1]["fallback_triggered"] is True
     assert report["results"][1]["fallback_correct"] is True
+
+
+def test_evaluate_questions_compares_naive_and_agentic_results():
+    questions = [
+        {
+            "question": "How does it improve reliability?",
+            "expected_keywords": ["grading"],
+            "expected_sources": ["notes.md"],
+            "should_answer": True,
+            "requires_rewrite": True,
+        },
+        {
+            "question": "What is the payroll policy?",
+            "expected_keywords": [],
+            "expected_sources": [],
+            "should_answer": False,
+            "requires_rewrite": False,
+        },
+    ]
+    timer_values = iter([0.0, 1.0, 1.0, 3.0, 3.0, 4.0, 4.0, 6.0])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_run_agent(question):
+        if "reliability" in question:
+            return {
+                "answer": "Agentic RAG uses retrieval grading.",
+                "citations": [{"source": "notes.md"}],
+                "retrieved_documents": [{"source": "notes.md"}, {"source": "other.md"}],
+                "relevant_documents": [{"source": "notes.md"}],
+                "retry_count": 1,
+            }
+        return {
+            "answer": "根据当前已索引文档，无法可靠回答这个问题。",
+            "citations": [],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [],
+            "retry_count": 2,
+            "fallback_reason": "No relevant chunks.",
+        }
+
+    def fake_run_naive(question):
+        if "reliability" in question:
+            return {
+                "answer": "Naive answer without the expected term.",
+                "citations": [],
+                "retrieved_documents": [{"source": "other.md"}],
+                "relevant_documents": [{"source": "other.md"}],
+                "retry_count": 0,
+                "fallback_reason": "Naive RAG answer generation did not return valid supporting citations.",
+            }
+        return {
+            "answer": "The documents do not contain enough information.",
+            "citations": [],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [],
+            "retry_count": 0,
+        }
+
+    report = evaluate_questions(
+        questions,
+        run_agent_fn=fake_run_agent,
+        run_naive_fn=fake_run_naive,
+        timer=fake_timer,
+    )
+
+    assert report["summary"]["mode"] == "comparison"
+    assert report["summary"]["agentic"]["source_hit_rate"] == 1.0
+    assert report["summary"]["naive"]["source_hit_rate"] == 0.0
+    assert report["summary"]["comparison"]["agentic_source_hit_rate"] == 1.0
+    assert report["summary"]["comparison"]["naive_source_hit_rate"] == 0.0
+    assert report["summary"]["comparison"]["agentic_keyword_hit_rate"] == 1.0
+    assert report["summary"]["comparison"]["naive_keyword_hit_rate"] == 0.0
+    assert report["summary"]["comparison"]["agentic_fallback_correctness_rate"] == 1.0
+    assert report["summary"]["comparison"]["naive_fallback_correctness_rate"] == 0.5
+    assert report["summary"]["agentic"]["average_retry_count"] == 1.5
+    assert report["summary"]["agentic"]["relevant_filtering_rate"] == 0.6667
+    assert report["results"][0]["agentic"]["rewrite_triggered"] is True
+    assert report["results"][0]["naive"]["rewrite_triggered"] is False
 
 
 def test_evaluate_questions_records_agent_errors():
@@ -235,34 +328,52 @@ def test_evaluate_questions_error_message_includes_type_for_empty_message():
 def test_format_report_includes_summary_and_question_rows():
     report = {
         "summary": {
-            "total_questions": 1,
-            "answer_rate": 1.0,
-            "fallback_rate": 0.0,
-            "citation_rate": 1.0,
-            "source_hit_rate": 1.0,
-            "keyword_hit_rate": 1.0,
-            "fallback_correctness_rate": 1.0,
-            "average_retry_count": 1.0,
-            "average_retrieved_docs": 2.0,
-            "average_relevant_docs": 1.0,
-            "average_latency": 0.25,
-            "rewrite_triggered_count": 1,
-            "error_count": 0,
+            "mode": "comparison",
+            "naive": {
+                "source_hit_rate": 0.5,
+                "keyword_hit_rate": 0.25,
+                "citation_rate": 0.5,
+                "fallback_correctness_rate": 0.75,
+                "average_latency": 0.2,
+            },
+            "agentic": {
+                "source_hit_rate": 1.0,
+                "keyword_hit_rate": 1.0,
+                "citation_rate": 1.0,
+                "fallback_correctness_rate": 1.0,
+                "average_latency": 0.25,
+                "average_retry_count": 1.0,
+                "rewrite_triggered_count": 1,
+                "average_retrieved_docs": 2.0,
+                "average_relevant_docs": 1.0,
+                "relevant_filtering_rate": 0.5,
+            },
+            "comparison": {
+                "naive_source_hit_rate": 0.5,
+                "agentic_source_hit_rate": 1.0,
+                "naive_keyword_hit_rate": 0.25,
+                "agentic_keyword_hit_rate": 1.0,
+                "naive_citation_rate": 0.5,
+                "agentic_citation_rate": 1.0,
+                "naive_fallback_correctness_rate": 0.75,
+                "agentic_fallback_correctness_rate": 1.0,
+                "naive_average_latency": 0.2,
+                "agentic_average_latency": 0.25,
+            },
         },
         "results": [
             {
                 "question": "What is Agentic RAG?",
-                "answer_returned": True,
-                "fallback_triggered": False,
-                "citation_returned": True,
-                "source_hit": True,
-                "keyword_hit": True,
-                "rewrite_triggered": True,
-                "retry_count": 1,
-                "retrieved_doc_count": 2,
-                "relevant_doc_count": 1,
-                "latency": 0.25,
-                "error": "",
+                "naive": {"answer_returned": True, "source_hit": False, "error": ""},
+                "agentic": {
+                    "answer_returned": True,
+                    "source_hit": True,
+                    "retry_count": 1,
+                    "retrieved_doc_count": 2,
+                    "relevant_doc_count": 1,
+                    "latency": 0.25,
+                    "error": "",
+                },
             }
         ],
     }
@@ -270,8 +381,9 @@ def test_format_report_includes_summary_and_question_rows():
     text = format_report(report)
 
     assert "Evaluation Report" in text
-    assert "total_questions: 1" in text
-    assert "source_hit_rate: 1.0" in text
+    assert "| Metric | Naive RAG | Agentic RAG |" in text
+    assert "| Source Hit Rate | 0.5 | 1.0 |" in text
+    assert "Agentic-specific Metrics" in text
     assert "retry_count=1" in text
     assert "What is Agentic RAG?" in text
 
@@ -303,12 +415,29 @@ def test_main_prints_report_with_injected_runner(tmp_path, capsys):
             "retry_count": 0,
         }
 
-    exit_code = main(["--questions", str(path)], run_agent_fn=fake_run_agent)
+    def fake_run_naive(question):
+        return {
+            "answer": "Naive RAG uses retrieval.",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [
+                {"source": "notes.md", "content": "Naive RAG uses retrieval."}
+            ],
+            "relevant_documents": [
+                {"source": "notes.md", "content": "Naive RAG uses retrieval."}
+            ],
+            "retry_count": 0,
+        }
+
+    exit_code = main(
+        ["--questions", str(path)],
+        run_agent_fn=fake_run_agent,
+        run_naive_fn=fake_run_naive,
+    )
 
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "Evaluation Report" in captured.out
-    assert "total_questions: 1" in captured.out
+    assert "| Metric | Naive RAG | Agentic RAG |" in captured.out
 
 
 def test_main_reports_question_load_errors_without_traceback(tmp_path, capsys):

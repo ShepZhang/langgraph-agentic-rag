@@ -83,7 +83,13 @@ def test_prompts_contain_required_guardrails():
     assert "previous retrieval query" in RETRY_QUERY_REWRITE_PROMPT.lower()
     assert "avoid repeating" in RETRY_QUERY_REWRITE_PROMPT.lower()
     assert "retrieved chunks" in ANSWER_GENERATION_PROMPT.lower()
+    assert "Original user question" in ANSWER_GENERATION_PROMPT
+    assert "Retrieval query" in ANSWER_GENERATION_PROMPT
+    assert "answer the original user question" in ANSWER_GENERATION_PROMPT
     assert "used_citation_indices" in ANSWER_GENERATION_PROMPT
+    assert "Original user question" in RETRIEVAL_GRADING_PROMPT
+    assert "Retrieval query" in RETRIEVAL_GRADING_PROMPT
+    assert "original user question" in RETRIEVAL_GRADING_PROMPT
     assert "json" in RETRIEVAL_GRADING_PROMPT.lower()
     assert "relevant_indices" in RETRIEVAL_GRADING_PROMPT
     assert "keyword" in RETRIEVAL_GRADING_PROMPT.lower()

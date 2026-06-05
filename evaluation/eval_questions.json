@@ -1,20 +1,142 @@
 [
   {
-    "question": "What is Agentic RAG?",
-    "expected_keywords": ["agent", "retrieval", "query rewrite"],
+    "question": "What is Retrieval-Augmented Generation?",
+    "expected_keywords": ["retrieves", "external context", "answer"],
     "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true
+    "should_answer": true,
+    "requires_rewrite": false
   },
   {
-    "question": "How does retrieval grading improve RAG reliability?",
-    "expected_keywords": ["relevant", "grading", "retrieved chunks"],
+    "question": "What is Agentic RAG?",
+    "expected_keywords": ["agent", "retrieval workflow", "retry"],
     "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "How is naive RAG different from Agentic RAG?",
+    "expected_keywords": ["retrieves once", "control flow", "retry"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What does query rewriting do in this project?",
+    "expected_keywords": ["standalone", "retrieval", "original user question"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What is the retriever tool called?",
+    "expected_keywords": ["retrieve_context", "tool", "knowledge base"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What does chunk-level retrieval grading return?",
+    "expected_keywords": ["relevant_indices", "relevant_documents"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "When should the system fall back instead of answering?",
+    "expected_keywords": ["relevant evidence", "retry", "cannot answer"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What evaluation metrics are tracked?",
+    "expected_keywords": ["answer rate", "citation rate", "fallback correctness"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "How does it improve reliability?",
+    "expected_keywords": ["retrieval grading", "fallback"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": true
+  },
+  {
+    "question": "Why is that better than the simple version?",
+    "expected_keywords": ["naive RAG", "control flow", "retry"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": true
+  },
+  {
+    "question": "What does the tool return?",
+    "expected_keywords": ["source filename", "chunk id", "similarity score"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": true
+  },
+  {
+    "question": "How does the system know which chunks to use?",
+    "expected_keywords": ["chunk-level grading", "relevant_indices"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": true
+  },
+  {
+    "question": "What happens if the evidence is weak?",
+    "expected_keywords": ["rewrites", "retrieves again", "fallback"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": true
+  },
+  {
+    "question": "Is this the same as complete citation verification?",
+    "expected_keywords": ["not the same", "claim-level", "future"],
+    "expected_sources": ["agentic_rag_notes.md"],
+    "should_answer": true,
+    "requires_rewrite": true
   },
   {
     "question": "What is the company's private payroll policy?",
     "expected_keywords": [],
     "expected_sources": [],
-    "should_answer": false
+    "should_answer": false,
+    "requires_rewrite": false
+  },
+  {
+    "question": "Who is the CEO of the company that owns these documents?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "should_answer": false,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What are the database credentials for the production system?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "should_answer": false,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What is the vacation approval process for employees?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "should_answer": false,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What are the quarterly revenue numbers?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "should_answer": false,
+    "requires_rewrite": false
+  },
+  {
+    "question": "Which cloud vendor does this project use in production?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "should_answer": false,
+    "requires_rewrite": false
   }
 ]
