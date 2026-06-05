@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
+    CLAIM_VERIFICATION_PROMPT,
     QUERY_REWRITE_PROMPT,
     RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
@@ -26,6 +27,10 @@ def test_create_initial_state_sets_defaults():
     assert state["grading_reason"] == ""
     assert state["answer"] == ""
     assert state["citations"] == []
+    assert state["claims"] == []
+    assert state["claim_verification"] == {}
+    assert state["claim_verification_reason"] == ""
+    assert state["is_verified"] is False
     assert state["rewrite_count"] == 0
     assert state["retry_count"] == 0
     assert state["retrieval_attempt"] == 0
@@ -87,9 +92,16 @@ def test_prompts_contain_required_guardrails():
     assert "Retrieval query" in ANSWER_GENERATION_PROMPT
     assert "answer the original user question" in ANSWER_GENERATION_PROMPT
     assert "used_citation_indices" in ANSWER_GENERATION_PROMPT
+    assert "weak retrieval evidence" in ANSWER_GENERATION_PROMPT
+    assert "citation safety fallback" in ANSWER_GENERATION_PROMPT
     assert "Original user question" in RETRIEVAL_GRADING_PROMPT
     assert "Retrieval query" in RETRIEVAL_GRADING_PROMPT
     assert "original user question" in RETRIEVAL_GRADING_PROMPT
     assert "json" in RETRIEVAL_GRADING_PROMPT.lower()
     assert "relevant_indices" in RETRIEVAL_GRADING_PROMPT
     assert "keyword" in RETRIEVAL_GRADING_PROMPT.lower()
+    assert "claim-level citation verifier" in CLAIM_VERIFICATION_PROMPT.lower()
+    assert "Original user question" in CLAIM_VERIFICATION_PROMPT
+    assert "Answer to verify" in CLAIM_VERIFICATION_PROMPT
+    assert "Selected citation chunks" in CLAIM_VERIFICATION_PROMPT
+    assert "verified" in CLAIM_VERIFICATION_PROMPT

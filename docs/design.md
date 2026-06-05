@@ -32,6 +32,8 @@ Important fields:
 - `grading_reason`: reason returned by the grading step.
 - `retry_count`: failed-retrieval rewrites. Initial query normalization does not count as retry.
 - `citations`: final selected evidence citations.
+- `claims`: factual claims extracted during claim-level verification.
+- `is_verified`: whether normal answer claims were verified against selected evidence.
 - `fallback_reason`: why the system declined to answer.
 
 The most important semantic boundary is that `current_query` does not replace `question`. The retrieval query may contain extra search terms, but grading and answer generation must still target the original user question.
@@ -52,16 +54,19 @@ The conditional edge routes based on evidence:
 - no relevant documents and `retry_count < max_retry_count` -> `rewrite_query`
 - no relevant documents and retry budget exhausted -> `fallback`
 
-## Citation Safety
+## Citation Safety And Claim Verification
 
-The current implementation performs citation-aware generation with selected evidence citations:
+The implementation combines citation-aware generation with lightweight claim-level verification:
 
 1. The LLM returns JSON with `answer` and `used_citation_indices`.
 2. The program maps those indices back to `relevant_documents`.
 3. Normal answers without valid supporting citation indices are rejected and converted to fallback.
 4. Explicit unable-to-answer responses may have empty citations.
+5. Normal cited answers are passed to a claim verifier.
+6. The claim verifier splits the answer into factual claims and checks each claim against selected citation chunks.
+7. If any important claim is unsupported, the system falls back instead of returning the answer.
 
-This reduces unsupported answers, but it is not full claim-level citation verification. The system does not yet split the answer into individual claims and verify every claim against its cited chunk.
+This reduces unsupported answers, but the verification is still LLM-based. It is a practical prototype mechanism, not a formal proof system.
 
 ## Evaluation
 
@@ -72,13 +77,13 @@ Evaluation compares two flows:
 
 The evaluation set includes direct questions, questions that benefit from rewrite, and questions that should not be answerable from the sample documents.
 
-Metrics include source hit rate, keyword hit rate, citation rate, fallback correctness, latency, retry count, retrieved document count, relevant document count, and relevant filtering rate.
+Metrics include source hit rate, keyword hit rate, citation rate, claim verification rate, fallback correctness, latency, retry count, retrieved document count, relevant document count, and relevant filtering rate.
 
 The evaluation is intentionally lightweight. It supports project explanation and regression checks, but it is not a rigorous benchmark.
 
 ## Future Work
 
-- Claim-level citation verification.
+- Stricter deterministic citation validation and human-reviewed claim labels.
 - Reranking before grading.
 - Deterministic chunk IDs for incremental indexing.
 - Larger evaluation set with human-reviewed expected answers.

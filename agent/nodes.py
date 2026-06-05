@@ -10,6 +10,7 @@ from langchain_core.messages import BaseMessage
 
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
+    CLAIM_VERIFICATION_PROMPT,
     QUERY_REWRITE_PROMPT,
     RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
@@ -171,6 +172,33 @@ class AgentNodes:
             return _fallback_update(
                 "Answer generation did not return valid supporting citations."
             )
+        if citations:
+            selected_documents = _select_documents_by_indices(
+                documents,
+                parsed_answer["used_citation_indices"],
+            )
+            verification = self._verify_answer_claims(
+                question=state["question"],
+                answer=answer,
+                documents=selected_documents,
+            )
+            if verification is None:
+                logger.warning("Claim verification returned invalid JSON.")
+                return _fallback_update("Claim verification returned invalid JSON.")
+            if not verification["verified"]:
+                logger.warning(
+                    "Claim verification failed: %s",
+                    verification["reason"],
+                )
+                return _fallback_update(
+                    f"Claim verification failed: {verification['reason']}"
+                )
+        else:
+            verification = {
+                "verified": False,
+                "claims": [],
+                "reason": "Unable-to-answer response; claim verification skipped.",
+            }
         logger.info(
             "Generated answer citation_count=%s used_indices=%s",
             len(citations),
@@ -180,6 +208,10 @@ class AgentNodes:
         return {
             "answer": answer,
             "citations": citations,
+            "claims": verification["claims"],
+            "claim_verification": verification,
+            "claim_verification_reason": verification["reason"],
+            "is_verified": verification["verified"],
             "route": "end",
         }
 
@@ -189,6 +221,25 @@ class AgentNodes:
         reason = state.get("grading_reason") or "No reliable supporting evidence found."
         logger.info("Fallback answer returned: %s", reason)
         return _fallback_update(reason)
+
+    def _verify_answer_claims(
+        self,
+        question: str,
+        answer: str,
+        documents: list[RetrievedDocument],
+    ) -> dict[str, Any] | None:
+        """Verify generated answer claims against selected citation chunks."""
+
+        prompt = CLAIM_VERIFICATION_PROMPT.format(
+            question=question,
+            answer=answer,
+            documents=format_documents(documents),
+        )
+        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
+        return _parse_claim_verification_result(
+            raw_result,
+            document_count=len(documents),
+        )
 
 
 def build_citations(
@@ -227,6 +278,26 @@ def build_citations(
         seen.add(key)
         citations.append(citation)
     return citations
+
+
+def _select_documents_by_indices(
+    documents: list[RetrievedDocument],
+    used_citation_indices: list[int],
+) -> list[RetrievedDocument]:
+    """Return valid cited documents in citation order, deduplicated by metadata."""
+
+    selected_documents: list[RetrievedDocument] = []
+    seen: set[tuple[Any, Any, Any]] = set()
+    for citation_index in used_citation_indices:
+        if citation_index < 1 or citation_index > len(documents):
+            continue
+        document = documents[citation_index - 1]
+        key = (document.get("source"), document.get("page"), document.get("chunk_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        selected_documents.append(document)
+    return selected_documents
 
 
 def is_unable_to_answer(answer: str) -> bool:
@@ -326,6 +397,68 @@ def _parse_answer_result(
     }
 
 
+def _parse_claim_verification_result(
+    raw_result: str,
+    document_count: int,
+) -> dict[str, Any] | None:
+    """Parse and validate claim-level verification JSON."""
+
+    parsed = _extract_first_json_object(raw_result)
+    if parsed is None:
+        return None
+
+    raw_claims = parsed.get("claims")
+    if parsed.get("verified") is not True and parsed.get("verified") is not False:
+        return None
+    if not isinstance(raw_claims, list):
+        return None
+
+    claims: list[dict[str, object]] = []
+    for raw_claim in raw_claims:
+        if not isinstance(raw_claim, dict):
+            continue
+        claim_text = raw_claim.get("claim")
+        supported = raw_claim.get("supported")
+        raw_indices = raw_claim.get("citation_indices", [])
+        if not isinstance(claim_text, str) or not isinstance(supported, bool):
+            continue
+        if not isinstance(raw_indices, list):
+            raw_indices = []
+        citation_indices: list[int] = []
+        for raw_index in raw_indices:
+            if isinstance(raw_index, bool) or not isinstance(raw_index, int):
+                continue
+            if raw_index < 1 or raw_index > document_count:
+                logger.warning(
+                    "Ignoring out-of-range claim citation index: %s",
+                    raw_index,
+                )
+                continue
+            if raw_index not in citation_indices:
+                citation_indices.append(raw_index)
+        claims.append(
+            {
+                "claim": claim_text,
+                "supported": supported,
+                "citation_indices": citation_indices,
+            }
+        )
+
+    verified = parsed["verified"] is True and bool(claims) and all(
+        claim["supported"] is True and bool(claim["citation_indices"])
+        for claim in claims
+    )
+    reason = str(parsed.get("reason") or "").strip()
+    if not reason:
+        reason = "All claims verified." if verified else "One or more claims are unsupported."
+
+    return {
+        "verified": verified,
+        "claims": claims,
+        "reason": reason,
+    }
+
+
 def _extract_first_json_object(raw_result: str) -> dict[str, Any] | None:
     """Extract the first JSON object from an LLM response."""
 
@@ -379,6 +512,10 @@ def _fallback_update(reason: str) -> dict[str, Any]:
     return {
         "answer": FALLBACK_ANSWER,
         "citations": [],
+        "claims": [],
+        "claim_verification": {},
+        "claim_verification_reason": reason,
+        "is_verified": False,
         "is_relevant": False,
         "route": "fallback",
         "fallback_reason": reason,

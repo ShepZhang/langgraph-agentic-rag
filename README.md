@@ -2,7 +2,7 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-This project is a lightweight Agentic RAG prototype for private document QA, focusing on explicit LangGraph-based retrieval control, query rewriting, retrieval grading, retry routing, and citation-aware answer generation. The focus is the Agentic RAG workflow, not backend authentication or production deployment infrastructure.
+This project is a lightweight Agentic RAG prototype for private document QA, focusing on explicit LangGraph-based retrieval control, query rewriting, retrieval grading, retry routing, citation-aware answer generation, and lightweight claim-level citation verification. The focus is the Agentic RAG workflow, not backend authentication or production deployment infrastructure.
 
 ## Why This Is Not a Naive RAG Demo
 
@@ -62,7 +62,7 @@ Implemented LangGraph nodes:
 - `rewrite_query_node`: normalizes the first query, then uses failed retrieval context for retry rewrites.
 - `retrieve_node`: calls the `retrieve_context` tool over the private Chroma index.
 - `grade_documents_node`: asks the LLM for chunk-level `relevant_indices`, then filters `relevant_documents`.
-- `generate_answer_node`: generates JSON answers from relevant chunks only and returns citations selected by `used_citation_indices`.
+- `generate_answer_node`: generates JSON answers from relevant chunks, maps `used_citation_indices` to evidence, and verifies cited claims before returning normal answers.
 - `fallback_node`: returns a clear message when the indexed documents do not support an answer.
 
 Key state fields:
@@ -76,6 +76,8 @@ Key state fields:
 - `relevant_documents`: chunks accepted by retrieval grading.
 - `grading_reason`: LLM reason for accepting or rejecting retrieved evidence.
 - `citations`: final answer evidence chunks selected by `used_citation_indices`.
+- `claims`: claim-level verification records extracted from the final answer.
+- `is_verified`: whether normal answer claims were verified against selected citation chunks.
 
 ## Features
 
@@ -89,6 +91,7 @@ Key state fields:
 - Conditional retry with configurable max retry count.
 - Citation-aware grounded answer generation using only selected evidence chunks.
 - Citation safety: normal answers without valid supporting citation indices fall back instead of returning unsupported answers.
+- Lightweight claim-level verification: normal cited answers are split into claims and checked against selected citation chunks.
 - Gradio UI for upload, indexing, question answering, citations, retrieved chunks, and retry diagnostics.
 - Lightweight evaluation runner comparing naive RAG and Agentic RAG on answer, fallback, citation, source-hit, keyword-hit, retry, relevant filtering, latency, and error metrics.
 
@@ -198,6 +201,8 @@ Reported comparison metrics:
 - `agentic_keyword_hit_rate`
 - `naive_citation_rate`
 - `agentic_citation_rate`
+- `naive_verification_rate`
+- `agentic_verification_rate`
 - `naive_fallback_correctness_rate`
 - `agentic_fallback_correctness_rate`
 - `naive_average_latency`
@@ -209,6 +214,8 @@ Agentic-specific metrics:
 - `average_retrieved_docs`
 - `average_relevant_docs`
 - `relevant_filtering_rate`
+- `verification_rate`
+- `average_claim_count`
 - `rewrite_triggered_count`
 - `error_count`
 
@@ -315,12 +322,13 @@ agentic-rag-document-qa/
 - Wrapped vector retrieval as an Agent tool so the workflow can explicitly call a private knowledge base instead of relying on model parameters alone.
 - Implemented chunk-level retrieval grading and conditional retry to improve reliability on vague or poorly matched questions.
 - Designed citation-aware answer generation where the model returns `used_citation_indices`, so final citations map only to evidence chunks used in the answer.
+- Added lightweight claim-level citation verification that checks whether generated answer claims are supported by selected evidence chunks before returning a normal answer.
 - Supported PDF, Markdown, and TXT ingestion with chunk metadata, local embeddings, Chroma indexing, and Gradio-based document QA.
 - Added lightweight evaluation comparing naive RAG and Agentic RAG across source hit rate, keyword hit rate, citation rate, fallback correctness, retry behavior, and relevant chunk filtering.
 
 ## Current Limitations
 
-- Citation currently maps generated answers to selected evidence chunks and falls back when normal answers lack valid citations, but it does not yet perform full claim-level verification.
+- Claim-level citation verification is lightweight and LLM-based. It checks claims against selected evidence chunks, but it is not a formal proof system.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
 - Evaluation uses a lightweight local QA set and should be expanded with larger datasets for more rigorous benchmarking.
 - The Chroma index currently uses a rebuild-on-index strategy. This avoids duplicate chunks for the MVP, but deterministic chunk IDs would be better for incremental indexing.
@@ -332,7 +340,8 @@ agentic-rag-document-qa/
 - LangGraph agent workflow implemented: query rewriting, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
 - Evaluation runner implemented: naive-vs-agentic comparison, answer/fallback/citation/source/keyword metrics, retry metrics, and relevant filtering metrics.
+- Claim-level verification implemented: cited normal answers are checked against selected evidence before being returned.
 - Add FastAPI API layer.
 - Add Ollama local LLM support.
-- Add claim-level citation verification.
+- Add stricter deterministic citation validation and human-reviewed claim labels.
 - Add reranking and richer evaluation.

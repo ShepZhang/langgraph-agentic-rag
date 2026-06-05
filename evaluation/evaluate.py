@@ -217,6 +217,7 @@ def _build_success_result(
         raise ValueError("agent answer must be a string")
 
     citations = _safe_list(agent_result.get("citations", []), "citations")
+    claims = _safe_list(agent_result.get("claims", []), "claims")
     retrieved_documents = _safe_list(
         agent_result.get("retrieved_documents", []),
         "retrieved_documents",
@@ -247,6 +248,8 @@ def _build_success_result(
         "fallback_triggered": fallback_triggered,
         "fallback_correct": fallback_triggered is (not should_answer),
         "citation_returned": bool(citations),
+        "is_verified": bool(agent_result.get("is_verified", False)),
+        "claim_count": len(claims),
         "source_hit": _has_expected_source(expected_sources, citations, retrieved_documents),
         "keyword_hit": (
             answer_returned and _has_expected_keywords(answer, expected_keywords)
@@ -259,6 +262,7 @@ def _build_success_result(
         "error": None,
         "answer": answer,
         "citations": citations,
+        "claims": claims,
         "retrieved_documents": retrieved_documents,
         "relevant_documents": relevant_documents,
     }
@@ -271,6 +275,8 @@ def _build_error_result(item: dict[str, Any]) -> dict[str, Any]:
         "fallback_triggered": False,
         "fallback_correct": False,
         "citation_returned": False,
+        "is_verified": False,
+        "claim_count": 0,
         "source_hit": False,
         "keyword_hit": False,
         "rewrite_triggered": False,
@@ -281,6 +287,7 @@ def _build_error_result(item: dict[str, Any]) -> dict[str, Any]:
         "error": None,
         "answer": "",
         "citations": [],
+        "claims": [],
         "retrieved_documents": [],
         "relevant_documents": [],
     }
@@ -300,6 +307,8 @@ def _summarize(
             "source_hit_rate": 0,
             "keyword_hit_rate": 0,
             "fallback_correctness_rate": 0,
+            "verification_rate": 0,
+            "average_claim_count": 0,
             "average_retry_count": 0,
             "average_retrieved_docs": 0,
             "average_relevant_docs": 0,
@@ -312,6 +321,7 @@ def _summarize(
     answer_count = sum(1 for result in results if result["answer_returned"])
     fallback_count = sum(1 for result in results if result["fallback_triggered"])
     citation_count = sum(1 for result in results if result["citation_returned"])
+    verified_count = sum(1 for result in results if result["is_verified"])
     source_hit_count = sum(1 for result in results if result["source_hit"])
     keyword_hit_count = sum(1 for result in results if result["keyword_hit"])
     fallback_correct_count = sum(1 for result in results if result["fallback_correct"])
@@ -331,6 +341,8 @@ def _summarize(
         "answer_rate": _rate(answer_count, total_questions),
         "fallback_rate": _rate(fallback_count, total_questions),
         "citation_rate": _rate(citation_count, total_questions),
+        "verification_rate": _rate(verified_count, total_questions),
+        "average_claim_count": _average(result["claim_count"] for result in results),
         "source_hit_rate": _rate(source_hit_count, source_expected_count),
         "keyword_hit_rate": _rate(keyword_hit_count, keyword_expected_count),
         "fallback_correctness_rate": _rate(fallback_correct_count, total_questions),
@@ -366,6 +378,8 @@ def _build_comparison_summary(
         "agentic_keyword_hit_rate": agentic_summary.get("keyword_hit_rate", "N/A"),
         "naive_citation_rate": naive_summary.get("citation_rate", "N/A"),
         "agentic_citation_rate": agentic_summary.get("citation_rate", "N/A"),
+        "naive_verification_rate": naive_summary.get("verification_rate", "N/A"),
+        "agentic_verification_rate": agentic_summary.get("verification_rate", "N/A"),
         "naive_fallback_correctness_rate": naive_summary.get(
             "fallback_correctness_rate",
             "N/A",
@@ -418,6 +432,10 @@ def _format_comparison_report(report: dict[str, Any]) -> str:
             f"{agentic.get('citation_rate', 'N/A')} |"
         ),
         (
+            f"| Claim Verification Rate | {naive.get('verification_rate', 'N/A')} | "
+            f"{agentic.get('verification_rate', 'N/A')} |"
+        ),
+        (
             f"| Fallback Correctness | "
             f"{naive.get('fallback_correctness_rate', 'N/A')} | "
             f"{agentic.get('fallback_correctness_rate', 'N/A')} |"
@@ -433,6 +451,8 @@ def _format_comparison_report(report: dict[str, Any]) -> str:
         f"average_retrieved_docs: {agentic.get('average_retrieved_docs', 'N/A')}",
         f"average_relevant_docs: {agentic.get('average_relevant_docs', 'N/A')}",
         f"relevant_filtering_rate: {agentic.get('relevant_filtering_rate', 'N/A')}",
+        f"verification_rate: {agentic.get('verification_rate', 'N/A')}",
+        f"average_claim_count: {agentic.get('average_claim_count', 'N/A')}",
         "",
         "Questions",
     ]

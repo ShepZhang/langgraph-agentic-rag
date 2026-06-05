@@ -34,6 +34,14 @@ class Citation(TypedDict, total=False):
     snippet: str
 
 
+class ClaimVerification(TypedDict, total=False):
+    """Claim-level verification result for generated answers."""
+
+    verified: bool
+    claims: list[dict[str, object]]
+    reason: str
+
+
 class AgentState(TypedDict):
     """State passed between LangGraph nodes."""
 
@@ -47,6 +55,10 @@ class AgentState(TypedDict):
     grading_reason: str
     answer: str
     citations: list[Citation]
+    claims: list[dict[str, object]]
+    claim_verification: ClaimVerification
+    claim_verification_reason: str
+    is_verified: bool
     rewrite_count: int
     retry_count: int
     retrieval_attempt: int
@@ -74,6 +86,10 @@ def create_initial_state(
         "grading_reason": "",
         "answer": "",
         "citations": [],
+        "claims": [],
+        "claim_verification": {},
+        "claim_verification_reason": "",
+        "is_verified": False,
         "rewrite_count": 0,
         "retry_count": 0,
         "retrieval_attempt": 0,

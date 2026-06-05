@@ -237,6 +237,11 @@ def test_generate_answer_node_uses_relevant_documents_and_selected_citations_onl
             (
                 '{"answer": "Grounded answer with [2].", '
                 '"used_citation_indices": [2]}'
+            ),
+            (
+                '{"verified": true, "claims": ['
+                '{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}'
+                '], "reason": "Supported by selected evidence."}'
             )
         ]
     )
@@ -289,6 +294,18 @@ def test_generate_answer_node_uses_relevant_documents_and_selected_citations_onl
     )
     assert "Retrieval query:\nagentic rag retrieval grading fallback" in llm.prompts[0]
     assert "answer the original user question" in llm.prompts[0]
+    assert "claim-level citation verifier" in llm.prompts[1].lower()
+    assert "Answer to verify:\nGrounded answer with [2]." in llm.prompts[1]
+    assert "Selected citation chunks" in llm.prompts[1]
+    assert update["is_verified"] is True
+    assert update["claims"] == [
+        {
+            "claim": "Grounded answer",
+            "supported": True,
+            "citation_indices": [1],
+        }
+    ]
+    assert update["claim_verification_reason"] == "Supported by selected evidence."
 
 
 def test_generate_answer_node_extracts_text_from_content_blocks():
@@ -305,7 +322,8 @@ def test_generate_answer_node_extracts_text_from_content_blocks():
                         "text": 'answer.", "used_citation_indices": [1]}',
                     },
                 ]
-            )
+            ),
+            '{"verified": true, "claims": [{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}], "reason": "supported"}',
         ]
     )
     nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
@@ -323,6 +341,11 @@ def test_generate_answer_node_deduplicates_selected_citations():
             (
                 '{"answer": "Grounded answer [1] [2].", '
                 '"used_citation_indices": [1, 2]}'
+            ),
+            (
+                '{"verified": true, "claims": ['
+                '{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}'
+                '], "reason": "supported"}'
             )
         ]
     )
@@ -364,6 +387,11 @@ def test_generate_answer_node_keeps_valid_citation_and_ignores_invalid_indices()
             (
                 '{"answer": "Grounded answer [1].", '
                 '"used_citation_indices": [1, 3]}'
+            ),
+            (
+                '{"verified": true, "claims": ['
+                '{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}'
+                '], "reason": "supported"}'
             )
         ]
     )
@@ -383,6 +411,60 @@ def test_generate_answer_node_keeps_valid_citation_and_ignores_invalid_indices()
             "snippet": "context",
         }
     ]
+    assert update["is_verified"] is True
+
+
+def test_generate_answer_node_falls_back_when_claim_verification_fails():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Agentic RAG eliminates hallucination [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"verified": false, "claims": ['
+                '{"claim": "Agentic RAG eliminates hallucination", '
+                '"supported": false, "citation_indices": []}'
+                '], "reason": "The cited chunk only says it reduces hallucination risk."}'
+            ),
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["relevant_documents"] = [
+        {"content": "Citation-aware generation helps reduce hallucination risk.", "source": "paper.pdf"}
+    ]
+
+    update = nodes.generate_answer_node(state)
+
+    assert "无法可靠回答" in update["answer"]
+    assert update["citations"] == []
+    assert update["is_verified"] is False
+    assert "claim verification failed" in update["fallback_reason"].lower()
+
+
+def test_generate_answer_node_falls_back_for_invalid_claim_verification_json():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Agentic RAG uses retrieval grading [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            "not json",
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["relevant_documents"] = [
+        {"content": "Agentic RAG uses retrieval grading.", "source": "paper.pdf"}
+    ]
+
+    update = nodes.generate_answer_node(state)
+
+    assert "无法可靠回答" in update["answer"]
+    assert update["citations"] == []
+    assert update["is_verified"] is False
+    assert "claim verification" in update["fallback_reason"].lower()
 
 
 def test_generate_answer_node_falls_back_for_normal_answer_without_citations():

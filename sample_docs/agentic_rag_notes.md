@@ -38,6 +38,8 @@ Fallback handling is a reliability control. If no relevant evidence is found aft
 
 Fallback is especially important for private knowledge-base QA because users may ask questions about policies, people, or systems that were never uploaded. A grounded system should prefer an explicit unable-to-answer response over a confident unsupported answer.
 
+There are two different weak-evidence cases. Weak retrieval evidence can trigger query rewriting and another retrieval attempt before answer generation. Unsupported claims in a generated answer do not trigger another rewrite; citation safety and claim verification route the system to fallback instead.
+
 ## Citation-Aware Generation
 
 When the retrieved chunks are relevant, the answer generation step must use only the selected relevant context. The answer should include citation markers such as `[1]` and `[2]`, and the model must return `used_citation_indices` so the program can map those indices back to source chunks.
@@ -46,14 +48,20 @@ This project performs selected evidence citation. The program returns citations 
 
 If the model returns a normal answer without valid supporting citation indices, the system falls back instead of returning an unsupported answer. If the model explicitly says it cannot answer from the current documents, citations may be empty.
 
+## Claim-Level Verification
+
+The project includes lightweight claim-level citation verification. After answer generation selects citation chunks, the verifier checks whether the factual claims in the answer are supported by those selected chunks.
+
+If a normal answer contains a claim that is not supported by the selected evidence, the system falls back instead of returning the answer. This makes citation handling stronger than simply attaching retrieved chunks to an answer.
+
 ## Current Limitations
 
-Citation-aware generation is not the same as full claim-level citation verification. This project maps selected evidence chunks to the generated answer, but it does not yet split the answer into individual claims and verify each claim against its cited chunk.
+Claim-level verification is still LLM-based. It is not the same as complete citation verification, formal proof, or a deterministic guarantee that every claim is correct.
 
-Retrieval grading also depends on language-model judgment. The parser treats malformed JSON conservatively, but a stronger production system would add more deterministic checks, reranking, and claim verification.
+Retrieval grading also depends on language-model judgment. The parser treats malformed JSON conservatively, but future work would add more deterministic checks, reranking, and human-reviewed claim labels.
 
 ## Evaluation Metrics
 
-The evaluation runner tracks answer rate, fallback rate, citation rate, source hit rate, keyword hit rate, fallback correctness, retry count, retrieved document count, and relevant document count.
+The evaluation runner tracks answer rate, fallback rate, citation rate, claim verification rate, source hit rate, keyword hit rate, fallback correctness, retry count, retrieved document count, and relevant document count.
 
 The project can compare naive RAG and Agentic RAG. Naive RAG retrieves once and generates an answer. Agentic RAG uses query rewriting, retrieval grading, relevant chunk filtering, retry routing, and fallback handling.

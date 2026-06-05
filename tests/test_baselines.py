@@ -54,6 +54,10 @@ def test_run_naive_rag_returns_agent_compatible_payload():
     assert result["retrieved_documents"] == retrieved_documents
     assert result["relevant_documents"] == retrieved_documents
     assert result["retry_count"] == 0
+    assert result["claims"] == []
+    assert result["claim_verification"] == {}
+    assert result["claim_verification_reason"] == ""
+    assert result["is_verified"] is False
     assert result["fallback_reason"] == ""
     assert "Original user question:\nWhat is naive RAG?" in llm.prompts[0]
     assert "Retrieval query:\nWhat is naive RAG?" in llm.prompts[0]

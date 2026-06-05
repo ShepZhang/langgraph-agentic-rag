@@ -81,6 +81,7 @@ Rules:
 - Do not invent facts that are not present in the retrieved chunks.
 - For key facts, include citation markers like [1] and [2] that correspond to chunk numbers.
 - If the retrieved chunks do not contain the answer, say you cannot answer from the current documents.
+- Distinguish workflow cases: weak retrieval evidence can trigger retry rewriting before answer generation; unsupported claims in a generated answer are handled by citation safety fallback, not by retry rewriting.
 - Keep the answer concise and useful.
 - Return JSON only in this shape:
   {{"answer": "Final answer text with citation markers like [1].", "used_citation_indices": [1]}}
@@ -93,6 +94,32 @@ Retrieval query:
 {current_query}
 
 Retrieved chunks:
+{documents}
+
+JSON:"""
+
+
+CLAIM_VERIFICATION_PROMPT = """You are a claim-level citation verifier for private document QA.
+
+Verify whether the answer is fully supported by the selected citation chunks.
+Return JSON only in this shape:
+{{"verified": true, "claims": [{{"claim": "short factual claim", "supported": true, "citation_indices": [1]}}], "reason": "short reason"}}
+
+Rules:
+- Split the answer into factual claims.
+- Every factual claim must be supported by at least one selected citation chunk.
+- citation_indices must use 1-based indexes matching the selected citation chunk numbers below.
+- Mark verified false if any important factual claim is unsupported.
+- Do not give credit for vague keyword overlap. Check whether the citation actually supports the claim.
+- Return JSON only. No markdown fences.
+
+Original user question:
+{question}
+
+Answer to verify:
+{answer}
+
+Selected citation chunks:
 {documents}
 
 JSON:"""

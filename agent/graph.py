@@ -76,6 +76,10 @@ def run_agent(
     return {
         "answer": final_state["answer"],
         "citations": final_state["citations"],
+        "claims": final_state["claims"],
+        "claim_verification": final_state["claim_verification"],
+        "claim_verification_reason": final_state["claim_verification_reason"],
+        "is_verified": final_state["is_verified"],
         "retrieved_documents": final_state["documents"],
         "relevant_documents": final_state["relevant_documents"],
         "current_query": final_state["current_query"],

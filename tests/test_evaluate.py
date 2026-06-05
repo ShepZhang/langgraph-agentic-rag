@@ -112,6 +112,8 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
                     {"source": "notes.md", "content": "Agentic RAG uses retrieval."}
                 ],
                 "retry_count": 1,
+                "is_verified": True,
+                "claims": [{"claim": "Agentic RAG uses retrieval", "supported": True}],
             }
         return {
             "answer": "根据当前已索引文档，无法可靠回答这个问题。",
@@ -129,6 +131,8 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
         "answer_rate": 0.5,
         "fallback_rate": 0.5,
         "citation_rate": 0.5,
+        "verification_rate": 0.5,
+        "average_claim_count": 0.5,
         "source_hit_rate": 1.0,
         "keyword_hit_rate": 1.0,
         "fallback_correctness_rate": 1.0,
@@ -333,6 +337,7 @@ def test_format_report_includes_summary_and_question_rows():
                 "source_hit_rate": 0.5,
                 "keyword_hit_rate": 0.25,
                 "citation_rate": 0.5,
+                "verification_rate": 0.0,
                 "fallback_correctness_rate": 0.75,
                 "average_latency": 0.2,
             },
@@ -340,6 +345,7 @@ def test_format_report_includes_summary_and_question_rows():
                 "source_hit_rate": 1.0,
                 "keyword_hit_rate": 1.0,
                 "citation_rate": 1.0,
+                "verification_rate": 1.0,
                 "fallback_correctness_rate": 1.0,
                 "average_latency": 0.25,
                 "average_retry_count": 1.0,
@@ -347,6 +353,7 @@ def test_format_report_includes_summary_and_question_rows():
                 "average_retrieved_docs": 2.0,
                 "average_relevant_docs": 1.0,
                 "relevant_filtering_rate": 0.5,
+                "average_claim_count": 1.0,
             },
             "comparison": {
                 "naive_source_hit_rate": 0.5,
@@ -355,6 +362,8 @@ def test_format_report_includes_summary_and_question_rows():
                 "agentic_keyword_hit_rate": 1.0,
                 "naive_citation_rate": 0.5,
                 "agentic_citation_rate": 1.0,
+                "naive_verification_rate": 0.0,
+                "agentic_verification_rate": 1.0,
                 "naive_fallback_correctness_rate": 0.75,
                 "agentic_fallback_correctness_rate": 1.0,
                 "naive_average_latency": 0.2,
@@ -383,6 +392,7 @@ def test_format_report_includes_summary_and_question_rows():
     assert "Evaluation Report" in text
     assert "| Metric | Naive RAG | Agentic RAG |" in text
     assert "| Source Hit Rate | 0.5 | 1.0 |" in text
+    assert "| Claim Verification Rate | 0.0 | 1.0 |" in text
     assert "Agentic-specific Metrics" in text
     assert "retry_count=1" in text
     assert "What is Agentic RAG?" in text

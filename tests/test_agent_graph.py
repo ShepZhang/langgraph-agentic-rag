@@ -30,6 +30,12 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
                 '{"answer": "Agentic RAG uses retrieval and agent control flow [1].", '
                 '"used_citation_indices": [1]}'
             ),
+            (
+                '{"verified": true, "claims": ['
+                '{"claim": "Agentic RAG uses retrieval and agent control flow", '
+                '"supported": true, "citation_indices": [1]}'
+                '], "reason": "Supported by chunk 1."}'
+            ),
         ]
     )
     documents = [
@@ -58,6 +64,15 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
     assert result["retrieval_attempt"] == 1
     assert result["is_relevant"] is True
     assert result["grading_reason"] == "matches"
+    assert result["is_verified"] is True
+    assert result["claim_verification_reason"] == "Supported by chunk 1."
+    assert result["claims"] == [
+        {
+            "claim": "Agentic RAG uses retrieval and agent control flow",
+            "supported": True,
+            "citation_indices": [1],
+        }
+    ]
     assert result["citations"] == [
         {
             "source": "agentic-rag.md",
