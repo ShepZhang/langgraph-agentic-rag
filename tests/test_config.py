@@ -45,3 +45,60 @@ def test_get_settings_rejects_invalid_temperature(monkeypatch):
 
     with pytest.raises(ValueError, match="OPENAI_TEMPERATURE"):
         get_settings()
+
+
+def test_get_settings_supports_ollama_without_openai_api_key(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "qwen2.5:7b")
+
+    settings = get_settings()
+
+    assert settings.has_llm_config is True
+    assert settings.llm_provider == "ollama"
+    assert settings.effective_llm_api_key == "ollama"
+    assert settings.effective_llm_base_url == "http://localhost:11434/v1"
+    assert settings.effective_llm_model == "qwen2.5:7b"
+
+
+def test_get_settings_keeps_openai_compatible_provider(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "deepseek-chat")
+
+    settings = get_settings()
+
+    assert settings.has_llm_config is True
+    assert settings.llm_provider == "openai_compatible"
+    assert settings.effective_llm_api_key == "test-key"
+    assert settings.effective_llm_base_url == "https://api.deepseek.com/v1"
+    assert settings.effective_llm_model == "deepseek-chat"
+
+
+def test_get_settings_rejects_unknown_llm_provider(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "local_magic")
+
+    with pytest.raises(ValueError, match="LLM_PROVIDER"):
+        get_settings()
+
+
+def test_get_settings_requires_ollama_model(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_MODEL", "")
+
+    settings = get_settings()
+
+    assert settings.has_llm_config is False
+    with pytest.raises(RuntimeError, match="OLLAMA_MODEL"):
+        settings.require_llm_config()
+
+
+def test_get_settings_accepts_llm_temperature_alias(monkeypatch):
+    monkeypatch.setenv("LLM_TEMPERATURE", "0.3")
+    monkeypatch.setenv("OPENAI_TEMPERATURE", "1.7")
+
+    settings = get_settings()
+
+    assert settings.temperature == 0.3

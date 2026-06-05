@@ -103,6 +103,7 @@ Key state fields:
 - ChromaDB
 - sentence-transformers
 - OpenAI-compatible chat LLM
+- Ollama local LLM via OpenAI-compatible endpoint
 - Gradio
 - python-dotenv
 - pytest
@@ -127,13 +128,33 @@ Create an environment file:
 cp .env.example .env
 ```
 
-Set your OpenAI-compatible LLM config in `.env`:
+Set your chat LLM config in `.env`.
+
+For OpenAI, DeepSeek, or another OpenAI-compatible remote API:
 
 ```bash
+LLM_PROVIDER=openai_compatible
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
+
+For local Ollama:
+
+```bash
+ollama pull qwen2.5:7b
+ollama serve
+```
+
+Then set:
+
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:7b
+```
+
+Ollama mode uses the local OpenAI-compatible endpoint at `/v1` internally and does not require `OPENAI_API_KEY`.
 
 Start the Gradio UI:
 
@@ -162,7 +183,7 @@ python app.py
    - retry count
    - retrieval diagnostics
 
-The chat LLM is required for query rewriting, retrieval grading, and answer generation. If `OPENAI_API_KEY` or `OPENAI_MODEL` is missing, the app returns a clear configuration error instead of producing offline fake answers.
+The chat LLM is required for query rewriting, retrieval grading, answer generation, and claim verification. If the selected provider is missing required configuration, the app returns a clear configuration error instead of producing offline fake answers.
 
 ## Tests
 
@@ -263,10 +284,13 @@ Comparison Summary
 
 ## Environment Variables
 
-- `OPENAI_API_KEY`: API key for the OpenAI-compatible LLM.
+- `LLM_PROVIDER`: `openai_compatible` for remote OpenAI-compatible APIs, or `ollama` for local Ollama.
+- `LLM_TEMPERATURE`: Chat model temperature. Default is `0`.
+- `OPENAI_API_KEY`: API key for the OpenAI-compatible remote LLM.
 - `OPENAI_BASE_URL`: Base URL for the OpenAI-compatible API.
-- `OPENAI_MODEL`: Chat model used by the agent.
-- `OPENAI_TEMPERATURE`: Chat model temperature. Default is `0`.
+- `OPENAI_MODEL`: Remote chat model used by the agent.
+- `OLLAMA_BASE_URL`: Local Ollama server URL. Default is `http://localhost:11434`.
+- `OLLAMA_MODEL`: Local Ollama model name, such as `qwen2.5:7b`.
 - `EMBEDDING_PROVIDER`: Embedding backend. MVP default is `sentence_transformers`.
 - `EMBEDDING_MODEL`: Local embedding model. Default is `sentence-transformers/all-MiniLM-L6-v2`.
 - `CHUNK_SIZE`: Text chunk size.
@@ -323,6 +347,7 @@ agentic-rag-document-qa/
 - Implemented chunk-level retrieval grading and conditional retry to improve reliability on vague or poorly matched questions.
 - Designed citation-aware answer generation where the model returns `used_citation_indices`, so final citations map only to evidence chunks used in the answer.
 - Added lightweight claim-level citation verification that checks whether generated answer claims are supported by selected evidence chunks before returning a normal answer.
+- Added provider-aware LLM configuration for remote OpenAI-compatible APIs and local Ollama models without changing the LangGraph workflow.
 - Supported PDF, Markdown, and TXT ingestion with chunk metadata, local embeddings, Chroma indexing, and Gradio-based document QA.
 - Added lightweight evaluation comparing naive RAG and Agentic RAG across source hit rate, keyword hit rate, citation rate, fallback correctness, retry behavior, and relevant chunk filtering.
 
@@ -341,7 +366,8 @@ agentic-rag-document-qa/
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
 - Evaluation runner implemented: naive-vs-agentic comparison, answer/fallback/citation/source/keyword metrics, retry metrics, and relevant filtering metrics.
 - Claim-level verification implemented: cited normal answers are checked against selected evidence before being returned.
+- Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - Add FastAPI API layer.
-- Add Ollama local LLM support.
+- Add model-specific prompt tuning and cost/latency evaluation for local Ollama models.
 - Add stricter deterministic citation validation and human-reviewed claim labels.
 - Add reranking and richer evaluation.

@@ -10,7 +10,8 @@ def main() -> None:
 
     settings = get_settings()
     print("Agentic RAG Document QA System")
-    print(f"LLM model: {settings.openai_model}")
+    print(f"LLM provider: {settings.llm_provider}")
+    print(f"LLM model: {settings.effective_llm_model or 'not configured'}")
     print(f"LLM configured: {settings.has_llm_config}")
     print(f"Embedding model: {settings.embedding_model}")
     print(f"Chroma path: {settings.chroma_persist_dir}")

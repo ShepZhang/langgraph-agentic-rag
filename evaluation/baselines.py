@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from langchain_openai import ChatOpenAI
-
+from agent.llm import create_chat_model
 from agent.nodes import (
     FALLBACK_ANSWER,
     _coerce_llm_text,
@@ -30,7 +29,7 @@ def run_naive_rag(
     """Run a minimal retrieve-once RAG baseline without agentic control flow."""
 
     resolved_settings = settings or get_settings()
-    resolved_llm = llm or _create_chat_model(resolved_settings)
+    resolved_llm = llm or create_chat_model(resolved_settings)
     resolved_retriever = retriever_fn or retrieve
 
     documents = resolved_retriever(question)
@@ -109,15 +108,3 @@ def _fallback_payload(
         "retry_count": 0,
         "fallback_reason": reason,
     }
-
-
-def _create_chat_model(settings: Settings) -> ChatOpenAI:
-    """Create the chat model used by the naive baseline."""
-
-    settings.require_llm_config()
-    return ChatOpenAI(
-        model=settings.openai_model,
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
-        temperature=settings.temperature,
-    )

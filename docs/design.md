@@ -18,6 +18,8 @@ question -> rewrite -> retrieve -> grade -> answer | retry | fallback
 
 The workflow can inspect retrieved chunks before answer generation. If the evidence is weak, it rewrites the retrieval query and tries again. If evidence remains insufficient, it returns an unable-to-answer fallback.
 
+The chat model layer is provider-aware but intentionally small. Remote OpenAI-compatible APIs and local Ollama both use the same LangChain `ChatOpenAI` client; Ollama is selected with `LLM_PROVIDER=ollama` and a local `OLLAMA_MODEL`.
+
 ## AgentState
 
 `AgentState` is the working memory passed between LangGraph nodes.
@@ -81,10 +83,19 @@ Metrics include source hit rate, keyword hit rate, citation rate, claim verifica
 
 The evaluation is intentionally lightweight. It supports project explanation and regression checks, but it is not a rigorous benchmark.
 
+## LLM Provider Boundary
+
+The project separates chat LLM configuration from the Agentic RAG graph:
+
+- `LLM_PROVIDER=openai_compatible` uses `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL`.
+- `LLM_PROVIDER=ollama` uses `OLLAMA_BASE_URL` and `OLLAMA_MODEL`, with no remote API key required.
+
+Both modes create the same chat-model interface for query rewriting, retrieval grading, answer generation, and claim verification. This keeps the agent workflow testable without coupling nodes to a specific vendor.
+
 ## Future Work
 
 - Stricter deterministic citation validation and human-reviewed claim labels.
 - Reranking before grading.
 - Deterministic chunk IDs for incremental indexing.
 - Larger evaluation set with human-reviewed expected answers.
-- Local LLM support through Ollama.
+- Model-specific prompt tuning for smaller local Ollama models.

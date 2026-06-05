@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
 from agent.edges import route_after_grading
+from agent.llm import create_chat_model
 from agent.nodes import AgentNodes
 from agent.state import AgentState, ChatMessage, create_initial_state
 from config import Settings, get_settings
@@ -21,7 +21,7 @@ def build_graph(
     """Build and compile the Agentic RAG LangGraph workflow."""
 
     resolved_settings = settings or get_settings()
-    resolved_llm = llm or _create_chat_model(resolved_settings)
+    resolved_llm = llm or create_chat_model(resolved_settings)
     nodes = AgentNodes(llm=resolved_llm, retriever_fn=retriever_fn)
 
     workflow = StateGraph(AgentState)
@@ -92,15 +92,3 @@ def run_agent(
         "fallback_reason": final_state["fallback_reason"],
         "route": final_state["route"],
     }
-
-
-def _create_chat_model(settings: Settings) -> ChatOpenAI:
-    """Create the chat model used by the default graph."""
-
-    settings.require_llm_config()
-    return ChatOpenAI(
-        model=settings.openai_model,
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
-        temperature=settings.temperature,
-    )
