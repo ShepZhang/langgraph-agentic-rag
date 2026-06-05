@@ -93,10 +93,18 @@ The project separates chat LLM configuration from the Agentic RAG graph:
 
 Both modes create the same chat-model interface for query rewriting, retrieval grading, answer generation, and claim verification. This keeps the agent workflow testable without coupling nodes to a specific vendor.
 
+## Vectorstore Indexing Boundary
+
+Chunk IDs used in Chroma are deterministic. The vectorstore hashes source filename, file hash, page, chunk id, and chunk content into a stable document ID. This gives the project two indexing paths:
+
+- Explicit rebuild: `create_vectorstore(..., reset_collection=True)` clears the active collection and indexes the provided chunks. The Gradio `Build Index` workflow uses this clean rebuild path.
+- Incremental add: `add_documents(...)` computes the same deterministic IDs and skips chunks that already exist in the collection.
+
+This avoids duplicate chunks during incremental indexing while keeping a simple rebuild option for demos and uploaded-document workflows.
+
 ## Future Work
 
 - Human-reviewed claim labels for stricter citation validation.
 - Reranking before grading.
-- Deterministic chunk IDs for incremental indexing.
 - Larger evaluation set with human-reviewed expected answers.
 - Model-specific prompt tuning for smaller local Ollama models.

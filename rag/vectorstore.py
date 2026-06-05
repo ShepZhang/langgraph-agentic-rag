@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
@@ -30,7 +31,11 @@ class VectorStoreManager:
         self.embedding_model = embedding_model or get_embedding_model(self.settings)
         self.store: Any | None = None
 
-    def create_vectorstore(self, docs: list[Document]) -> Any:
+    def create_vectorstore(
+        self,
+        docs: list[Document],
+        reset_collection: bool = True,
+    ) -> Any:
         """Create a persistent Chroma store from documents."""
 
         if not docs:
@@ -38,17 +43,21 @@ class VectorStoreManager:
 
         self.settings.chroma_persist_dir.mkdir(parents=True, exist_ok=True)
         chroma_cls = _load_chroma_class()
-        self._reset_collection(chroma_cls)
+        if reset_collection:
+            self._reset_collection(chroma_cls)
+        ids = build_document_ids(docs)
         self.store = chroma_cls.from_documents(
             documents=docs,
+            ids=ids,
             embedding=self.embedding_model,
             collection_name=self.settings.chroma_collection_name,
             persist_directory=str(self.settings.chroma_persist_dir),
         )
         logger.info(
-            "Created Chroma vector store collection=%s docs=%s path=%s",
+            "Created Chroma vector store collection=%s docs=%s ids=%s path=%s",
             self.settings.chroma_collection_name,
             len(docs),
+            len(ids),
             self.settings.chroma_persist_dir,
         )
         return self.store
@@ -70,8 +79,27 @@ class VectorStoreManager:
     def add_documents(self, docs: list[Document]) -> Any:
         """Add documents to the configured vector store."""
 
+        if not docs:
+            return []
         store = self.load_vectorstore()
-        return store.add_documents(docs)
+        ids = build_document_ids(docs)
+        docs_to_add, ids_to_add = _filter_existing_documents(store, docs, ids)
+        if not docs_to_add:
+            logger.info(
+                "Skipped adding documents because deterministic ids already exist "
+                "collection=%s docs=%s",
+                self.settings.chroma_collection_name,
+                len(docs),
+            )
+            return []
+
+        logger.info(
+            "Adding documents to Chroma collection=%s docs=%s skipped_existing=%s",
+            self.settings.chroma_collection_name,
+            len(docs_to_add),
+            len(docs) - len(docs_to_add),
+        )
+        return store.add_documents(docs_to_add, ids=ids_to_add)
 
     def similarity_search(
         self,
@@ -130,10 +158,13 @@ def get_vectorstore_manager() -> VectorStoreManager:
     return _default_manager
 
 
-def create_vectorstore(docs: list[Document]) -> Any:
+def create_vectorstore(docs: list[Document], reset_collection: bool = True) -> Any:
     """Create the default vector store from documents."""
 
-    return get_vectorstore_manager().create_vectorstore(docs)
+    return get_vectorstore_manager().create_vectorstore(
+        docs,
+        reset_collection=reset_collection,
+    )
 
 
 def load_vectorstore() -> Any:
@@ -163,3 +194,56 @@ def _load_chroma_class() -> type[Any]:
     from langchain_chroma import Chroma
 
     return Chroma
+
+
+def build_document_ids(docs: list[Document]) -> list[str]:
+    """Build deterministic Chroma IDs for document chunks."""
+
+    return [build_document_id(doc) for doc in docs]
+
+
+def build_document_id(doc: Document) -> str:
+    """Build a deterministic ID from source metadata and chunk content."""
+
+    metadata = doc.metadata or {}
+    stable_parts = [
+        str(metadata.get("source", "")),
+        str(metadata.get("file_hash", "")),
+        str(metadata.get("page", "")),
+        str(metadata.get("chunk_id", "")),
+        doc.page_content,
+    ]
+    digest = hashlib.sha256()
+    digest.update("\n".join(stable_parts).encode("utf-8", errors="replace"))
+    return digest.hexdigest()
+
+
+def _filter_existing_documents(
+    store: Any,
+    docs: list[Document],
+    ids: list[str],
+) -> tuple[list[Document], list[str]]:
+    """Filter out documents whose deterministic IDs already exist in Chroma."""
+
+    if not hasattr(store, "get"):
+        return docs, ids
+
+    try:
+        existing = store.get(ids=ids)
+    except Exception as exc:  # pragma: no cover - depends on vector store internals.
+        logger.info("Could not check existing Chroma ids before add: %s", exc)
+        return docs, ids
+
+    existing_ids = set(existing.get("ids") or [])
+    if not existing_ids:
+        return docs, ids
+
+    docs_to_add: list[Document] = []
+    ids_to_add: list[str] = []
+    for doc, doc_id in zip(docs, ids, strict=True):
+        if doc_id in existing_ids:
+            continue
+        docs_to_add.append(doc)
+        ids_to_add.append(doc_id)
+
+    return docs_to_add, ids_to_add

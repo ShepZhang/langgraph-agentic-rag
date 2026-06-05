@@ -84,7 +84,7 @@ Key state fields:
 - PDF, Markdown, and TXT document loading.
 - Recursive chunking with source, source path, file hash, page, and chunk id metadata.
 - Local sentence-transformers embeddings by default.
-- Persistent Chroma vector store with rebuild-on-index strategy to avoid duplicate chunks.
+- Persistent Chroma vector store with deterministic chunk IDs, explicit rebuild, and incremental add support.
 - Retriever exposed as an Agent tool named `retrieve_context`.
 - Query rewriting for vague or context-dependent questions.
 - Chunk-level retrieval grading with conservative handling for invalid grading output.
@@ -349,6 +349,7 @@ agentic-rag-document-qa/
 - Added deterministic citation marker consistency checks so answer markers like `[1]` must match `used_citation_indices` before claim verification runs.
 - Added lightweight claim-level citation verification that checks whether generated answer claims are supported by selected evidence chunks before returning a normal answer.
 - Added provider-aware LLM configuration for remote OpenAI-compatible APIs and local Ollama models without changing the LangGraph workflow.
+- Implemented deterministic vectorstore IDs from source metadata and chunk content, allowing incremental add while skipping chunks already indexed.
 - Supported PDF, Markdown, and TXT ingestion with chunk metadata, local embeddings, Chroma indexing, and Gradio-based document QA.
 - Added lightweight evaluation comparing naive RAG and Agentic RAG across source hit rate, keyword hit rate, citation rate, fallback correctness, retry behavior, and relevant chunk filtering.
 
@@ -358,7 +359,7 @@ agentic-rag-document-qa/
 - Citation marker consistency is deterministic, but it only checks marker/index alignment. It does not prove that every cited claim is true.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
 - Evaluation uses a lightweight local QA set and should be expanded with larger datasets for more rigorous benchmarking.
-- The Chroma index currently uses a rebuild-on-index strategy. This avoids duplicate chunks for the MVP, but deterministic chunk IDs would be better for incremental indexing.
+- The Gradio `Build Index` workflow intentionally rebuilds the active collection for a clean uploaded knowledge base. The lower-level vectorstore API also supports incremental `add_documents` with deterministic IDs.
 - The project is a prototype and is not intended for production deployment without further hardening.
 
 ## Roadmap
@@ -369,6 +370,7 @@ agentic-rag-document-qa/
 - Evaluation runner implemented: naive-vs-agentic comparison, answer/fallback/citation/source/keyword metrics, retry metrics, and relevant filtering metrics.
 - Claim-level verification implemented: cited normal answers are checked against selected evidence before being returned.
 - Deterministic citation marker consistency implemented: answer markers must match selected citation indices.
+- Deterministic vectorstore IDs implemented: chunk identity is derived from source metadata and content for incremental add de-duplication.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - Add FastAPI API layer.
 - Add model-specific prompt tuning and cost/latency evaluation for local Ollama models.

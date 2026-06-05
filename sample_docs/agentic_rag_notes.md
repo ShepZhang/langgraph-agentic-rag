@@ -24,6 +24,12 @@ In this project, the retriever is exposed as an agent tool named `retrieve_conte
 
 Treating retrieval as a tool makes the workflow easier to explain: the agent decides when to call the knowledge base, receives structured evidence, and then decides whether that evidence is good enough.
 
+## Vectorstore Indexing
+
+The Chroma vectorstore uses deterministic chunk IDs. Each ID is derived from source filename, file hash, page number, chunk id, and chunk content. This lets incremental indexing skip chunks that already exist instead of writing duplicates.
+
+The Gradio Build Index action uses an explicit rebuild path for a clean uploaded knowledge base. The lower-level vectorstore API also supports incremental add with deterministic ID de-duplication.
+
 ## Retrieval Grading
 
 After retrieval, the agent performs retrieval grading. Retrieval grading checks whether the retrieved chunks are truly relevant and sufficient to answer the original user question. A chunk should not be considered relevant just because it contains a matching keyword.
