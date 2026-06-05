@@ -22,6 +22,7 @@ class RetrievedDocument(TypedDict, total=False):
     page: int | None
     chunk_id: str | None
     score: float | None
+    rerank_score: float | None
 
 
 class Citation(TypedDict, total=False):

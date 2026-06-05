@@ -24,6 +24,12 @@ In this project, the retriever is exposed as an agent tool named `retrieve_conte
 
 Treating retrieval as a tool makes the workflow easier to explain: the agent decides when to call the knowledge base, receives structured evidence, and then decides whether that evidence is good enough.
 
+## Optional Reranking
+
+The project supports an optional cross-encoder reranker. When reranking is enabled, vector search first retrieves more candidate chunks than the final answer needs. The reranker then scores those candidates against the query and keeps the strongest chunks.
+
+Reranking improves candidate ordering, but it does not replace retrieval grading. The grading node still decides whether the reranked chunks are sufficient to answer the original user question.
+
 ## Vectorstore Indexing
 
 The Chroma vectorstore uses deterministic chunk IDs. Each ID is derived from source filename, file hash, page number, chunk id, and chunk content. This lets incremental indexing skip chunks that already exist instead of writing duplicates.
@@ -64,7 +70,7 @@ If a normal answer contains a claim that is not supported by the selected eviden
 
 Claim-level verification is still LLM-based. It is not the same as complete citation verification, formal proof, or a deterministic guarantee that every claim is correct.
 
-Retrieval grading also depends on language-model judgment. The parser treats malformed JSON conservatively, but future work would add more deterministic checks, reranking, and human-reviewed claim labels.
+Retrieval grading also depends on language-model judgment. The parser treats malformed JSON conservatively, but future work would add reranker evaluation, deterministic checks, and human-reviewed claim labels.
 
 ## Evaluation Metrics
 

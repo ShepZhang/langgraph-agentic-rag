@@ -152,9 +152,13 @@ def format_documents(documents: list[RetrievedDocument]) -> str:
         page = document.get("page")
         chunk_id = document.get("chunk_id")
         score = document.get("score")
+        rerank_score = document.get("rerank_score")
         content = document.get("content", "")
+        rerank_part = (
+            f" rerank_score={rerank_score}" if rerank_score is not None else ""
+        )
         blocks.append(
             f"[{index}] source={source} page={page} chunk_id={chunk_id} "
-            f"score={score}\n{content}"
+            f"score={score}{rerank_part}\n{content}"
         )
     return "\n\n".join(blocks)

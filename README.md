@@ -86,6 +86,7 @@ Key state fields:
 - Local sentence-transformers embeddings by default.
 - Persistent Chroma vector store with deterministic chunk IDs, explicit rebuild, and incremental add support.
 - Retriever exposed as an Agent tool named `retrieve_context`.
+- Optional cross-encoder reranker: retrieve candidate chunks, rerank them, then pass the strongest chunks to grading.
 - Query rewriting for vague or context-dependent questions.
 - Chunk-level retrieval grading with conservative handling for invalid grading output.
 - Conditional retry with configurable max retry count.
@@ -296,6 +297,9 @@ Comparison Summary
 - `CHUNK_SIZE`: Text chunk size.
 - `CHUNK_OVERLAP`: Text chunk overlap.
 - `TOP_K`: Number of chunks retrieved per query.
+- `RERANKER_ENABLED`: Enable optional cross-encoder reranking. Default is `false`.
+- `RERANKER_MODEL`: Cross-encoder model used when reranking is enabled.
+- `RERANKER_CANDIDATE_TOP_K`: Number of initial vector candidates to retrieve before reranking.
 - `MAX_RETRY_COUNT`: Maximum failed-retrieval retry rewrites.
 - `CHROMA_PERSIST_DIR`: Local Chroma persistence path.
 - `CHROMA_COLLECTION_NAME`: Chroma collection name.
@@ -371,8 +375,9 @@ agentic-rag-document-qa/
 - Claim-level verification implemented: cited normal answers are checked against selected evidence before being returned.
 - Deterministic citation marker consistency implemented: answer markers must match selected citation indices.
 - Deterministic vectorstore IDs implemented: chunk identity is derived from source metadata and content for incremental add de-duplication.
+- Optional reranker implemented: vector retrieval can over-retrieve candidates, apply a local cross-encoder reranker, and pass reranked chunks into grading.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - Add FastAPI API layer.
 - Add model-specific prompt tuning and cost/latency evaluation for local Ollama models.
 - Add human-reviewed claim labels for stricter citation validation.
-- Add reranking and richer evaluation.
+- Add richer reranker evaluation and model/latency comparisons.

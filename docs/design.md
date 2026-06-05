@@ -44,7 +44,7 @@ The most important semantic boundary is that `current_query` does not replace `q
 
 `rewrite_query_node` performs initial query normalization on the first pass. On retry, it receives failure context: previous query, previous queries, grading reason, and retrieved snippets. This makes retry rewrite more agentic than simply rephrasing the same question.
 
-`retrieve_node` calls the `retrieve_context` tool using `current_query`.
+`retrieve_node` calls the `retrieve_context` tool using `current_query`. When reranking is disabled, the retriever returns the top vector-search chunks directly. When reranking is enabled, it retrieves `RERANKER_CANDIDATE_TOP_K` vector candidates, reranks them with a local cross-encoder, and keeps the final `TOP_K` chunks.
 
 `grade_documents_node` receives the original user question, the current retrieval query, and raw retrieved chunks. It asks whether the chunks can answer the original question, then returns `relevant_indices`.
 
@@ -102,9 +102,21 @@ Chunk IDs used in Chroma are deterministic. The vectorstore hashes source filena
 
 This avoids duplicate chunks during incremental indexing while keeping a simple rebuild option for demos and uploaded-document workflows.
 
+## Reranker Boundary
+
+Reranking is optional and disabled by default. This keeps the MVP fast and avoids loading an extra model unless the user opts in.
+
+When enabled, retrieval has two stages:
+
+```text
+vector similarity search candidate_top_k -> cross-encoder rerank -> top_k chunks -> retrieval grading
+```
+
+The reranker improves ordering among already-retrieved candidates. It does not replace retrieval grading: grading still decides whether the reranked chunks can answer the original user question.
+
 ## Future Work
 
 - Human-reviewed claim labels for stricter citation validation.
-- Reranking before grading.
+- Reranker model comparison and latency-aware evaluation.
 - Larger evaluation set with human-reviewed expected answers.
 - Model-specific prompt tuning for smaller local Ollama models.

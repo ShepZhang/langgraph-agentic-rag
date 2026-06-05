@@ -70,6 +70,7 @@ def test_format_documents_includes_metadata_and_content():
             "page": 2,
             "chunk_id": "paper.pdf:p2:c1",
             "score": 0.87,
+            "rerank_score": 0.93,
         }
     ]
 
@@ -80,6 +81,7 @@ def test_format_documents_includes_metadata_and_content():
     assert "page=2" in formatted
     assert "chunk_id=paper.pdf:p2:c1" in formatted
     assert "score=0.87" in formatted
+    assert "rerank_score=0.93" in formatted
     assert "Chunk text" in formatted
 
 

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from langchain_core.documents import Document
 
+from config import get_settings
 from rag.retriever import Retriever, retrieve
 
 
@@ -31,6 +34,18 @@ class FakeVectorStoreManager:
         ]
 
 
+class FakeReranker:
+    def __init__(self):
+        self.calls = []
+
+    def rerank(self, query, documents, top_k):
+        self.calls.append((query, documents, top_k))
+        return [
+            (documents[2][0], documents[2][1], 0.99),
+            (documents[0][0], documents[0][1], 0.77),
+        ][:top_k]
+
+
 def test_retriever_returns_normalized_chunks():
     manager = FakeVectorStoreManager()
     retriever = Retriever(vectorstore_manager=manager)
@@ -54,6 +69,68 @@ def test_retriever_returns_normalized_chunks():
             "score": None,
         },
     ]
+
+
+def test_retriever_does_not_load_reranker_when_disabled(monkeypatch):
+    def fail_if_called(settings):
+        raise AssertionError("reranker should not be loaded")
+
+    monkeypatch.setattr("rag.retriever.get_reranker", fail_if_called)
+    settings = replace(get_settings(), reranker_enabled=False)
+    retriever = Retriever(
+        vectorstore_manager=FakeVectorStoreManager(),
+        settings=settings,
+    )
+
+    chunks = retriever.retrieve("What is RAG?", top_k=1)
+
+    assert chunks[0]["source"] == "notes.md"
+
+
+def test_retriever_fetches_candidate_top_k_and_reranks_when_enabled():
+    class CandidateManager:
+        def __init__(self):
+            self.calls = []
+
+        def similarity_search(self, query, top_k=None):
+            self.calls.append((query, top_k))
+            return [
+                (
+                    Document(page_content="weak context", metadata={"source": "weak.md"}),
+                    0.4,
+                ),
+                (
+                    Document(page_content="medium context", metadata={"source": "medium.md"}),
+                    0.5,
+                ),
+                (
+                    Document(page_content="best context", metadata={"source": "best.md"}),
+                    0.6,
+                ),
+            ]
+
+    settings = replace(
+        get_settings(),
+        top_k=2,
+        reranker_enabled=True,
+        reranker_candidate_top_k=3,
+    )
+    manager = CandidateManager()
+    reranker = FakeReranker()
+    retriever = Retriever(
+        vectorstore_manager=manager,
+        reranker=reranker,
+        settings=settings,
+    )
+
+    chunks = retriever.retrieve("question")
+
+    assert manager.calls == [("question", 3)]
+    assert reranker.calls[0][0] == "question"
+    assert reranker.calls[0][2] == 2
+    assert [chunk["source"] for chunk in chunks] == ["best.md", "weak.md"]
+    assert [chunk["score"] for chunk in chunks] == [0.6, 0.4]
+    assert [chunk["rerank_score"] for chunk in chunks] == [0.99, 0.77]
 
 
 def test_module_retrieve_uses_injected_manager(monkeypatch):

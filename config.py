@@ -33,6 +33,9 @@ class Settings:
     chunk_size: int
     chunk_overlap: int
     top_k: int
+    reranker_enabled: bool
+    reranker_model: str
+    reranker_candidate_top_k: int
     max_retry_count: int
     temperature: float
     chroma_persist_dir: Path
@@ -55,6 +58,15 @@ class Settings:
             raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
         if self.top_k <= 0:
             raise ValueError("TOP_K must be greater than 0")
+        if self.reranker_candidate_top_k <= 0:
+            raise ValueError("RERANKER_CANDIDATE_TOP_K must be greater than 0")
+        if self.reranker_enabled and not self.reranker_model:
+            raise ValueError("RERANKER_MODEL must not be empty when reranker is enabled")
+        if self.reranker_enabled and self.reranker_candidate_top_k < self.top_k:
+            raise ValueError(
+                "RERANKER_CANDIDATE_TOP_K must be greater than or equal to TOP_K "
+                "when reranker is enabled"
+            )
         if self.max_retry_count < 0:
             raise ValueError("MAX_RETRY_COUNT must be greater than or equal to 0")
         if not 0 <= self.temperature <= 2:
@@ -137,6 +149,19 @@ def _get_float(name: str, default: float) -> float:
         raise ValueError(f"{name} must be a number, got {raw_value!r}") from exc
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean, got {raw_value!r}")
+
+
 def _get_int_with_fallback(primary_name: str, fallback_name: str, default: int) -> int:
     raw_primary = os.getenv(primary_name)
     if raw_primary is not None and raw_primary.strip():
@@ -180,6 +205,12 @@ def get_settings() -> Settings:
         chunk_size=_get_int("CHUNK_SIZE", 800),
         chunk_overlap=_get_int("CHUNK_OVERLAP", 120),
         top_k=_get_int("TOP_K", 4),
+        reranker_enabled=_get_bool("RERANKER_ENABLED", False),
+        reranker_model=os.getenv(
+            "RERANKER_MODEL",
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        ).strip(),
+        reranker_candidate_top_k=_get_int("RERANKER_CANDIDATE_TOP_K", 12),
         max_retry_count=_get_int_with_fallback(
             "MAX_RETRY_COUNT",
             "MAX_REWRITE_ATTEMPTS",

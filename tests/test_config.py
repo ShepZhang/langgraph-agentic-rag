@@ -47,6 +47,46 @@ def test_get_settings_rejects_invalid_temperature(monkeypatch):
         get_settings()
 
 
+def test_get_settings_defaults_reranker_off(monkeypatch):
+    monkeypatch.delenv("RERANKER_ENABLED", raising=False)
+
+    settings = get_settings()
+
+    assert settings.reranker_enabled is False
+    assert settings.reranker_candidate_top_k >= settings.top_k
+
+
+def test_get_settings_accepts_reranker_config(monkeypatch):
+    monkeypatch.setenv("RERANKER_ENABLED", "true")
+    monkeypatch.setenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+    monkeypatch.setenv("TOP_K", "3")
+    monkeypatch.setenv("RERANKER_CANDIDATE_TOP_K", "8")
+
+    settings = get_settings()
+
+    assert settings.reranker_enabled is True
+    assert settings.reranker_model == "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    assert settings.reranker_candidate_top_k == 8
+
+
+def test_get_settings_rejects_enabled_reranker_with_too_small_candidate_top_k(
+    monkeypatch,
+):
+    monkeypatch.setenv("RERANKER_ENABLED", "true")
+    monkeypatch.setenv("TOP_K", "5")
+    monkeypatch.setenv("RERANKER_CANDIDATE_TOP_K", "3")
+
+    with pytest.raises(ValueError, match="RERANKER_CANDIDATE_TOP_K"):
+        get_settings()
+
+
+def test_get_settings_rejects_invalid_reranker_enabled_value(monkeypatch):
+    monkeypatch.setenv("RERANKER_ENABLED", "sometimes")
+
+    with pytest.raises(ValueError, match="RERANKER_ENABLED"):
+        get_settings()
+
+
 def test_get_settings_supports_ollama_without_openai_api_key(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("OPENAI_API_KEY", "")
