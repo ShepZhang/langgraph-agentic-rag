@@ -24,6 +24,7 @@ uploads/
 
 # Agent working notes
 docs/superpowers/
+.worktrees/
 
 # OS/editor files
 .DS_Store
