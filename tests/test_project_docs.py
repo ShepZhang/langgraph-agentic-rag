@@ -1,8 +1,8 @@
 """Tests for the portfolio sample document corpus."""
 
-import json
 from pathlib import Path
 
+from evaluation.evaluate import load_eval_questions
 from rag.loader import load_documents
 
 
@@ -139,7 +139,7 @@ def test_sample_corpus_contains_source_specific_benchmark_facts():
 
 def test_portfolio_evaluation_set_has_balanced_question_groups():
     evaluation_path = PROJECT_ROOT / "evaluation/eval_questions.json"
-    questions = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    questions = load_eval_questions(evaluation_path)
 
     assert len(questions) == 34
     assert sum(item["should_answer"] for item in questions) >= 20
@@ -158,3 +158,23 @@ def test_portfolio_evaluation_set_has_balanced_question_groups():
         "product_specs.md",
         "security_policy.md",
     }
+
+    questions_by_text = {item["question"]: item for item in questions}
+    assert questions_by_text["Which file types does Atlas support?"][
+        "expected_keywords"
+    ] == ["PDF", "Markdown", "TXT"]
+    assert questions_by_text["Which systems require multi-factor authentication?"][
+        "expected_keywords"
+    ] == ["company email", "Atlas production environment"]
+    assert questions_by_text[
+        "What notice is required for five or more consecutive days of leave?"
+    ]["expected_keywords"] == [
+        "five or more consecutive days",
+        "10 business days",
+    ]
+    assert questions_by_text["How long does temporary elevated access last?"][
+        "requires_rewrite"
+    ] is True
+    assert questions_by_text["What upload limit does the document tool have?"][
+        "requires_rewrite"
+    ] is True

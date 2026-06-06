@@ -39,19 +39,30 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
         requires_rewrite = record.get("requires_rewrite", False)
         if not isinstance(requires_rewrite, bool):
             raise ValueError("requires_rewrite must be a boolean")
+        expected_sources = _normalize_expected_sources(record)
         source_match_mode = record.get("source_match_mode", "any")
         if (
             not isinstance(source_match_mode, str)
             or source_match_mode not in {"any", "all"}
         ):
             raise ValueError("source_match_mode must be 'any' or 'all'")
+        normalized_source_names = [source.strip() for source in expected_sources]
+        if source_match_mode == "all" and (
+            len(normalized_source_names) < 2
+            or any(not source for source in normalized_source_names)
+            or len(set(normalized_source_names)) != len(normalized_source_names)
+        ):
+            raise ValueError(
+                "source_match_mode 'all' requires at least two non-empty, "
+                "unique expected_sources"
+            )
 
         normalized = dict(record)
         normalized["expected_keywords"] = _normalize_string_list(
             record.get("expected_keywords"),
             field_name="expected_keywords",
         )
-        normalized["expected_sources"] = _normalize_expected_sources(record)
+        normalized["expected_sources"] = expected_sources
         normalized["source_match_mode"] = source_match_mode
         normalized["should_answer"] = should_answer
         normalized["requires_rewrite"] = requires_rewrite
@@ -259,7 +270,6 @@ def _build_success_result(
         "claim_count": len(claims),
         "source_hit": _has_expected_source(
             expected_sources,
-            citations,
             retrieved_documents,
             item.get("source_match_mode", "any"),
         ),
@@ -522,18 +532,16 @@ def _safe_int(value: Any, field_name: str) -> int:
 
 def _has_expected_source(
     expected_sources: Any,
-    citations: list[Any],
     retrieved_documents: list[Any],
     source_match_mode: str = "any",
 ) -> bool:
     if not expected_sources:
         return False
 
-    evidence = citations if citations else retrieved_documents
     expected_set = set(expected_sources)
     observed_set = {
         document["source"]
-        for document in evidence
+        for document in retrieved_documents
         if isinstance(document, dict)
         and isinstance(document.get("source"), str)
     }

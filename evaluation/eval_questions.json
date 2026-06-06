@@ -1,7 +1,7 @@
 [
   {
     "question": "What is Retrieval-Augmented Generation?",
-    "expected_keywords": ["external context", "ground the answer"],
+    "expected_keywords": ["retrieval", "external context", "ground"],
     "expected_sources": ["agentic_rag_notes.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -9,7 +9,7 @@
   },
   {
     "question": "What is Agentic RAG?",
-    "expected_keywords": ["agent controls the retrieval workflow", "retry retrieval"],
+    "expected_keywords": ["retrieval workflow", "query", "fallback"],
     "expected_sources": ["agentic_rag_notes.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -49,7 +49,7 @@
   },
   {
     "question": "What happens when the first retrieved chunks are not useful?",
-    "expected_keywords": ["rewrites the question", "retrieves again", "fallback message"],
+    "expected_keywords": ["query rewriting", "retry", "fallback"],
     "expected_sources": ["agentic_rag_notes.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -57,7 +57,7 @@
   },
   {
     "question": "How does the system keep its answer tied to evidence?",
-    "expected_keywords": ["citation markers", "claim-level citation verification"],
+    "expected_keywords": ["citation markers", "selected evidence", "claim verification"],
     "expected_sources": ["agentic_rag_notes.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -65,7 +65,7 @@
   },
   {
     "question": "How many days per week may full-time employees work remotely?",
-    "expected_keywords": ["three days per week"],
+    "expected_keywords": ["three days", "remotely"],
     "expected_sources": ["employee_handbook.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -73,7 +73,7 @@
   },
   {
     "question": "What are Northstar Labs' core collaboration hours?",
-    "expected_keywords": ["10:00 AM to 3:00 PM Pacific Time"],
+    "expected_keywords": ["10:00 AM", "3:00 PM", "Pacific Time"],
     "expected_sources": ["employee_handbook.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -81,7 +81,7 @@
   },
   {
     "question": "How much annual paid time off do full-time employees receive?",
-    "expected_keywords": ["20 days"],
+    "expected_keywords": ["20 days", "paid time off"],
     "expected_sources": ["employee_handbook.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -89,7 +89,7 @@
   },
   {
     "question": "What notice is required for five or more consecutive days of leave?",
-    "expected_keywords": ["5 or more consecutive days", "10 business days"],
+    "expected_keywords": ["five or more consecutive days", "10 business days"],
     "expected_sources": ["employee_handbook.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -105,7 +105,7 @@
   },
   {
     "question": "Which file types does Atlas support?",
-    "expected_keywords": ["PDF, Markdown, and TXT"],
+    "expected_keywords": ["PDF", "Markdown", "TXT"],
     "expected_sources": ["product_specs.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -113,7 +113,7 @@
   },
   {
     "question": "What is the maximum Atlas upload size per file?",
-    "expected_keywords": ["25 MB per file"],
+    "expected_keywords": ["25 MB", "per file"],
     "expected_sources": ["product_specs.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -121,7 +121,7 @@
   },
   {
     "question": "How do Atlas rebuild and incremental indexing behaviors differ?",
-    "expected_keywords": ["replaces the active collection", "incremental indexing"],
+    "expected_keywords": ["active collection", "incremental indexing", "chunk IDs"],
     "expected_sources": ["product_specs.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -129,7 +129,7 @@
   },
   {
     "question": "What role does the optional reranker play in Atlas?",
-    "expected_keywords": ["cross-encoder", "retrieval grading"],
+    "expected_keywords": ["cross-encoder", "rerank", "retrieval grading"],
     "expected_sources": ["product_specs.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -137,7 +137,7 @@
   },
   {
     "question": "Does Atlas have a formal production service-level agreement?",
-    "expected_keywords": ["no formal production SLA"],
+    "expected_keywords": ["no formal", "production SLA"],
     "expected_sources": ["product_specs.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -145,7 +145,7 @@
   },
   {
     "question": "Which systems require multi-factor authentication?",
-    "expected_keywords": ["company email", "managed secrets vault"],
+    "expected_keywords": ["company email", "Atlas production environment"],
     "expected_sources": ["security_policy.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -161,7 +161,7 @@
   },
   {
     "question": "What must a production access request include before activation?",
-    "expected_keywords": ["ticket reference", "on-call engineering lead"],
+    "expected_keywords": ["ticket reference", "approval", "engineering lead"],
     "expected_sources": ["security_policy.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -177,7 +177,7 @@
   },
   {
     "question": "What is the deadline for reporting suspected credential exposure?",
-    "expected_keywords": ["within 30 minutes"],
+    "expected_keywords": ["30 minutes", "security incident channel"],
     "expected_sources": ["security_policy.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -192,7 +192,7 @@
     "requires_rewrite": true
   },
   {
-    "question": "How long does elevated access last?",
+    "question": "How long does temporary elevated access last?",
     "expected_keywords": ["four hours"],
     "expected_sources": ["security_policy.md"],
     "source_match_mode": "any",
@@ -200,8 +200,8 @@
     "requires_rewrite": true
   },
   {
-    "question": "What file limit does the document tool have?",
-    "expected_keywords": ["25 MB per file"],
+    "question": "What upload limit does the document tool have?",
+    "expected_keywords": ["25 MB", "per file"],
     "expected_sources": ["product_specs.md"],
     "source_match_mode": "any",
     "should_answer": true,

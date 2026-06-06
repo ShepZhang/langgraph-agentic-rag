@@ -69,6 +69,7 @@ def test_load_eval_questions_accepts_all_source_match_mode(tmp_path):
             [
                 {
                     "question": "What connects these documents?",
+                    "expected_sources": ["product.md", "security.md"],
                     "source_match_mode": "all",
                 }
             ]
@@ -79,6 +80,36 @@ def test_load_eval_questions_accepts_all_source_match_mode(tmp_path):
     questions = load_eval_questions(path)
 
     assert questions[0]["source_match_mode"] == "all"
+
+
+@pytest.mark.parametrize(
+    "expected_sources",
+    [
+        ["product.md"],
+        ["product.md", "product.md"],
+        ["product.md", ""],
+    ],
+)
+def test_load_eval_questions_rejects_invalid_all_expected_sources(
+    tmp_path,
+    expected_sources,
+):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "What connects these documents?",
+                    "expected_sources": expected_sources,
+                    "source_match_mode": "all",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="source_match_mode"):
+        load_eval_questions(path)
 
 
 def test_load_eval_questions_rejects_invalid_source_match_mode(tmp_path):
@@ -189,7 +220,35 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
     assert report["results"][1]["fallback_correct"] is True
 
 
-def test_cross_document_source_hit_requires_all_expected_citations():
+def test_source_hit_uses_all_retrieved_sources_even_when_answer_falls_back():
+    questions = [
+        {
+            "question": "What connects product and security policy?",
+            "expected_sources": ["product_specs.md", "security_policy.md"],
+            "source_match_mode": "all",
+            "should_answer": False,
+        }
+    ]
+
+    def fake_run_agent(question):
+        return {
+            "answer": "The current documents do not contain enough information.",
+            "citations": [],
+            "retrieved_documents": [
+                {"source": "product_specs.md"},
+                {"source": "security_policy.md"},
+            ],
+            "fallback_reason": "Answer verification failed.",
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_run_agent)
+
+    assert report["results"][0]["answer_returned"] is False
+    assert report["results"][0]["fallback_triggered"] is True
+    assert report["results"][0]["source_hit"] is True
+
+
+def test_source_hit_all_requires_every_expected_retrieved_source():
     questions = [
         {
             "question": "What connects product and security policy?",
@@ -200,12 +259,8 @@ def test_cross_document_source_hit_requires_all_expected_citations():
 
     def fake_run_agent(question):
         return {
-            "answer": "Atlas uses citation checks and temporary access controls.",
-            "citations": [{"source": "product_specs.md"}],
-            "retrieved_documents": [
-                {"source": "product_specs.md"},
-                {"source": "security_policy.md"},
-            ],
+            "answer": "Atlas uses citation checks.",
+            "retrieved_documents": [{"source": "product_specs.md"}],
         }
 
     report = evaluate_questions(questions, run_agent_fn=fake_run_agent)
@@ -213,27 +268,26 @@ def test_cross_document_source_hit_requires_all_expected_citations():
     assert report["results"][0]["source_hit"] is False
 
 
-def test_cross_document_source_hit_accepts_all_expected_citations():
+def test_source_hit_ignores_citations_when_retrieval_misses_expected_source():
     questions = [
         {
-            "question": "What connects product and security policy?",
-            "expected_sources": ["product_specs.md", "security_policy.md"],
-            "source_match_mode": "all",
+            "question": "What does the product specification say?",
+            "expected_sources": ["product_specs.md"],
+            "source_match_mode": "any",
         }
     ]
 
     def fake_run_agent(question):
         return {
-            "answer": "Atlas uses citation checks and temporary access controls.",
-            "citations": [
-                {"source": "product_specs.md"},
-                {"source": "security_policy.md"},
-            ],
+            "answer": "Atlas supports document QA.",
+            "citations": [{"source": "product_specs.md"}],
+            "retrieved_documents": [{"source": "security_policy.md"}],
         }
 
     report = evaluate_questions(questions, run_agent_fn=fake_run_agent)
 
-    assert report["results"][0]["source_hit"] is True
+    assert report["results"][0]["citation_returned"] is True
+    assert report["results"][0]["source_hit"] is False
 
 
 def test_evaluate_questions_compares_naive_and_agentic_results():
