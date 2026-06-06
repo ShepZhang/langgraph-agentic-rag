@@ -89,7 +89,7 @@
   },
   {
     "question": "What notice is required for five or more consecutive days of leave?",
-    "expected_keywords": ["five or more consecutive days", "10 business days"],
+    "expected_keywords": ["5 or more consecutive days", "10 business days"],
     "expected_sources": ["employee_handbook.md"],
     "source_match_mode": "any",
     "should_answer": true,
@@ -145,7 +145,7 @@
   },
   {
     "question": "Which systems require multi-factor authentication?",
-    "expected_keywords": ["company email", "Atlas production environment"],
+    "expected_keywords": ["company email", "production systems"],
     "expected_sources": ["security_policy.md"],
     "source_match_mode": "any",
     "should_answer": true,

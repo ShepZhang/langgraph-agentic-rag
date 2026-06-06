@@ -165,11 +165,11 @@ def test_portfolio_evaluation_set_has_balanced_question_groups():
     ] == ["PDF", "Markdown", "TXT"]
     assert questions_by_text["Which systems require multi-factor authentication?"][
         "expected_keywords"
-    ] == ["company email", "Atlas production environment"]
+    ] == ["company email", "production systems"]
     assert questions_by_text[
         "What notice is required for five or more consecutive days of leave?"
     ]["expected_keywords"] == [
-        "five or more consecutive days",
+        "5 or more consecutive days",
         "10 business days",
     ]
     assert questions_by_text["How long does temporary elevated access last?"][
@@ -178,3 +178,26 @@ def test_portfolio_evaluation_set_has_balanced_question_groups():
     assert questions_by_text["What upload limit does the document tool have?"][
         "requires_rewrite"
     ] is True
+
+
+def test_answerable_evaluation_keywords_exist_in_expected_sources():
+    evaluation_path = PROJECT_ROOT / "evaluation/eval_questions.json"
+    questions = load_eval_questions(evaluation_path)
+    source_texts = {
+        path.name: " ".join(path.read_text(encoding="utf-8").split()).lower()
+        for path in SAMPLE_DOCS
+    }
+
+    for item in questions:
+        if not item["should_answer"]:
+            continue
+
+        expected_texts = [
+            source_texts[source]
+            for source in item["expected_sources"]
+        ]
+        for keyword in item["expected_keywords"]:
+            assert any(
+                keyword.lower() in source_text
+                for source_text in expected_texts
+            ), f"{item['question']}: {keyword}"
