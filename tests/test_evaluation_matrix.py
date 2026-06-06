@@ -77,7 +77,7 @@ def test_public_wrappers_match_existing_evaluator_behavior():
     )
 
 
-def test_evaluate_matrix_preserves_question_and_runner_order_with_isolated_results():
+def test_evaluate_matrix_uses_canonical_variant_order_with_isolated_results():
     matrix = _matrix_module()
     calls = []
     questions = [
@@ -101,9 +101,9 @@ def test_evaluate_matrix_preserves_question_and_runner_order_with_isolated_resul
         return runner
 
     runners = {
+        "agentic_reranker": make_runner("agentic_reranker", "reranked.md"),
         "naive": make_runner("naive", "plain.md"),
         "agentic": make_runner("agentic", "plain.md"),
-        "agentic_reranker": make_runner("agentic_reranker", "reranked.md"),
     }
 
     report = matrix.evaluate_matrix(questions, runners, timer=StepTimer())
@@ -118,13 +118,21 @@ def test_evaluate_matrix_preserves_question_and_runner_order_with_isolated_resul
     ]
     assert report["summary"]["mode"] == "matrix"
     assert report["summary"]["total_questions"] == 2
-    assert list(report["summary"]["variants"]) == list(runners)
+    assert list(report["summary"]["variants"]) == [
+        "naive",
+        "agentic",
+        "agentic_reranker",
+    ]
     assert [result["question"] for result in report["results"]] == [
         "First?",
         "Second?",
     ]
     assert report["results"][0]["requires_rewrite"] is True
-    assert list(report["results"][0]["systems"]) == list(runners)
+    assert list(report["results"][0]["systems"]) == [
+        "naive",
+        "agentic",
+        "agentic_reranker",
+    ]
     assert report["results"][0]["systems"]["naive"]["answer"].startswith("naive:")
     assert report["results"][0]["systems"]["agentic"]["answer"].startswith(
         "agentic:"
@@ -336,7 +344,7 @@ def test_matrix_main_reports_runner_construction_errors_without_secret(
     )
 
     def failing_builder():
-        raise RuntimeError("Missing LLM configuration")
+        raise RuntimeError("failed with secret sk-sensitive-value")
 
     with pytest.raises(SystemExit) as exc_info:
         matrix.main(
@@ -346,7 +354,10 @@ def test_matrix_main_reports_runner_construction_errors_without_secret(
 
     captured = capsys.readouterr()
     assert exc_info.value.code == 2
-    assert "Unable to build benchmark runners" in captured.err
-    assert "Missing LLM configuration" in captured.err
-    assert "test-key" not in captured.err
+    assert (
+        "Unable to build benchmark runners. Check LLM and reranker configuration."
+        in captured.err
+    )
+    assert "failed with secret" not in captured.err
+    assert "sk-sensitive-value" not in captured.err
     assert "Traceback" not in captured.err

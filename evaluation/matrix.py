@@ -28,6 +28,7 @@ VARIANT_LABELS = {
     "agentic": "Agentic RAG",
     "agentic_reranker": "Agentic + Reranker",
 }
+VARIANT_ORDER = tuple(VARIANT_LABELS)
 
 MATRIX_METRICS = (
     ("Retrieval Source Hit Rate", "source_hit_rate"),
@@ -50,7 +51,7 @@ def evaluate_matrix(
 ) -> dict[str, Any]:
     """Evaluate every question against the required benchmark variants."""
 
-    expected_variants = set(VARIANT_LABELS)
+    expected_variants = set(VARIANT_ORDER)
     received_variants = set(runners)
     if received_variants != expected_variants:
         missing = sorted(expected_variants - received_variants)
@@ -61,13 +62,14 @@ def evaluate_matrix(
         )
 
     variant_results: dict[str, list[dict[str, Any]]] = {
-        name: [] for name in runners
+        name: [] for name in VARIANT_ORDER
     }
     matrix_results = []
 
     for item in questions:
         systems = {}
-        for name, runner in runners.items():
+        for name in VARIANT_ORDER:
+            runner = runners[name]
             result = evaluate_single_system(item, runner, timer)
             variant_results[name].append(result)
             systems[name] = result
@@ -85,7 +87,7 @@ def evaluate_matrix(
             "total_questions": len(questions),
             "variants": {
                 name: summarize_results(variant_results[name], questions)
-                for name in runners
+                for name in VARIANT_ORDER
             },
         },
         "results": matrix_results,
@@ -103,7 +105,7 @@ def format_matrix_report(report: dict[str, Any]) -> str:
     for label, metric_name in MATRIX_METRICS:
         values = [
             str(variants.get(name, {}).get(metric_name, "N/A"))
-            for name in VARIANT_LABELS
+            for name in VARIANT_ORDER
         ]
         lines.append(f"| {label} | {' | '.join(values)} |")
     return "\n".join(lines)
@@ -179,8 +181,11 @@ def main(
 
     try:
         runners = (runner_builder or build_benchmark_runners)()
-    except (OSError, RuntimeError, ValueError) as exc:
-        parser.error(f"Unable to build benchmark runners: {exc}")
+    except (OSError, RuntimeError, ValueError):
+        parser.error(
+            "Unable to build benchmark runners. "
+            "Check LLM and reranker configuration."
+        )
 
     report = evaluate_matrix(questions, runners)
 
