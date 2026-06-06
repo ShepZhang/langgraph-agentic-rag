@@ -1,141 +1,273 @@
 [
   {
     "question": "What is Retrieval-Augmented Generation?",
-    "expected_keywords": ["retrieves", "external context", "answer"],
+    "expected_keywords": ["external context", "ground the answer"],
     "expected_sources": ["agentic_rag_notes.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": false
   },
   {
     "question": "What is Agentic RAG?",
-    "expected_keywords": ["agent", "retrieval workflow", "retry"],
+    "expected_keywords": ["agent controls the retrieval workflow", "retry retrieval"],
     "expected_sources": ["agentic_rag_notes.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": false
   },
   {
     "question": "How is naive RAG different from Agentic RAG?",
-    "expected_keywords": ["retrieves once", "control flow", "retry"],
+    "expected_keywords": ["retrieves once", "control flow"],
     "expected_sources": ["agentic_rag_notes.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": false
   },
   {
-    "question": "What does query rewriting do in this project?",
-    "expected_keywords": ["standalone", "retrieval", "original user question"],
+    "question": "What is the retriever tool called and what does it search?",
+    "expected_keywords": ["retrieve_context", "private knowledge base"],
     "expected_sources": ["agentic_rag_notes.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": false
   },
   {
-    "question": "What is the retriever tool called?",
-    "expected_keywords": ["retrieve_context", "tool", "knowledge base"],
+    "question": "What evaluation metrics does the runner track?",
+    "expected_keywords": ["answer rate", "fallback correctness", "retry count"],
     "expected_sources": ["agentic_rag_notes.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": false
   },
   {
-    "question": "What does chunk-level retrieval grading return?",
-    "expected_keywords": ["relevant_indices", "relevant_documents"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
-  },
-  {
-    "question": "When should the system fall back instead of answering?",
-    "expected_keywords": ["relevant evidence", "retry", "cannot answer"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
-  },
-  {
-    "question": "What evaluation metrics are tracked?",
-    "expected_keywords": ["answer rate", "citation rate", "fallback correctness"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
-  },
-  {
-    "question": "How does it improve reliability?",
+    "question": "How does it improve reliability compared with a one-pass pipeline?",
     "expected_keywords": ["retrieval grading", "fallback"],
     "expected_sources": ["agentic_rag_notes.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": true
   },
   {
-    "question": "Why is that better than the simple version?",
-    "expected_keywords": ["naive RAG", "control flow", "retry"],
+    "question": "What happens when the first retrieved chunks are not useful?",
+    "expected_keywords": ["rewrites the question", "retrieves again", "fallback message"],
     "expected_sources": ["agentic_rag_notes.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": true
   },
   {
-    "question": "What does the tool return?",
-    "expected_keywords": ["source filename", "chunk id", "similarity score"],
+    "question": "How does the system keep its answer tied to evidence?",
+    "expected_keywords": ["citation markers", "claim-level citation verification"],
     "expected_sources": ["agentic_rag_notes.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": true
   },
   {
-    "question": "How does the system know which chunks to use?",
-    "expected_keywords": ["chunk-level grading", "relevant_indices"],
-    "expected_sources": ["agentic_rag_notes.md"],
+    "question": "How many days per week may full-time employees work remotely?",
+    "expected_keywords": ["three days per week"],
+    "expected_sources": ["employee_handbook.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What are Northstar Labs' core collaboration hours?",
+    "expected_keywords": ["10:00 AM to 3:00 PM Pacific Time"],
+    "expected_sources": ["employee_handbook.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "How much annual paid time off do full-time employees receive?",
+    "expected_keywords": ["20 days"],
+    "expected_sources": ["employee_handbook.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What notice is required for five or more consecutive days of leave?",
+    "expected_keywords": ["5 or more consecutive days", "10 business days"],
+    "expected_sources": ["employee_handbook.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What annual learning budget is available and what approval is required?",
+    "expected_keywords": ["USD 1,500", "manager approval"],
+    "expected_sources": ["employee_handbook.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "Which file types does Atlas support?",
+    "expected_keywords": ["PDF, Markdown, and TXT"],
+    "expected_sources": ["product_specs.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What is the maximum Atlas upload size per file?",
+    "expected_keywords": ["25 MB per file"],
+    "expected_sources": ["product_specs.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "How do Atlas rebuild and incremental indexing behaviors differ?",
+    "expected_keywords": ["replaces the active collection", "incremental indexing"],
+    "expected_sources": ["product_specs.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What role does the optional reranker play in Atlas?",
+    "expected_keywords": ["cross-encoder", "retrieval grading"],
+    "expected_sources": ["product_specs.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "Does Atlas have a formal production service-level agreement?",
+    "expected_keywords": ["no formal production SLA"],
+    "expected_sources": ["product_specs.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "Which systems require multi-factor authentication?",
+    "expected_keywords": ["company email", "managed secrets vault"],
+    "expected_sources": ["security_policy.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "How long does just-in-time production access remain active?",
+    "expected_keywords": ["four hours"],
+    "expected_sources": ["security_policy.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What must a production access request include before activation?",
+    "expected_keywords": ["ticket reference", "on-call engineering lead"],
+    "expected_sources": ["security_policy.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "Where must secrets be stored, and where must credentials never be stored?",
+    "expected_keywords": ["managed secrets vault", "source control"],
+    "expected_sources": ["security_policy.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What is the deadline for reporting suspected credential exposure?",
+    "expected_keywords": ["within 30 minutes"],
+    "expected_sources": ["security_policy.md"],
+    "source_match_mode": "any",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "How much time off do people get?",
+    "expected_keywords": ["20 days"],
+    "expected_sources": ["employee_handbook.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": true
   },
   {
-    "question": "What happens if the evidence is weak?",
-    "expected_keywords": ["rewrites", "retrieves again", "fallback"],
-    "expected_sources": ["agentic_rag_notes.md"],
+    "question": "How long does elevated access last?",
+    "expected_keywords": ["four hours"],
+    "expected_sources": ["security_policy.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": true
   },
   {
-    "question": "Is this the same as complete citation verification?",
-    "expected_keywords": ["not the same", "claim-level", "future"],
-    "expected_sources": ["agentic_rag_notes.md"],
+    "question": "What file limit does the document tool have?",
+    "expected_keywords": ["25 MB per file"],
+    "expected_sources": ["product_specs.md"],
+    "source_match_mode": "any",
     "should_answer": true,
     "requires_rewrite": true
   },
   {
-    "question": "What is the company's private payroll policy?",
+    "question": "Which file formats does Atlas support, and how long does temporary production access last?",
+    "expected_keywords": ["PDF", "four hours"],
+    "expected_sources": ["product_specs.md", "security_policy.md"],
+    "source_match_mode": "all",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "How do Atlas citation checks and Northstar secret management reduce answer and credential risk?",
+    "expected_keywords": ["citation markers", "managed secrets vault"],
+    "expected_sources": ["product_specs.md", "security_policy.md"],
+    "source_match_mode": "all",
+    "should_answer": true,
+    "requires_rewrite": false
+  },
+  {
+    "question": "What are Northstar Labs' salary bands?",
     "expected_keywords": [],
     "expected_sources": [],
+    "source_match_mode": "any",
     "should_answer": false,
     "requires_rewrite": false
   },
   {
-    "question": "Who is the CEO of the company that owns these documents?",
+    "question": "Who is the CEO of Northstar Labs?",
     "expected_keywords": [],
     "expected_sources": [],
+    "source_match_mode": "any",
     "should_answer": false,
     "requires_rewrite": false
   },
   {
-    "question": "What are the database credentials for the production system?",
+    "question": "What was Northstar Labs' quarterly revenue?",
     "expected_keywords": [],
     "expected_sources": [],
+    "source_match_mode": "any",
     "should_answer": false,
     "requires_rewrite": false
   },
   {
-    "question": "What is the vacation approval process for employees?",
+    "question": "What is the production database hostname?",
     "expected_keywords": [],
     "expected_sources": [],
+    "source_match_mode": "any",
     "should_answer": false,
     "requires_rewrite": false
   },
   {
-    "question": "What are the quarterly revenue numbers?",
+    "question": "What is Northstar Labs' customer retention rate?",
     "expected_keywords": [],
     "expected_sources": [],
+    "source_match_mode": "any",
     "should_answer": false,
     "requires_rewrite": false
   },
   {
-    "question": "Which cloud vendor does this project use in production?",
+    "question": "What is the office parking policy?",
     "expected_keywords": [],
     "expected_sources": [],
+    "source_match_mode": "any",
     "should_answer": false,
     "requires_rewrite": false
   }

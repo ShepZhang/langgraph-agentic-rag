@@ -39,6 +39,12 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
         requires_rewrite = record.get("requires_rewrite", False)
         if not isinstance(requires_rewrite, bool):
             raise ValueError("requires_rewrite must be a boolean")
+        source_match_mode = record.get("source_match_mode", "any")
+        if (
+            not isinstance(source_match_mode, str)
+            or source_match_mode not in {"any", "all"}
+        ):
+            raise ValueError("source_match_mode must be 'any' or 'all'")
 
         normalized = dict(record)
         normalized["expected_keywords"] = _normalize_string_list(
@@ -46,6 +52,7 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
             field_name="expected_keywords",
         )
         normalized["expected_sources"] = _normalize_expected_sources(record)
+        normalized["source_match_mode"] = source_match_mode
         normalized["should_answer"] = should_answer
         normalized["requires_rewrite"] = requires_rewrite
         questions.append(normalized)
@@ -250,7 +257,12 @@ def _build_success_result(
         "citation_returned": bool(citations),
         "is_verified": bool(agent_result.get("is_verified", False)),
         "claim_count": len(claims),
-        "source_hit": _has_expected_source(expected_sources, citations, retrieved_documents),
+        "source_hit": _has_expected_source(
+            expected_sources,
+            citations,
+            retrieved_documents,
+            item.get("source_match_mode", "any"),
+        ),
         "keyword_hit": (
             answer_returned and _has_expected_keywords(answer, expected_keywords)
         ),
@@ -512,17 +524,22 @@ def _has_expected_source(
     expected_sources: Any,
     citations: list[Any],
     retrieved_documents: list[Any],
+    source_match_mode: str = "any",
 ) -> bool:
     if not expected_sources:
         return False
 
     evidence = citations if citations else retrieved_documents
-    return any(
-        isinstance(document, dict)
-        and isinstance(document.get("source"), str)
-        and document["source"] in expected_sources
+    expected_set = set(expected_sources)
+    observed_set = {
+        document["source"]
         for document in evidence
-    )
+        if isinstance(document, dict)
+        and isinstance(document.get("source"), str)
+    }
+    if source_match_mode == "all":
+        return expected_set.issubset(observed_set)
+    return bool(expected_set.intersection(observed_set))
 
 
 def _has_expected_keywords(answer: Any, expected_keywords: list[Any]) -> bool:

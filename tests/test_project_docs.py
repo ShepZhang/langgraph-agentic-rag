@@ -1,5 +1,6 @@
 """Tests for the portfolio sample document corpus."""
 
+import json
 from pathlib import Path
 
 from rag.loader import load_documents
@@ -134,3 +135,26 @@ def test_sample_corpus_contains_source_specific_benchmark_facts():
 
         for fact in expected_facts:
             assert fact in document_text
+
+
+def test_portfolio_evaluation_set_has_balanced_question_groups():
+    evaluation_path = PROJECT_ROOT / "evaluation/eval_questions.json"
+    questions = json.loads(evaluation_path.read_text(encoding="utf-8"))
+
+    assert len(questions) == 34
+    assert sum(item["should_answer"] for item in questions) >= 20
+    assert sum(not item["should_answer"] for item in questions) >= 6
+    assert sum(item["requires_rewrite"] for item in questions) >= 6
+    assert sum(item["source_match_mode"] == "all" for item in questions) >= 2
+
+    observed_sources = {
+        source
+        for item in questions
+        for source in item["expected_sources"]
+    }
+    assert observed_sources == {
+        "agentic_rag_notes.md",
+        "employee_handbook.md",
+        "product_specs.md",
+        "security_policy.md",
+    }

@@ -38,6 +38,7 @@ def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):
             "expected_keywords": ["agent", "retrieval"],
             "expected_source": "legacy.md",
             "expected_sources": ["legacy.md"],
+            "source_match_mode": "any",
             "should_answer": True,
             "requires_rewrite": False,
         },
@@ -45,6 +46,7 @@ def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):
             "question": "What is not covered?",
             "expected_keywords": [],
             "expected_sources": [],
+            "source_match_mode": "any",
             "should_answer": False,
             "requires_rewrite": True,
         },
@@ -58,6 +60,43 @@ def test_load_eval_questions_defaults_requires_rewrite_false(tmp_path):
     questions = load_eval_questions(path)
 
     assert questions[0]["requires_rewrite"] is False
+
+
+def test_load_eval_questions_accepts_all_source_match_mode(tmp_path):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "What connects these documents?",
+                    "source_match_mode": "all",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    questions = load_eval_questions(path)
+
+    assert questions[0]["source_match_mode"] == "all"
+
+
+def test_load_eval_questions_rejects_invalid_source_match_mode(tmp_path):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "What connects these documents?",
+                    "source_match_mode": "some",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="source_match_mode"):
+        load_eval_questions(path)
 
 
 def test_load_eval_questions_rejects_missing_question(tmp_path):
@@ -148,6 +187,53 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
     assert report["results"][0]["keyword_hit"] is True
     assert report["results"][1]["fallback_triggered"] is True
     assert report["results"][1]["fallback_correct"] is True
+
+
+def test_cross_document_source_hit_requires_all_expected_citations():
+    questions = [
+        {
+            "question": "What connects product and security policy?",
+            "expected_sources": ["product_specs.md", "security_policy.md"],
+            "source_match_mode": "all",
+        }
+    ]
+
+    def fake_run_agent(question):
+        return {
+            "answer": "Atlas uses citation checks and temporary access controls.",
+            "citations": [{"source": "product_specs.md"}],
+            "retrieved_documents": [
+                {"source": "product_specs.md"},
+                {"source": "security_policy.md"},
+            ],
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_run_agent)
+
+    assert report["results"][0]["source_hit"] is False
+
+
+def test_cross_document_source_hit_accepts_all_expected_citations():
+    questions = [
+        {
+            "question": "What connects product and security policy?",
+            "expected_sources": ["product_specs.md", "security_policy.md"],
+            "source_match_mode": "all",
+        }
+    ]
+
+    def fake_run_agent(question):
+        return {
+            "answer": "Atlas uses citation checks and temporary access controls.",
+            "citations": [
+                {"source": "product_specs.md"},
+                {"source": "security_policy.md"},
+            ],
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_run_agent)
+
+    assert report["results"][0]["source_hit"] is True
 
 
 def test_evaluate_questions_compares_naive_and_agentic_results():
