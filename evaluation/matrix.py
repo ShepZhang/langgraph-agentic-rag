@@ -1,0 +1,202 @@
+"""Three-variant evaluation matrix for benchmark reporting."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from dataclasses import replace
+from pathlib import Path
+from typing import Any, Callable
+
+from agent.graph import run_agent
+from config import Settings, get_settings
+from evaluation.baselines import run_naive_rag
+from evaluation.evaluate import (
+    DEFAULT_EVAL_PATH,
+    evaluate_single_system,
+    load_eval_questions,
+    summarize_results,
+)
+from rag.retriever import Retriever
+
+
+Runner = Callable[[str], dict[str, Any]]
+
+VARIANT_LABELS = {
+    "naive": "Naive RAG",
+    "agentic": "Agentic RAG",
+    "agentic_reranker": "Agentic + Reranker",
+}
+
+MATRIX_METRICS = (
+    ("Retrieval Source Hit Rate", "source_hit_rate"),
+    ("Keyword Hit Rate", "keyword_hit_rate"),
+    ("Citation Rate", "citation_rate"),
+    ("Claim Verification Rate", "verification_rate"),
+    ("Fallback Correctness", "fallback_correctness_rate"),
+    ("Average Retry Count", "average_retry_count"),
+    ("Average Retrieved Docs", "average_retrieved_docs"),
+    ("Average Relevant Docs", "average_relevant_docs"),
+    ("Average Latency", "average_latency"),
+    ("Error Count", "error_count"),
+)
+
+
+def evaluate_matrix(
+    questions: list[dict[str, Any]],
+    runners: dict[str, Runner],
+    timer: Callable[[], float] = time.perf_counter,
+) -> dict[str, Any]:
+    """Evaluate every question against the required benchmark variants."""
+
+    expected_variants = set(VARIANT_LABELS)
+    received_variants = set(runners)
+    if received_variants != expected_variants:
+        missing = sorted(expected_variants - received_variants)
+        extra = sorted(received_variants - expected_variants)
+        raise ValueError(
+            "runners must contain exactly naive, agentic, and agentic_reranker; "
+            f"missing={missing}, extra={extra}"
+        )
+
+    variant_results: dict[str, list[dict[str, Any]]] = {
+        name: [] for name in runners
+    }
+    matrix_results = []
+
+    for item in questions:
+        systems = {}
+        for name, runner in runners.items():
+            result = evaluate_single_system(item, runner, timer)
+            variant_results[name].append(result)
+            systems[name] = result
+        matrix_results.append(
+            {
+                "question": item["question"],
+                "requires_rewrite": item.get("requires_rewrite", False),
+                "systems": systems,
+            }
+        )
+
+    return {
+        "summary": {
+            "mode": "matrix",
+            "total_questions": len(questions),
+            "variants": {
+                name: summarize_results(variant_results[name], questions)
+                for name in runners
+            },
+        },
+        "results": matrix_results,
+    }
+
+
+def format_matrix_report(report: dict[str, Any]) -> str:
+    """Format matrix summary metrics as a Markdown table."""
+
+    variants = report.get("summary", {}).get("variants", {})
+    lines = [
+        "| Metric | Naive RAG | Agentic RAG | Agentic + Reranker |",
+        "|---|---:|---:|---:|",
+    ]
+    for label, metric_name in MATRIX_METRICS:
+        values = [
+            str(variants.get(name, {}).get(metric_name, "N/A"))
+            for name in VARIANT_LABELS
+        ]
+        lines.append(f"| {label} | {' | '.join(values)} |")
+    return "\n".join(lines)
+
+
+def build_benchmark_runners(
+    settings: Settings | None = None,
+) -> dict[str, Runner]:
+    """Build isolated runners with reranking disabled or enabled as required."""
+
+    base = settings or get_settings()
+    base.require_llm_config()
+
+    without_reranker = replace(base, reranker_enabled=False)
+    with_reranker = replace(base, reranker_enabled=True)
+    plain_retriever = Retriever(settings=without_reranker).retrieve
+    reranked_retriever = Retriever(settings=with_reranker).retrieve
+
+    def run_naive(question: str) -> dict[str, Any]:
+        return run_naive_rag(
+            question,
+            retriever_fn=plain_retriever,
+            settings=without_reranker,
+        )
+
+    def run_agentic(question: str) -> dict[str, Any]:
+        return run_agent(
+            question,
+            retriever_fn=plain_retriever,
+            settings=without_reranker,
+        )
+
+    def run_agentic_reranker(question: str) -> dict[str, Any]:
+        return run_agent(
+            question,
+            retriever_fn=reranked_retriever,
+            settings=with_reranker,
+        )
+
+    return {
+        "naive": run_naive,
+        "agentic": run_agentic,
+        "agentic_reranker": run_agentic_reranker,
+    }
+
+
+def main(
+    argv: list[str] | None = None,
+    runner_builder: Callable[[], dict[str, Runner]] | None = None,
+) -> int:
+    """CLI entrypoint for the three-variant evaluation matrix."""
+
+    parser = argparse.ArgumentParser(
+        description="Compare naive, agentic, and reranked Agentic RAG."
+    )
+    parser.add_argument(
+        "--questions",
+        default=DEFAULT_EVAL_PATH,
+        type=Path,
+        help="Path to evaluation questions JSON.",
+    )
+    parser.add_argument(
+        "--json-output",
+        type=Path,
+        help="Optional path for the full JSON report.",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        questions = load_eval_questions(args.questions)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        parser.error(f"Unable to load evaluation questions: {exc}")
+
+    try:
+        runners = (runner_builder or build_benchmark_runners)()
+    except (OSError, RuntimeError, ValueError) as exc:
+        parser.error(f"Unable to build benchmark runners: {exc}")
+
+    report = evaluate_matrix(questions, runners)
+
+    if args.json_output is not None:
+        try:
+            args.json_output.parent.mkdir(parents=True, exist_ok=True)
+            args.json_output.write_text(
+                json.dumps(report, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            parser.error(f"Unable to write JSON output: {exc}")
+
+    print(format_matrix_report(report))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

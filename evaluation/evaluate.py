@@ -94,6 +94,14 @@ def evaluate_questions(
     return {"summary": _summarize(results, questions), "results": results}
 
 
+def evaluate_single_system(item, runner, timer=time.perf_counter):
+    return _evaluate_single_system(item, runner, timer)
+
+
+def summarize_results(results, questions):
+    return _summarize(results, questions)
+
+
 def format_report(report: dict[str, Any]) -> str:
     """Format an evaluation report for terminal output."""
 
