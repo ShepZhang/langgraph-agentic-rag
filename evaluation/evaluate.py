@@ -94,11 +94,22 @@ def evaluate_questions(
     return {"summary": _summarize(results, questions), "results": results}
 
 
-def evaluate_single_system(item, runner, timer=time.perf_counter):
+def evaluate_single_system(
+    item: dict[str, Any],
+    runner: Callable[[str], dict[str, Any]],
+    timer: Callable[[], float] = time.perf_counter,
+) -> dict[str, Any]:
+    """Evaluate one question with one system using the shared evaluator."""
+
     return _evaluate_single_system(item, runner, timer)
 
 
-def summarize_results(results, questions):
+def summarize_results(
+    results: list[dict[str, Any]],
+    questions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Summarize system results using the shared evaluation metrics."""
+
     return _summarize(results, questions)
 
 

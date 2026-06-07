@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import time
 from dataclasses import replace
@@ -19,6 +20,7 @@ from evaluation.evaluate import (
     summarize_results,
 )
 from rag.retriever import Retriever
+from rag.vectorstore import VectorStoreManager
 
 
 Runner = Callable[[str], dict[str, Any]]
@@ -121,20 +123,38 @@ def build_benchmark_runners(
 
     without_reranker = replace(base, reranker_enabled=False)
     with_reranker = replace(base, reranker_enabled=True)
-    plain_retriever = Retriever(settings=without_reranker).retrieve
-    reranked_retriever = Retriever(settings=with_reranker).retrieve
+    naive_manager = VectorStoreManager(settings=without_reranker)
+    agentic_manager = VectorStoreManager(settings=without_reranker)
+    reranked_manager = VectorStoreManager(settings=with_reranker)
+    naive_retriever = Retriever(
+        vectorstore_manager=naive_manager,
+        settings=without_reranker,
+    ).retrieve
+    agentic_retriever = Retriever(
+        vectorstore_manager=agentic_manager,
+        settings=without_reranker,
+    ).retrieve
+    try:
+        reranked_retriever = Retriever(
+            vectorstore_manager=reranked_manager,
+            settings=with_reranker,
+        ).retrieve
+    except Exception as exc:  # noqa: BLE001 - hide backend details at this boundary.
+        raise RuntimeError(
+            f"Unable to initialize reranker model {with_reranker.reranker_model!r}."
+        ) from exc
 
     def run_naive(question: str) -> dict[str, Any]:
         return run_naive_rag(
             question,
-            retriever_fn=plain_retriever,
+            retriever_fn=naive_retriever,
             settings=without_reranker,
         )
 
     def run_agentic(question: str) -> dict[str, Any]:
         return run_agent(
             question,
-            retriever_fn=plain_retriever,
+            retriever_fn=agentic_retriever,
             settings=without_reranker,
         )
 
@@ -181,7 +201,7 @@ def main(
 
     try:
         runners = (runner_builder or build_benchmark_runners)()
-    except (OSError, RuntimeError, ValueError):
+    except Exception:  # noqa: BLE001 - CLI must not expose construction details.
         parser.error(
             "Unable to build benchmark runners. "
             "Check LLM and reranker configuration."
@@ -193,7 +213,11 @@ def main(
         try:
             args.json_output.parent.mkdir(parents=True, exist_ok=True)
             args.json_output.write_text(
-                json.dumps(report, ensure_ascii=False, indent=2),
+                json.dumps(
+                    _build_persistable_report(report),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
                 encoding="utf-8",
             )
         except (OSError, TypeError, ValueError) as exc:
@@ -201,6 +225,16 @@ def main(
 
     print(format_matrix_report(report))
     return 0
+
+
+def _build_persistable_report(report: dict[str, Any]) -> dict[str, Any]:
+    persisted_report = copy.deepcopy(report)
+    for result in persisted_report.get("results", []):
+        for system_result in result.get("systems", {}).values():
+            error = system_result.get("error")
+            if error:
+                system_result["error"] = str(error).split(":", maxsplit=1)[0]
+    return persisted_report
 
 
 if __name__ == "__main__":

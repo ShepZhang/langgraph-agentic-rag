@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import json
 from dataclasses import replace
+from typing import Any, Callable, get_type_hints
 
 import pytest
 
@@ -75,6 +77,28 @@ def test_public_wrappers_match_existing_evaluator_behavior():
         [private_result],
         [item],
     )
+
+
+def test_public_wrappers_have_typed_signatures_and_docstrings():
+    single_hints = get_type_hints(evaluator.evaluate_single_system)
+    summary_hints = get_type_hints(evaluator.summarize_results)
+
+    assert single_hints == {
+        "item": dict[str, Any],
+        "runner": Callable[[str], dict[str, Any]],
+        "timer": Callable[[], float],
+        "return": dict[str, Any],
+    }
+    assert summary_hints == {
+        "results": list[dict[str, Any]],
+        "questions": list[dict[str, Any]],
+        "return": dict[str, Any],
+    }
+    assert inspect.signature(evaluator.evaluate_single_system).parameters[
+        "timer"
+    ].default is evaluator.time.perf_counter
+    assert evaluator.evaluate_single_system.__doc__
+    assert evaluator.summarize_results.__doc__
 
 
 def test_evaluate_matrix_uses_canonical_variant_order_with_isolated_results():
@@ -200,7 +224,7 @@ def test_evaluate_matrix_records_runner_errors_and_continues_other_variants():
     )
 
 
-def test_format_matrix_report_has_fixed_header_source_hit_row_and_na():
+def test_format_matrix_report_has_all_metrics_in_fixed_order():
     matrix = _matrix_module()
     report = {
         "summary": {
@@ -214,27 +238,46 @@ def test_format_matrix_report_has_fixed_header_source_hit_row_and_na():
 
     text = matrix.format_matrix_report(report)
 
-    assert "| Metric | Naive RAG | Agentic RAG | Agentic + Reranker |" in text
-    assert "| Retrieval Source Hit Rate | 0.25 | 0.75 | 1.0 |" in text
-    assert "| Keyword Hit Rate | N/A | N/A | N/A |" in text
-    assert "| Error Count | N/A | N/A | N/A |" in text
+    assert text.splitlines() == [
+        "| Metric | Naive RAG | Agentic RAG | Agentic + Reranker |",
+        "|---|---:|---:|---:|",
+        "| Retrieval Source Hit Rate | 0.25 | 0.75 | 1.0 |",
+        "| Keyword Hit Rate | N/A | N/A | N/A |",
+        "| Citation Rate | N/A | N/A | N/A |",
+        "| Claim Verification Rate | N/A | N/A | N/A |",
+        "| Fallback Correctness | N/A | N/A | N/A |",
+        "| Average Retry Count | N/A | N/A | N/A |",
+        "| Average Retrieved Docs | N/A | N/A | N/A |",
+        "| Average Relevant Docs | N/A | N/A | N/A |",
+        "| Average Latency | N/A | N/A | N/A |",
+        "| Error Count | N/A | N/A | N/A |",
+    ]
 
 
-def test_build_benchmark_runners_uses_independent_reranker_settings(monkeypatch):
+def test_build_benchmark_runners_isolates_managers_and_retrievers(monkeypatch):
     matrix = _matrix_module()
-    retriever_settings = []
+    manager_settings = []
+    retriever_instances = []
     calls = []
 
-    class FakeRetriever:
+    class FakeVectorStoreManager:
         def __init__(self, settings):
             self.settings = settings
-            retriever_settings.append(settings)
+            manager_settings.append(settings)
+
+    class FakeRetriever:
+        def __init__(self, vectorstore_manager, settings):
+            self.vectorstore_manager = vectorstore_manager
+            self.settings = settings
+            retriever_instances.append(self)
 
         def retrieve(self, question):
             return [
                 {
                     "question": question,
                     "reranker_enabled": self.settings.reranker_enabled,
+                    "manager_id": id(self.vectorstore_manager),
+                    "retriever_id": id(self),
                 }
             ]
 
@@ -246,6 +289,7 @@ def test_build_benchmark_runners_uses_independent_reranker_settings(monkeypatch)
         calls.append(("agentic", question, retriever_fn(question), settings))
         return {"variant": "agentic", "reranker": settings.reranker_enabled}
 
+    monkeypatch.setattr(matrix, "VectorStoreManager", FakeVectorStoreManager)
     monkeypatch.setattr(matrix, "Retriever", FakeRetriever)
     monkeypatch.setattr(matrix, "run_naive_rag", fake_naive)
     monkeypatch.setattr(matrix, "run_agent", fake_agent)
@@ -255,13 +299,17 @@ def test_build_benchmark_runners_uses_independent_reranker_settings(monkeypatch)
     outputs = {name: runner("Question?") for name, runner in runners.items()}
 
     assert list(runners) == ["naive", "agentic", "agentic_reranker"]
-    assert [settings.reranker_enabled for settings in retriever_settings] == [
+    assert [settings.reranker_enabled for settings in manager_settings] == [
+        False,
         False,
         True,
     ]
-    assert retriever_settings[0] is not base
-    assert retriever_settings[1] is not base
-    assert retriever_settings[0] is not retriever_settings[1]
+    assert len({id(instance.vectorstore_manager) for instance in retriever_instances}) == 3
+    assert len({id(instance) for instance in retriever_instances}) == 3
+    assert [
+        instance.vectorstore_manager.settings is instance.settings
+        for instance in retriever_instances
+    ] == [True, True, True]
     assert outputs == {
         "naive": {"variant": "naive"},
         "agentic": {"variant": "agentic", "reranker": False},
@@ -270,9 +318,48 @@ def test_build_benchmark_runners_uses_independent_reranker_settings(monkeypatch)
     assert calls[0][2][0]["reranker_enabled"] is False
     assert calls[1][2][0]["reranker_enabled"] is False
     assert calls[2][2][0]["reranker_enabled"] is True
-    assert calls[0][3] is retriever_settings[0]
-    assert calls[1][3] is retriever_settings[0]
-    assert calls[2][3] is retriever_settings[1]
+    assert [call[2][0]["retriever_id"] for call in calls] == [
+        id(instance) for instance in retriever_instances
+    ]
+    assert [call[2][0]["manager_id"] for call in calls] == [
+        id(instance.vectorstore_manager) for instance in retriever_instances
+    ]
+    assert calls[0][3] is manager_settings[0]
+    assert calls[1][3] is manager_settings[1]
+    assert calls[2][3] is manager_settings[2]
+
+
+def test_build_benchmark_runners_sanitizes_reranker_initialization_error(
+    monkeypatch,
+):
+    matrix = _matrix_module()
+    base = replace(
+        _configured_settings(),
+        reranker_model="safe-reranker-model",
+    )
+
+    class FakeVectorStoreManager:
+        def __init__(self, settings):
+            self.settings = settings
+
+    class FakeRetriever:
+        def __init__(self, vectorstore_manager, settings):
+            if settings.reranker_enabled:
+                raise ImportError("loader failed with sk-sensitive-value")
+
+        def retrieve(self, _question):
+            return []
+
+    monkeypatch.setattr(matrix, "VectorStoreManager", FakeVectorStoreManager)
+    monkeypatch.setattr(matrix, "Retriever", FakeRetriever)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        matrix.build_benchmark_runners(base)
+
+    assert "safe-reranker-model" in str(exc_info.value)
+    assert "loader failed" not in str(exc_info.value)
+    assert "sk-sensitive-value" not in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, ImportError)
 
 
 def test_build_benchmark_runners_requires_llm_config_before_retrievers(monkeypatch):
@@ -332,6 +419,59 @@ def test_matrix_main_writes_nested_json_and_prints_markdown(tmp_path, capsys):
     assert "\\u91cd" not in saved_text
 
 
+def test_matrix_main_sanitizes_runner_errors_in_json_without_mutating_report(
+    tmp_path,
+    monkeypatch,
+):
+    matrix = _matrix_module()
+    questions = [{"question": "What is RAG?"}]
+
+    def failing_runner(_question):
+        raise RuntimeError("Authorization: Bearer sk-sensitive-value")
+
+    runners = {
+        "naive": failing_runner,
+        "agentic": lambda _question: _system_result("Agentic answer"),
+        "agentic_reranker": lambda _question: _system_result("Reranked answer"),
+    }
+    report = matrix.evaluate_matrix(questions, runners, timer=StepTimer())
+
+    assert report["results"][0]["systems"]["naive"]["error"] == (
+        "RuntimeError: Authorization: Bearer sk-sensitive-value"
+    )
+
+    question_path = tmp_path / "questions.json"
+    question_path.write_text(json.dumps(questions), encoding="utf-8")
+    output_path = tmp_path / "reports" / "matrix.json"
+    monkeypatch.setattr(
+        matrix,
+        "evaluate_matrix",
+        lambda _questions, _runners: report,
+    )
+
+    exit_code = matrix.main(
+        [
+            "--questions",
+            str(question_path),
+            "--json-output",
+            str(output_path),
+        ],
+        runner_builder=lambda: runners,
+    )
+
+    saved_text = output_path.read_text(encoding="utf-8")
+    saved_report = json.loads(saved_text)
+    assert exit_code == 0
+    assert report["results"][0]["systems"]["naive"]["error"] == (
+        "RuntimeError: Authorization: Bearer sk-sensitive-value"
+    )
+    assert saved_report["results"][0]["systems"]["naive"]["error"] == "RuntimeError"
+    assert saved_report["summary"]["variants"]["naive"]["error_count"] == 1
+    assert "Authorization" not in saved_text
+    assert "Bearer" not in saved_text
+    assert "sk-sensitive-value" not in saved_text
+
+
 def test_matrix_main_reports_runner_construction_errors_without_secret(
     tmp_path,
     capsys,
@@ -344,7 +484,7 @@ def test_matrix_main_reports_runner_construction_errors_without_secret(
     )
 
     def failing_builder():
-        raise RuntimeError("failed with secret sk-sensitive-value")
+        raise ImportError("reranker failed with sk-sensitive-value")
 
     with pytest.raises(SystemExit) as exc_info:
         matrix.main(
@@ -358,6 +498,6 @@ def test_matrix_main_reports_runner_construction_errors_without_secret(
         "Unable to build benchmark runners. Check LLM and reranker configuration."
         in captured.err
     )
-    assert "failed with secret" not in captured.err
+    assert "reranker failed" not in captured.err
     assert "sk-sensitive-value" not in captured.err
     assert "Traceback" not in captured.err
