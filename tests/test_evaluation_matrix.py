@@ -257,13 +257,18 @@ def test_format_matrix_report_has_all_metrics_in_fixed_order():
 def test_build_benchmark_runners_isolates_managers_and_retrievers(monkeypatch):
     matrix = _matrix_module()
     manager_settings = []
+    manager_embeddings = []
     retriever_instances = []
+    embedding_calls = []
     calls = []
+    shared_embedding = object()
 
     class FakeVectorStoreManager:
-        def __init__(self, settings):
+        def __init__(self, settings, embedding_model):
             self.settings = settings
+            self.embedding_model = embedding_model
             manager_settings.append(settings)
+            manager_embeddings.append(embedding_model)
 
     class FakeRetriever:
         def __init__(self, vectorstore_manager, settings):
@@ -289,6 +294,11 @@ def test_build_benchmark_runners_isolates_managers_and_retrievers(monkeypatch):
         calls.append(("agentic", question, retriever_fn(question), settings))
         return {"variant": "agentic", "reranker": settings.reranker_enabled}
 
+    def fake_get_embedding_model(settings):
+        embedding_calls.append(settings)
+        return shared_embedding
+
+    monkeypatch.setattr(matrix, "get_embedding_model", fake_get_embedding_model)
     monkeypatch.setattr(matrix, "VectorStoreManager", FakeVectorStoreManager)
     monkeypatch.setattr(matrix, "Retriever", FakeRetriever)
     monkeypatch.setattr(matrix, "run_naive_rag", fake_naive)
@@ -304,6 +314,8 @@ def test_build_benchmark_runners_isolates_managers_and_retrievers(monkeypatch):
         False,
         True,
     ]
+    assert embedding_calls == [manager_settings[0]]
+    assert manager_embeddings == [shared_embedding] * 3
     assert len({id(instance.vectorstore_manager) for instance in retriever_instances}) == 3
     assert len({id(instance) for instance in retriever_instances}) == 3
     assert [
@@ -339,8 +351,9 @@ def test_build_benchmark_runners_sanitizes_reranker_initialization_error(
     )
 
     class FakeVectorStoreManager:
-        def __init__(self, settings):
+        def __init__(self, settings, embedding_model):
             self.settings = settings
+            self.embedding_model = embedding_model
 
     class FakeRetriever:
         def __init__(self, vectorstore_manager, settings):
@@ -350,16 +363,97 @@ def test_build_benchmark_runners_sanitizes_reranker_initialization_error(
         def retrieve(self, _question):
             return []
 
+    monkeypatch.setattr(matrix, "get_embedding_model", lambda _settings: object())
     monkeypatch.setattr(matrix, "VectorStoreManager", FakeVectorStoreManager)
     monkeypatch.setattr(matrix, "Retriever", FakeRetriever)
 
-    with pytest.raises(RuntimeError) as exc_info:
+    with pytest.raises(matrix.BenchmarkConfigurationError) as exc_info:
         matrix.build_benchmark_runners(base)
 
     assert "safe-reranker-model" in str(exc_info.value)
     assert "loader failed" not in str(exc_info.value)
     assert "sk-sensitive-value" not in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, ImportError)
+
+
+def test_matrix_main_reports_safe_reranker_configuration_error(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    matrix = _matrix_module()
+    base = replace(
+        _configured_settings(),
+        reranker_model="safe-reranker-model",
+    )
+    retriever_count = 0
+
+    class FakeVectorStoreManager:
+        def __init__(self, settings, embedding_model):
+            self.settings = settings
+            self.embedding_model = embedding_model
+
+    class FakeRetriever:
+        def __init__(self, vectorstore_manager, settings):
+            nonlocal retriever_count
+            retriever_count += 1
+            if retriever_count == 3:
+                raise ImportError("reranker failed with sk-sensitive-value")
+
+        def retrieve(self, _question):
+            return []
+
+    question_path = tmp_path / "questions.json"
+    question_path.write_text(
+        json.dumps([{"question": "What is RAG?"}]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(matrix, "get_settings", lambda: base)
+    monkeypatch.setattr(matrix, "get_embedding_model", lambda _settings: object())
+    monkeypatch.setattr(matrix, "VectorStoreManager", FakeVectorStoreManager)
+    monkeypatch.setattr(matrix, "Retriever", FakeRetriever)
+
+    with pytest.raises(SystemExit) as exc_info:
+        matrix.main(["--questions", str(question_path)])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "safe-reranker-model" in captured.err
+    assert "reranker failed" not in captured.err
+    assert "sk-sensitive-value" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_matrix_main_generalizes_embedding_initialization_error(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    matrix = _matrix_module()
+    question_path = tmp_path / "questions.json"
+    question_path.write_text(
+        json.dumps([{"question": "What is RAG?"}]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(matrix, "get_settings", _configured_settings)
+
+    def failing_embedding(_settings):
+        raise ImportError("embedding failed with sk-sensitive-value")
+
+    monkeypatch.setattr(matrix, "get_embedding_model", failing_embedding)
+
+    with pytest.raises(SystemExit) as exc_info:
+        matrix.main(["--questions", str(question_path)])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert (
+        "Unable to build benchmark runners. Check LLM and reranker configuration."
+        in captured.err
+    )
+    assert "embedding failed" not in captured.err
+    assert "sk-sensitive-value" not in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_build_benchmark_runners_requires_llm_config_before_retrievers(monkeypatch):

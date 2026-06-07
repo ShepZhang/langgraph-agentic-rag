@@ -19,11 +19,17 @@ from evaluation.evaluate import (
     load_eval_questions,
     summarize_results,
 )
+from rag.embeddings import get_embedding_model
 from rag.retriever import Retriever
 from rag.vectorstore import VectorStoreManager
 
 
 Runner = Callable[[str], dict[str, Any]]
+
+
+class BenchmarkConfigurationError(RuntimeError):
+    """Raised when a benchmark variant cannot use its configured components."""
+
 
 VARIANT_LABELS = {
     "naive": "Naive RAG",
@@ -123,9 +129,19 @@ def build_benchmark_runners(
 
     without_reranker = replace(base, reranker_enabled=False)
     with_reranker = replace(base, reranker_enabled=True)
-    naive_manager = VectorStoreManager(settings=without_reranker)
-    agentic_manager = VectorStoreManager(settings=without_reranker)
-    reranked_manager = VectorStoreManager(settings=with_reranker)
+    embedding_model = get_embedding_model(without_reranker)
+    naive_manager = VectorStoreManager(
+        settings=without_reranker,
+        embedding_model=embedding_model,
+    )
+    agentic_manager = VectorStoreManager(
+        settings=without_reranker,
+        embedding_model=embedding_model,
+    )
+    reranked_manager = VectorStoreManager(
+        settings=with_reranker,
+        embedding_model=embedding_model,
+    )
     naive_retriever = Retriever(
         vectorstore_manager=naive_manager,
         settings=without_reranker,
@@ -140,7 +156,7 @@ def build_benchmark_runners(
             settings=with_reranker,
         ).retrieve
     except Exception as exc:  # noqa: BLE001 - hide backend details at this boundary.
-        raise RuntimeError(
+        raise BenchmarkConfigurationError(
             f"Unable to initialize reranker model {with_reranker.reranker_model!r}."
         ) from exc
 
@@ -201,6 +217,8 @@ def main(
 
     try:
         runners = (runner_builder or build_benchmark_runners)()
+    except BenchmarkConfigurationError as exc:
+        parser.error(str(exc))
     except Exception:  # noqa: BLE001 - CLI must not expose construction details.
         parser.error(
             "Unable to build benchmark runners. "
