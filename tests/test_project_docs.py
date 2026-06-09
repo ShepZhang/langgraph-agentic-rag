@@ -158,6 +158,22 @@ def test_demo_excludes_secrets_and_includes_reproducibility_commands():
         assert required_text in demo_text
 
 
+def test_readme_links_portfolio_materials_and_interview_topics():
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "docs/evaluation.md" in readme
+    assert "docs/demo.md" in readme
+    assert "## Interview Talking Points" in readme
+    assert "Reranker vs retrieval grading" in readme
+    assert "Original question vs retrieval query" in readme
+    assert "Citation-aware generation vs claim verification" in readme
+    assert "| Source Hit Rate | 0.6 | 0.8 |" not in readme
+    assert (
+        "DeepSeek Evaluation Benchmark" in readme
+        or "Agentic + Reranker" in readme
+    )
+    assert readme.count("```") % 2 == 0
+
+
 def test_portfolio_sample_corpus_files_exist_and_load():
     assert all(path.exists() for path in SAMPLE_DOCS)
 

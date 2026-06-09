@@ -27,6 +27,12 @@ The agent checks whether retrieved chunks can actually answer the question. If t
 
 The system keeps a strict distinction between the original user question and the retrieval query. `current_query` is optimized for search; grading and answer generation still target the original user question.
 
+## Portfolio Materials
+
+- [Evaluation report](docs/evaluation.md)
+- [Reproducible demo guide](docs/demo.md)
+- [Design notes](docs/design.md)
+
 ## Architecture
 
 ![Architecture](assets/architecture.png)
@@ -94,7 +100,7 @@ Key state fields:
 - Citation safety: normal answers without valid supporting citation indices or matching answer citation markers fall back instead of returning unsupported answers.
 - Lightweight claim-level verification: normal cited answers are split into claims and checked against selected citation chunks.
 - Gradio UI for upload, indexing, question answering, citations, retrieved chunks, and retry diagnostics.
-- Lightweight evaluation runner comparing naive RAG and Agentic RAG on answer, fallback, citation, source-hit, keyword-hit, retry, relevant filtering, latency, and error metrics.
+- Lightweight evaluation runner comparing Naive RAG, Agentic RAG, and Agentic + Reranker on answer, fallback, citation, source-hit, keyword-hit, retry, relevant filtering, latency, and error metrics.
 
 ## Tech Stack
 
@@ -198,48 +204,36 @@ Tests use fake LLMs and mocked vector stores, so they do not require real OpenAI
 
 ## Evaluation
 
-Run the lightweight evaluation script:
+Run the lightweight two-variant evaluation script:
 
 ```bash
 .venv/bin/python -m evaluation.evaluate --questions evaluation/eval_questions.json
 ```
 
-By default, evaluation compares:
+For the portfolio benchmark, run the three-variant matrix:
+
+```bash
+.venv/bin/python -m evaluation.matrix --questions evaluation/eval_questions.json --json-output evaluation/results/deepseek_matrix_2026-06-07.json
+```
+
+`evaluation.matrix` compares:
 
 - `Naive RAG`: question -> retrieve -> generate.
 - `Agentic RAG`: question -> rewrite -> retrieve -> grade -> retry or answer.
+- `Agentic + Reranker`: vector retrieval -> cross-encoder reranking -> agentic grading and generation.
 
-Reported comparison metrics:
+The fixed DeepSeek run is documented in [DeepSeek Evaluation Benchmark](docs/evaluation.md), with raw results in `evaluation/results/deepseek_matrix_2026-06-07.json`.
 
-- `answer_rate`
-- `fallback_rate`
-- `citation_rate`
-- `source_hit_rate`
-- `keyword_hit_rate`
-- `fallback_correctness_rate`
-- `naive_source_hit_rate`
-- `agentic_source_hit_rate`
-- `naive_keyword_hit_rate`
-- `agentic_keyword_hit_rate`
-- `naive_citation_rate`
-- `agentic_citation_rate`
-- `naive_verification_rate`
-- `agentic_verification_rate`
-- `naive_fallback_correctness_rate`
-- `agentic_fallback_correctness_rate`
-- `naive_average_latency`
-- `agentic_average_latency`
+Current DeepSeek summary from that fixed run:
 
-Agentic-specific metrics:
-
-- `average_retry_count`
-- `average_retrieved_docs`
-- `average_relevant_docs`
-- `relevant_filtering_rate`
-- `verification_rate`
-- `average_claim_count`
-- `rewrite_triggered_count`
-- `error_count`
+| Metric | Naive RAG | Agentic RAG | Agentic + Reranker |
+|---|---:|---:|---:|
+| Retrieval Source Hit Rate | 1.0 | 1.0 | 1.0 |
+| Keyword Hit Rate | 0.7143 | 0.7143 | 0.75 |
+| Citation Rate | 0.8235 | 0.7647 | 0.7941 |
+| Claim Verification Rate | 0.0 | 0.7647 | 0.7941 |
+| Fallback Correctness | 0.9706 | 0.9412 | 0.9706 |
+| Average Latency | 2.3173 | 13.1514 | 12.3881 |
 
 If the LLM config or vector index is missing, evaluation records errors per question and still prints a report.
 The current evaluation set is a lightweight local QA set for demonstration. It is useful for comparing behavior, but it is not a rigorous benchmark.
@@ -267,21 +261,7 @@ Example answer payload:
 }
 ```
 
-Example evaluation summary:
-
-```text
-Evaluation Report
-
-Comparison Summary
-
-| Metric | Naive RAG | Agentic RAG |
-|---|---:|---:|
-| Source Hit Rate | 0.6 | 0.8 |
-| Keyword Hit Rate | 0.5 | 0.7 |
-| Citation Rate | 0.55 | 0.75 |
-| Fallback Correctness | 0.7 | 0.85 |
-| Avg Latency | 2.1 | 4.8 |
-```
+For the current evaluation output, see [DeepSeek Evaluation Benchmark](docs/evaluation.md) and `evaluation/results/deepseek_matrix_2026-06-07.json`.
 
 ## Environment Variables
 
@@ -332,15 +312,23 @@ agentic-rag-document-qa/
 ├── evaluation/
 │   ├── baselines.py
 │   ├── eval_questions.json
-│   └── evaluate.py
+│   ├── evaluate.py
+│   ├── matrix.py
+│   └── results/
+│       └── deepseek_matrix_2026-06-07.json
 ├── docs/
-│   └── design.md
+│   ├── demo.md
+│   ├── design.md
+│   └── evaluation.md
 ├── ui/
 │   └── gradio_app.py
 ├── assets/
 │   └── architecture.png
 ├── sample_docs/
-│   └── agentic_rag_notes.md
+│   ├── agentic_rag_notes.md
+│   ├── employee_handbook.md
+│   ├── product_specs.md
+│   └── security_policy.md
 └── tests/
 ```
 
@@ -355,7 +343,17 @@ agentic-rag-document-qa/
 - Added provider-aware LLM configuration for remote OpenAI-compatible APIs and local Ollama models without changing the LangGraph workflow.
 - Implemented deterministic vectorstore IDs from source metadata and chunk content, allowing incremental add while skipping chunks already indexed.
 - Supported PDF, Markdown, and TXT ingestion with chunk metadata, local embeddings, Chroma indexing, and Gradio-based document QA.
-- Added lightweight evaluation comparing naive RAG and Agentic RAG across source hit rate, keyword hit rate, citation rate, fallback correctness, retry behavior, and relevant chunk filtering.
+- Added lightweight evaluation comparing Naive RAG, Agentic RAG, and Agentic + Reranker across source hit rate, keyword hit rate, citation rate, fallback correctness, retry behavior, relevant chunk filtering, and latency.
+
+## Interview Talking Points
+
+- **Why this is not naive RAG**: The graph can rewrite, grade retrieved evidence, retry retrieval, or fall back instead of always retrieving once and answering.
+- **Original question vs retrieval query**: `current_query` can be optimized for search while `question` remains the target for grading and final answer generation.
+- **Retriever vs reranker**: The retriever finds candidate chunks with vector similarity; the reranker reorders those candidates before the agent grades evidence.
+- **Reranker vs retrieval grading**: Reranking scores candidate-query fit, while retrieval grading decides whether chunks are sufficient for the original question.
+- **Citation-aware generation vs claim verification**: Generation asks for used evidence indices and answer markers; verification checks returned claims against selected citation chunks.
+- **Reliability tradeoff**: Conservative citation and grading checks can increase fallback rate or latency when evidence is ambiguous.
+- **Evaluation limitation**: The DeepSeek matrix is a 34-question local benchmark over fictional sample documents, useful for comparison but not a broad benchmark.
 
 ## Current Limitations
 
