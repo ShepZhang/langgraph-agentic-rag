@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+from PIL import Image
+
 from evaluation.evaluate import load_eval_questions
 from rag.loader import load_documents
 
@@ -119,6 +121,14 @@ def test_portfolio_documentation_files_exist():
     ]
 
     assert all(path.exists() for path in documentation_files)
+
+
+def test_architecture_diagram_has_portfolio_dimensions():
+    with Image.open(PROJECT_ROOT / "assets/architecture.png") as image:
+        width, height = image.size
+
+    assert width >= 1600
+    assert height >= 1000
 
 
 def test_demo_contains_required_scenarios():
