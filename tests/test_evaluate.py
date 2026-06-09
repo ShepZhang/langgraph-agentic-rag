@@ -351,6 +351,72 @@ def test_evaluate_questions_respects_answerable_without_should_answer():
     assert report["summary"]["fallback_correctness_rate"] == 1.0
 
 
+def test_evaluate_questions_normalizes_legacy_expected_source_without_loader():
+    questions = [
+        {
+            "question": "Source?",
+            "expected_source": "notes.md",
+        }
+    ]
+    timer_values = iter([0.0, 0.1])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_runner(question):
+        return {
+            "answer": "Retrieved from notes.md.",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+            "retry_count": 0,
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_runner, timer=fake_timer)
+
+    assert report["results"][0]["source_hit"] is True
+    assert report["summary"]["source_hit_rate"] == 1.0
+
+
+@pytest.mark.parametrize(
+    ("question", "match"),
+    [
+        ({"question": "Bad chat", "chat_history": ["oops"]}, "chat_history"),
+        (
+            {"question": "Bad chat", "chat_history": [{"role": "user"}]},
+            "chat_history",
+        ),
+        (
+            {"question": "Bad chat", "chat_history": [{"role": "user", "content": 1}]},
+            "chat_history",
+        ),
+        (
+            {"question": "Bad behavior", "expected_behavior": "maybe"},
+            "expected_behavior",
+        ),
+        (
+            {
+                "question": "Bad behavior",
+                "answerable": False,
+                "expected_behavior": "answer_with_citation",
+            },
+            "expected_behavior",
+        ),
+        (
+            {
+                "question": "Bad behavior",
+                "answerable": True,
+                "expected_behavior": "fallback",
+            },
+            "expected_behavior",
+        ),
+    ],
+)
+def test_evaluate_questions_rejects_invalid_raw_question_schema(question, match):
+    with pytest.raises(ValueError, match=match):
+        evaluate_questions([question], run_agent_fn=lambda _: {}, timer=lambda: 0.0)
+
+
 def test_evaluate_questions_compares_naive_and_agentic_results():
     questions = [
         {

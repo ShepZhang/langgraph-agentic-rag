@@ -24,73 +24,10 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
     if not isinstance(records, list):
         raise ValueError("evaluation questions must be a list")
 
-    questions: list[dict[str, Any]] = []
-    for index, record in enumerate(records):
-        if not isinstance(record, dict):
-            raise ValueError(f"evaluation question at index {index} must be an object")
-
-        question = record.get("question")
-        if not isinstance(question, str) or not question.strip():
-            raise ValueError(f"evaluation question at index {index} requires question")
-
-        requires_rewrite = record.get("requires_rewrite", False)
-        if not isinstance(requires_rewrite, bool):
-            raise ValueError("requires_rewrite must be a boolean")
-
-        normalized = dict(record)
-        normalized["id"] = str(record.get("id") or f"q{index + 1:03d}")
-        normalized["question_type"] = str(
-            record.get("question_type") or "unspecified"
-        ).strip()
-        normalized["gold_answer"] = str(record.get("gold_answer") or "").strip()
-        normalized["expected_keywords"] = _normalize_string_list(
-            record.get("expected_keywords"),
-            field_name="expected_keywords",
-        )
-        normalized["expected_sources"] = _normalize_expected_sources(record)
-
-        has_answerable = "answerable" in record
-        has_should_answer = "should_answer" in record
-        if has_answerable and not isinstance(record.get("answerable"), bool):
-            raise ValueError("answerable must be a boolean")
-        if has_should_answer and not isinstance(record.get("should_answer"), bool):
-            raise ValueError("should_answer must be a boolean")
-
-        if has_answerable:
-            answerable = record.get("answerable")
-        elif has_should_answer:
-            answerable = record.get("should_answer")
-        else:
-            answerable = True
-
-        if has_answerable and has_should_answer and record.get("answerable") != record.get("should_answer"):
-            raise ValueError("answerable and should_answer must match")
-
-        normalized["answerable"] = answerable
-        normalized["should_answer"] = answerable
-
-        expected_behavior = record.get("expected_behavior")
-        if expected_behavior is None:
-            expected_behavior = "answer_with_citation" if answerable else "fallback"
-        elif not isinstance(expected_behavior, str):
-            raise ValueError("expected_behavior must be one of answer_with_citation or fallback")
-        else:
-            expected_behavior = expected_behavior.strip()
-            if expected_behavior not in {"answer_with_citation", "fallback"}:
-                raise ValueError("expected_behavior must be one of answer_with_citation or fallback")
-            if answerable and expected_behavior == "fallback":
-                raise ValueError("expected_behavior must match answerable")
-            if not answerable and expected_behavior == "answer_with_citation":
-                raise ValueError("expected_behavior must match answerable")
-        normalized["expected_behavior"] = expected_behavior
-
-        chat_history = record.get("chat_history", [])
-        chat_history = _normalize_chat_history(chat_history)
-        normalized["chat_history"] = chat_history
-        normalized["requires_rewrite"] = requires_rewrite
-        questions.append(normalized)
-
-    return questions
+    return [
+        _normalize_eval_question(record, index)
+        for index, record in enumerate(records)
+    ]
 
 
 def evaluate_questions(
@@ -101,19 +38,24 @@ def evaluate_questions(
 ) -> dict[str, Any]:
     """Evaluate questions and return per-question results plus summary metrics."""
 
+    normalized_questions = [
+        _normalize_eval_question(item, index)
+        for index, item in enumerate(questions)
+    ]
+
     if run_naive_fn is not None:
         return _evaluate_comparison(
-            questions=questions,
+            questions=normalized_questions,
             run_agent_fn=run_agent_fn,
             run_naive_fn=run_naive_fn,
             timer=timer,
         )
 
     results: list[dict[str, Any]] = []
-    for item in questions:
+    for item in normalized_questions:
         results.append(_evaluate_single_system(item, run_agent_fn, timer))
 
-    return {"summary": _summarize(results, questions), "results": results}
+    return {"summary": _summarize(results, normalized_questions), "results": results}
 
 
 def format_report(report: dict[str, Any]) -> str:
@@ -443,6 +385,59 @@ def _normalize_expected_sources(record: dict[str, Any]) -> list[str]:
         record.get("expected_source"),
         field_name="expected_source",
     )
+
+
+def _normalize_eval_question(record: dict[str, Any], index: int) -> dict[str, Any]:
+    if not isinstance(record, dict):
+        raise ValueError(f"evaluation question at index {index} must be an object")
+
+    question = record.get("question")
+    if not isinstance(question, str) or not question.strip():
+        raise ValueError(f"evaluation question at index {index} requires question")
+
+    requires_rewrite = record.get("requires_rewrite", False)
+    if not isinstance(requires_rewrite, bool):
+        raise ValueError("requires_rewrite must be a boolean")
+
+    normalized = dict(record)
+    normalized["id"] = str(record.get("id") or f"q{index + 1:03d}")
+    normalized["question_type"] = str(
+        record.get("question_type") or "unspecified"
+    ).strip()
+    normalized["gold_answer"] = str(record.get("gold_answer") or "").strip()
+    normalized["expected_keywords"] = _normalize_string_list(
+        record.get("expected_keywords"),
+        field_name="expected_keywords",
+    )
+    normalized["expected_sources"] = _normalize_expected_sources(record)
+
+    answerable = _get_answerable(record)
+    normalized["answerable"] = answerable
+    normalized["should_answer"] = answerable
+
+    expected_behavior = record.get("expected_behavior")
+    if expected_behavior is None:
+        expected_behavior = "answer_with_citation" if answerable else "fallback"
+    elif not isinstance(expected_behavior, str):
+        raise ValueError(
+            "expected_behavior must be one of answer_with_citation or fallback"
+        )
+    else:
+        expected_behavior = expected_behavior.strip()
+        if expected_behavior not in {"answer_with_citation", "fallback"}:
+            raise ValueError(
+                "expected_behavior must be one of answer_with_citation or fallback"
+            )
+        if answerable and expected_behavior == "fallback":
+            raise ValueError("expected_behavior must match answerable")
+        if not answerable and expected_behavior == "answer_with_citation":
+            raise ValueError("expected_behavior must match answerable")
+    normalized["expected_behavior"] = expected_behavior
+
+    chat_history = record.get("chat_history", [])
+    normalized["chat_history"] = _normalize_chat_history(chat_history)
+    normalized["requires_rewrite"] = requires_rewrite
+    return normalized
 
 
 def _get_answerable(item: dict[str, Any]) -> bool:
