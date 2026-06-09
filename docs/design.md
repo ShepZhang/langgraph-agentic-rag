@@ -73,10 +73,11 @@ This reduces unsupported answers, but the verification is still LLM-based. It is
 
 ## Evaluation
 
-Evaluation compares two flows:
+Evaluation compares three flows:
 
 - Naive RAG: `question -> retrieve -> generate`
 - Agentic RAG: `question -> rewrite -> retrieve -> grade -> retry or answer`
+- Agentic + Reranker: `question -> rewrite -> retrieve candidates -> rerank -> grade -> retry or answer`
 
 The evaluation set includes direct questions, questions that benefit from rewrite, and questions that should not be answerable from the sample documents.
 

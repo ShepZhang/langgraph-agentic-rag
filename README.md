@@ -120,8 +120,11 @@ Key state fields:
 Create a virtual environment:
 
 ```bash
-python3 -m venv .venv
+python3.11 --version
+python3.11 -m venv .venv
 ```
+
+Use any Python 3.11+ executable available on your machine. On systems where `python3` points to an older interpreter, call the 3.11+ binary explicitly when creating the virtual environment.
 
 Install dependencies:
 
@@ -369,7 +372,7 @@ agentic-rag-document-qa/
 - RAG core implemented: loading, chunking, embeddings, Chroma indexing, and retrieval.
 - LangGraph agent workflow implemented: query rewriting, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
-- Evaluation runner implemented: naive-vs-agentic comparison, answer/fallback/citation/source/keyword metrics, retry metrics, and relevant filtering metrics.
+- Evaluation matrix implemented: Naive RAG, Agentic RAG, and Agentic + Reranker comparison with answer/fallback/citation/source/keyword metrics, retry metrics, and relevant filtering metrics.
 - Claim-level verification implemented: cited normal answers are checked against selected evidence before being returned.
 - Deterministic citation marker consistency implemented: answer markers must match selected citation indices.
 - Deterministic vectorstore IDs implemented: chunk identity is derived from source metadata and content for incremental add de-duplication.

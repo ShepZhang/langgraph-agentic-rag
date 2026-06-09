@@ -1,5 +1,6 @@
 """Tests for the portfolio sample document corpus."""
 
+import json
 from pathlib import Path
 
 from evaluation.evaluate import load_eval_questions
@@ -172,6 +173,30 @@ def test_readme_links_portfolio_materials_and_interview_topics():
         or "Agentic + Reranker" in readme
     )
     assert readme.count("```") % 2 == 0
+
+
+def test_readme_deepseek_summary_matches_saved_result_artifact():
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    result_path = PROJECT_ROOT / "evaluation/results/deepseek_matrix_2026-06-07.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    variants = result["summary"]["variants"]
+
+    metric_rows = [
+        ("Retrieval Source Hit Rate", "source_hit_rate"),
+        ("Keyword Hit Rate", "keyword_hit_rate"),
+        ("Citation Rate", "citation_rate"),
+        ("Claim Verification Rate", "verification_rate"),
+        ("Fallback Correctness", "fallback_correctness_rate"),
+        ("Average Latency", "average_latency"),
+    ]
+
+    for label, metric_key in metric_rows:
+        expected_row = (
+            f"| {label} | {variants['naive'][metric_key]} | "
+            f"{variants['agentic'][metric_key]} | "
+            f"{variants['agentic_reranker'][metric_key]} |"
+        )
+        assert expected_row in readme
 
 
 def test_portfolio_sample_corpus_files_exist_and_load():
