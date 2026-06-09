@@ -891,3 +891,39 @@ def test_evaluate_questions_uses_all_claims_as_supported_ratio_denominator():
     assert report["results"][0]["supported_claim_count"] == 1
     assert report["results"][0]["total_claim_count"] == 2
     assert report["summary"]["supported_claim_ratio"] == 0.5
+
+
+def test_evaluate_questions_ignores_malformed_total_tokens_and_keeps_valid_values():
+    questions = [
+        {"question": "Inf tokens?", "expected_sources": []},
+        {"question": "NaN tokens?", "expected_sources": []},
+        {"question": "Float tokens?", "expected_sources": []},
+        {"question": "Bool tokens?", "expected_sources": []},
+        {"question": "String tokens?", "expected_sources": []},
+        {"question": "Valid tokens?", "expected_sources": []},
+        {"question": "Zero tokens?", "expected_sources": []},
+    ]
+    timer_values = iter([0.0, 0.1, 0.1, 0.2, 0.2, 0.3, 0.3, 0.4, 0.4, 0.5, 0.5, 0.6, 0.6, 0.7])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_runner(question):
+        if question == "Inf tokens?":
+            return {"answer": "ok", "token_usage": {"total_tokens": float("inf")}}
+        if question == "NaN tokens?":
+            return {"answer": "ok", "token_usage": {"total_tokens": float("nan")}}
+        if question == "Float tokens?":
+            return {"answer": "ok", "token_usage": {"total_tokens": 1.9}}
+        if question == "Bool tokens?":
+            return {"answer": "ok", "token_usage": {"total_tokens": True}}
+        if question == "String tokens?":
+            return {"answer": "ok", "token_usage": {"total_tokens": "100"}}
+        if question == "Valid tokens?":
+            return {"answer": "ok", "token_usage": {"total_tokens": 120}}
+        return {"answer": "ok", "token_usage": {"total_tokens": 0.0}}
+
+    report = evaluate_questions(questions, run_agent_fn=fake_runner, timer=fake_timer)
+
+    assert report["results"][0]["token_usage"]["total_tokens"] == float("inf")
+    assert report["summary"]["average_token_usage"] == 17.1429

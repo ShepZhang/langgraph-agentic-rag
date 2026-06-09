@@ -763,10 +763,13 @@ def _extract_total_tokens(token_usage: Any) -> int | None:
     value = token_usage.get("total_tokens")
     if isinstance(value, bool) or value is None:
         return None
-    try:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            return None
         return int(value)
-    except (TypeError, ValueError):
-        return None
+    return None
 
 
 def _is_fallback_answer(answer: str) -> bool:
