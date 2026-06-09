@@ -1,4 +1,6 @@
 method: + Retrieval Grading
 runner: agentic
 status: supported
+runner_scope: current_agentic_workflow
+independent_ablation: false
 notes: Uses the current agentic workflow label; P0a does not independently toggle retrieval grading.

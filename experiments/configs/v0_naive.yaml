@@ -1,4 +1,6 @@
 method: Naive RAG
 runner: naive
 status: supported
+runner_scope: baseline
+independent_ablation: true
 notes: Baseline naive retrieval-augmented generation runner.

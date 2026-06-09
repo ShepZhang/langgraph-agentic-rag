@@ -75,11 +75,12 @@ def main(
     )
     parser.add_argument(
         "--report",
-        required=True,
+        default=None,
         type=Path,
-        help="Path for Markdown ablation report.",
+        help="Path for Markdown ablation report. Defaults to output-dir/ablation_report.md.",
     )
     args = parser.parse_args(argv)
+    report_path = args.report or args.output_dir / "ablation_report.md"
 
     try:
         questions = load_eval_questions(args.questions)
@@ -107,8 +108,8 @@ def main(
         json.dumps(payload, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(format_ablation_report(payload), encoding="utf-8")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(format_ablation_report(payload), encoding="utf-8")
     return 0
 
 
@@ -125,8 +126,9 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
         ),
         "",
         "| Method | Correctness | Context Relevance | Citation Accuracy | "
-        "Fallback Accuracy | Unsupported Claims | Avg Latency | Status |",
-        "|---|---:|---:|---:|---:|---:|---:|---|",
+        "Fallback Accuracy | Unsupported Claims | Avg Latency | Scope | "
+        "Independent | Status |",
+        "|---|---:|---:|---:|---:|---:|---:|---|---|---|",
     ]
 
     for run in payload.get("runs", []):
@@ -140,19 +142,29 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
                 f"{_format_metric(summary.get('fallback_accuracy'))} | "
                 f"{_format_metric(summary.get('unsupported_claim_count'))} | "
                 f"{_format_metric(summary.get('average_latency'))} | "
+                f"{run.get('runner_scope', '')} | "
+                f"{run.get('independent_ablation', '')} | "
                 f"{run.get('status', 'pending')} |"
             )
         )
 
-    pending_notes = [
+    run_notes = [
         run
         for run in payload.get("runs", [])
-        if run.get("status") != "completed" and run.get("notes")
+        if run.get("notes") or run.get("runner_scope") or run.get("independent_ablation")
     ]
-    if pending_notes:
-        lines.extend(["", "## Pending / Unsupported Variants", ""])
-        for run in pending_notes:
-            lines.append(f"- {run.get('method', run.get('id'))}: {run.get('notes')}")
+    if run_notes:
+        lines.extend(["", "## Run Notes", ""])
+        for run in run_notes:
+            notes = run.get("notes", "")
+            lines.append(
+                (
+                    f"- {run.get('method', run.get('id'))}: "
+                    f"scope={run.get('runner_scope', '')}; "
+                    f"independent_ablation={run.get('independent_ablation', '')}; "
+                    f"{notes}"
+                ).rstrip()
+            )
 
     return "\n".join(lines)
 

@@ -37,7 +37,6 @@ def test_load_ablation_configs_reads_simple_yaml(tmp_path):
 def test_ablation_main_writes_result_json_and_report(tmp_path):
     questions_path = tmp_path / "questions.json"
     output_dir = tmp_path / "artifacts"
-    report_path = tmp_path / "ablation_report.md"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     questions_path.write_text(
@@ -53,15 +52,40 @@ def test_ablation_main_writes_result_json_and_report(tmp_path):
         encoding="utf-8",
     )
     (config_dir / "v0_naive.yaml").write_text(
-        "method: Naive RAG\nrunner: naive\nstatus: supported\n",
+        "\n".join(
+            [
+                "method: Naive RAG",
+                "runner: naive",
+                "status: supported",
+                "runner_scope: baseline",
+                "independent_ablation: true",
+            ]
+        ),
         encoding="utf-8",
     )
     (config_dir / "v1_agentic.yaml").write_text(
-        "method: Agentic RAG\nrunner: agentic\nstatus: supported\n",
+        "\n".join(
+            [
+                "method: Agentic RAG",
+                "runner: agentic",
+                "status: supported",
+                "runner_scope: current_agentic_workflow",
+                "independent_ablation: false",
+                "notes: Uses the current full agentic workflow, not an independent toggle.",
+            ]
+        ),
         encoding="utf-8",
     )
     (config_dir / "v9_future.yaml").write_text(
-        "method: Future Method\nrunner: pending\nstatus: pending\n",
+        "\n".join(
+            [
+                "method: Future Method",
+                "runner: pending",
+                "status: pending",
+                "runner_scope: pending",
+                "independent_ablation: false",
+            ]
+        ),
         encoding="utf-8",
     )
 
@@ -91,19 +115,19 @@ def test_ablation_main_writes_result_json_and_report(tmp_path):
             str(config_dir),
             "--output-dir",
             str(output_dir),
-            "--report",
-            str(report_path),
         ],
         run_naive_fn=fake_naive,
         run_agent_fn=fake_agentic,
     )
 
     result_path = output_dir / "ablation_result.json"
+    report_path = output_dir / "ablation_report.md"
     payload = json.loads(result_path.read_text(encoding="utf-8"))
     report = report_path.read_text(encoding="utf-8")
 
     assert exit_code == 0
     assert result_path.exists()
+    assert report_path.exists()
     assert [run["id"] for run in payload["runs"]] == [
         "v0_naive",
         "v1_agentic",
@@ -112,6 +136,10 @@ def test_ablation_main_writes_result_json_and_report(tmp_path):
     assert payload["runs"][0]["status"] == "completed"
     assert payload["runs"][1]["status"] == "completed"
     assert payload["runs"][2]["status"] == "pending"
+    assert payload["runs"][1]["runner_scope"] == "current_agentic_workflow"
+    assert payload["runs"][1]["independent_ablation"] == "false"
     assert "Naive RAG" in report
     assert "Agentic RAG" in report
     assert "Future Method" in report
+    assert "current_agentic_workflow" in report
+    assert "not an independent toggle" in report

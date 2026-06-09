@@ -1,4 +1,6 @@
 method: + Reranker
 runner: pending
 status: pending
+runner_scope: pending
+independent_ablation: false
 notes: Pending until the workflow can independently enable or disable reranking for ablation.
