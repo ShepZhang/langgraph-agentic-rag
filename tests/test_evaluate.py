@@ -133,6 +133,123 @@ def test_load_eval_questions_normalizes_richer_schema(tmp_path):
     assert questions[1]["expected_behavior"] == "fallback"
 
 
+def test_load_eval_questions_rejects_conflicting_answerable_and_should_answer(tmp_path):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "Conflict?",
+                    "answerable": True,
+                    "should_answer": False,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="answerable"):
+        load_eval_questions(path)
+
+
+def test_load_eval_questions_rejects_malformed_chat_history(tmp_path):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "Bad history?",
+                    "chat_history": ["user said this"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="chat_history"):
+        load_eval_questions(path)
+
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "Bad history?",
+                    "chat_history": [{"role": "user"}],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="chat_history"):
+        load_eval_questions(path)
+
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "Bad history?",
+                    "chat_history": [{"role": "user", "content": 123}],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="chat_history"):
+        load_eval_questions(path)
+
+
+def test_load_eval_questions_rejects_invalid_expected_behavior(tmp_path):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "Bad behavior?",
+                    "expected_behavior": "maybe",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="expected_behavior"):
+        load_eval_questions(path)
+
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "Bad behavior?",
+                    "answerable": False,
+                    "expected_behavior": "answer_with_citation",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="expected_behavior"):
+        load_eval_questions(path)
+
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "Bad behavior?",
+                    "answerable": True,
+                    "expected_behavior": "fallback",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="expected_behavior"):
+        load_eval_questions(path)
+
+
 def test_evaluate_questions_computes_agentic_summary_metrics():
     questions = [
         {

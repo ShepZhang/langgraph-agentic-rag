@@ -33,9 +33,6 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
         if not isinstance(question, str) or not question.strip():
             raise ValueError(f"evaluation question at index {index} requires question")
 
-        should_answer = record.get("should_answer", True)
-        if not isinstance(should_answer, bool):
-            raise ValueError("should_answer must be a boolean")
         requires_rewrite = record.get("requires_rewrite", False)
         if not isinstance(requires_rewrite, bool):
             raise ValueError("requires_rewrite must be a boolean")
@@ -52,22 +49,43 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
         )
         normalized["expected_sources"] = _normalize_expected_sources(record)
 
-        answerable = record.get("answerable", record.get("should_answer", True))
-        if not isinstance(answerable, bool):
+        has_answerable = "answerable" in record
+        has_should_answer = "should_answer" in record
+        if has_answerable and not isinstance(record.get("answerable"), bool):
             raise ValueError("answerable must be a boolean")
+        if has_should_answer and not isinstance(record.get("should_answer"), bool):
+            raise ValueError("should_answer must be a boolean")
+
+        if has_answerable:
+            answerable = record.get("answerable")
+        elif has_should_answer:
+            answerable = record.get("should_answer")
+        else:
+            answerable = True
+
+        if has_answerable and has_should_answer and record.get("answerable") != record.get("should_answer"):
+            raise ValueError("answerable and should_answer must match")
+
         normalized["answerable"] = answerable
         normalized["should_answer"] = answerable
 
         expected_behavior = record.get("expected_behavior")
         if expected_behavior is None:
             expected_behavior = "answer_with_citation" if answerable else "fallback"
-        if not isinstance(expected_behavior, str) or not expected_behavior.strip():
-            raise ValueError("expected_behavior must be a non-empty string")
-        normalized["expected_behavior"] = expected_behavior.strip()
+        elif not isinstance(expected_behavior, str):
+            raise ValueError("expected_behavior must be one of answer_with_citation or fallback")
+        else:
+            expected_behavior = expected_behavior.strip()
+            if expected_behavior not in {"answer_with_citation", "fallback"}:
+                raise ValueError("expected_behavior must be one of answer_with_citation or fallback")
+            if answerable and expected_behavior == "fallback":
+                raise ValueError("expected_behavior must match answerable")
+            if not answerable and expected_behavior == "answer_with_citation":
+                raise ValueError("expected_behavior must match answerable")
+        normalized["expected_behavior"] = expected_behavior
 
         chat_history = record.get("chat_history", [])
-        if not isinstance(chat_history, list):
-            raise ValueError("chat_history must be a list")
+        chat_history = _normalize_chat_history(chat_history)
         normalized["chat_history"] = chat_history
         normalized["requires_rewrite"] = requires_rewrite
         questions.append(normalized)
@@ -425,6 +443,27 @@ def _normalize_expected_sources(record: dict[str, Any]) -> list[str]:
         record.get("expected_source"),
         field_name="expected_source",
     )
+
+
+def _normalize_chat_history(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("chat_history must be a list")
+
+    normalized_history: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("chat_history must contain dict entries with role and content")
+        role = item.get("role")
+        content = item.get("content")
+        if not isinstance(role, str) or not role.strip():
+            raise ValueError("chat_history entries require string role and content")
+        if not isinstance(content, str):
+            raise ValueError("chat_history entries require string role and content")
+        normalized_history.append(item)
+
+    return normalized_history
 
 
 def _format_comparison_report(report: dict[str, Any]) -> str:
