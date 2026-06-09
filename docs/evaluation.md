@@ -31,13 +31,21 @@ The corpus describes fictional systems and organizations. It does not contain pr
 | Average Latency | 2.3173 | 13.1514 | 12.3881 |
 | Error Count | 0 | 0 | 0 |
 
-`source_hit` and `citation_rate` measure different stages. A source hit means retrieval included the expected source document or documents. Citation rate means the final system result returned citations with its answer. A run can retrieve the expected source and still fall back or return no final citation.
+## Metric Definitions
+
+- `source_hit_rate` is retrieval source hit rate. The denominator is the 28 questions with one or more `expected_sources`, and a hit only requires retrieval to include the expected source document or documents. It does not require the final answer to succeed.
+- `citation_rate` only means the result payload contained a non-empty `citations` list. A fallback or partial answer can still carry a citation.
+- `keyword_hit_rate` requires a normal non-fallback answer that contains all expected keywords for that question.
+- `verification_rate` is the rate of the system's LLM verifier setting `is_verified=true`. It is not a human correctness rate.
+- `average_relevant_docs` is not identical across variants. In Naive RAG, `relevant_documents` is the baseline payload's returned context and approximates retrieved context size. In the agentic variants, `relevant_documents` is produced after LLM retrieval grading, so it is not fully comparable to the naive count as an independent relevance label.
+
+`source_hit` and `citation_rate` measure different stages. A source hit means retrieval included the expected source document or documents. Citation rate means the final system result returned citations in its payload. A run can retrieve the expected source and still fall back, return a partial answer, or return no final citation.
 
 ## Interpretation
 
-Compared with Naive RAG, Agentic RAG was flat on retrieval source hit rate (`1.0`) and keyword hit rate (`0.7143`). It regressed on answer rate (`0.7941` to `0.7647`), citation rate (`0.8235` to `0.7647`), and fallback correctness (`0.9706` to `0.9412`). It added claim verification (`0.0` to `0.7647`) and filtered the average evidence set from `3.8824` relevant documents to `1.0882`. The zero Naive RAG verification rate reflects that the baseline does not run the claim-verification stage, so this comparison is a workflow difference as well as a measured outcome.
+Compared with Naive RAG, Agentic RAG was flat on retrieval source hit rate (`1.0`) and keyword hit rate (`0.7143`). It regressed on answer rate (`0.7941` to `0.7647`), citation rate (`0.8235` to `0.7647`), and fallback correctness (`0.9706` to `0.9412`). It added claim verification (`0.0` to `0.7647`). The agentic variants reduced the context passed after retrieval grading; the naive `average_relevant_docs` value is better read as baseline context size, not as an independently graded relevance label. The zero Naive RAG verification rate reflects that the baseline does not run the claim-verification stage, so this comparison is a workflow difference as well as a measured outcome.
 
-Adding the reranker to Agentic RAG improved keyword hit rate from `0.7143` to `0.75`, citation rate from `0.7647` to `0.7941`, verification rate from `0.7647` to `0.7941`, fallback correctness from `0.9412` to `0.9706`, and answer rate from `0.7647` to `0.7941`. Retrieval source hit rate remained flat at `1.0`, so this run does not show a source-hit improvement from reranking. Average relevant documents decreased slightly from `1.0882` to `1.0588`, consistent with selective evidence filtering.
+Adding the reranker to Agentic RAG improved keyword hit rate from `0.7143` to `0.75`, citation rate from `0.7647` to `0.7941`, verification rate from `0.7647` to `0.7941`, fallback correctness from `0.9412` to `0.9706`, and answer rate from `0.7647` to `0.7941`. Retrieval source hit rate remained flat at `1.0`, so this run does not show a source-hit improvement from reranking. The reranked agentic run passed a slightly smaller graded context on average than Agentic RAG (`1.0588` versus `1.0882`).
 
 The agentic control flow had a substantial latency cost. Average latency increased from `2.3173` seconds for Naive RAG to `13.1514` seconds for Agentic RAG. Agentic + Reranker averaged `12.3881` seconds, which was `0.7633` seconds lower than Agentic RAG in this run but still `10.0708` seconds higher than Naive RAG. This single matrix cannot isolate cross-encoder cost from different retry, grading, generation, and verification paths, so the lower reranked average should not be interpreted as evidence that reranking itself is free or faster.
 
@@ -51,11 +59,11 @@ Question: "How much annual paid time off do full-time employees receive?"
 
 All three systems returned the exact supported fact, "20 days of paid time off per calendar year," with `source_hit=true`, `keyword_hit=true`, `citation_returned=true`, `fallback_triggered=false`, and `retry_count=0`. Agentic RAG and Agentic + Reranker also reported `is_verified=true`; Naive RAG does not run claim verification.
 
-### 2. Successful rewrite and retry with a partial result
+### 2. Evidence-selection and verification anomaly
 
 Question: "How do Atlas citation checks and Northstar secret management reduce answer and credential risk?"
 
-Naive RAG answered without retry and recorded `source_hit=true`, `keyword_hit=true`, and `citation_returned=true`. Agentic RAG selected three relevant documents but returned a fallback with `retry_count=0`, `citation_returned=false`, and `is_verified=false`. Agentic + Reranker used `retry_count=1`, returned an answer with a citation, and recorded `is_verified=true`. However, its `keyword_hit=false`, and the answer covered Atlas citation checks while saying it could not address the Northstar portion. This is a successful retry at the protocol level but a partial content result.
+Naive RAG answered without retry and recorded `source_hit=true`, `keyword_hit=true`, and `citation_returned=true`. Agentic RAG selected three relevant documents but returned a fallback with `retry_count=0`, `citation_returned=false`, and `is_verified=false`. Agentic + Reranker used `retry_count=1`, selected security-policy context, returned an answer with a citation, and recorded `is_verified=true`. However, its final answer still said it could not address the Northstar secret-management portion, and `keyword_hit=false`. This is an unstable partial failure: `is_verified=true` only means the verifier accepted the claims made in that answer, not that the system answered the full original question.
 
 ### 3. Reranker ordering changed a cross-document outcome
 
@@ -85,3 +93,25 @@ Naive RAG and Agentic RAG both answered with citations and `source_hit=true`; Ag
 - There are no independent human relevance labels or human answer-quality labels.
 - Latency reflects this environment and the control-flow paths taken during one run; it is not a general performance guarantee.
 - These results are not a universal RAG benchmark and do not prove that Agentic RAG or reranking is always better.
+
+The committed raw JSON includes retrieved snippets only from fictional sample documents. Future benchmarks over real or private corpora should publish a redacted summary artifact instead of raw retrieved text.
+
+## Reproduction Notes
+
+The run used `openai_compatible` provider settings with a DeepSeek-compatible base URL configured in `.env`; the API key is not included in this artifact. `LLM_TEMPERATURE=0` was the default and setting used for this run. Chroma persisted to `./data/chroma`.
+
+Rebuild the four-document sample index:
+
+```bash
+env HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 ALL_PROXY=http://127.0.0.1:7890 \
+  .venv/bin/python -c "from pathlib import Path; from rag.loader import load_documents; from rag.chunker import split_documents; from rag.vectorstore import create_vectorstore; files=sorted(Path('sample_docs').glob('*.md')); docs=load_documents(files); chunks=split_documents(docs); create_vectorstore(chunks); print(f'files={len(files)} documents={len(docs)} chunks={len(chunks)}')"
+```
+
+Run the matrix:
+
+```bash
+env HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 ALL_PROXY=http://127.0.0.1:7890 \
+  .venv/bin/python -m evaluation.matrix --questions evaluation/eval_questions.json --json-output evaluation/results/deepseek_matrix_2026-06-07.json
+```
+
+During this run, the embedding and reranker models were loaded from the local Hugging Face cache with `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`. First-time users may need network access to download `sentence-transformers/all-MiniLM-L6-v2` and `cross-encoder/ms-marco-MiniLM-L-6-v2`. DeepSeek API calls require network access and may require a proxy depending on the environment.
