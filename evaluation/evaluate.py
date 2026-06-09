@@ -41,12 +41,34 @@ def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, 
             raise ValueError("requires_rewrite must be a boolean")
 
         normalized = dict(record)
+        normalized["id"] = str(record.get("id") or f"q{index + 1:03d}")
+        normalized["question_type"] = str(
+            record.get("question_type") or "unspecified"
+        ).strip()
+        normalized["gold_answer"] = str(record.get("gold_answer") or "").strip()
         normalized["expected_keywords"] = _normalize_string_list(
             record.get("expected_keywords"),
             field_name="expected_keywords",
         )
         normalized["expected_sources"] = _normalize_expected_sources(record)
-        normalized["should_answer"] = should_answer
+
+        answerable = record.get("answerable", record.get("should_answer", True))
+        if not isinstance(answerable, bool):
+            raise ValueError("answerable must be a boolean")
+        normalized["answerable"] = answerable
+        normalized["should_answer"] = answerable
+
+        expected_behavior = record.get("expected_behavior")
+        if expected_behavior is None:
+            expected_behavior = "answer_with_citation" if answerable else "fallback"
+        if not isinstance(expected_behavior, str) or not expected_behavior.strip():
+            raise ValueError("expected_behavior must be a non-empty string")
+        normalized["expected_behavior"] = expected_behavior.strip()
+
+        chat_history = record.get("chat_history", [])
+        if not isinstance(chat_history, list):
+            raise ValueError("chat_history must be a list")
+        normalized["chat_history"] = chat_history
         normalized["requires_rewrite"] = requires_rewrite
         questions.append(normalized)
 

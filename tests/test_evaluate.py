@@ -37,15 +37,27 @@ def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):
             "question": "What is Agentic RAG?",
             "expected_keywords": ["agent", "retrieval"],
             "expected_source": "legacy.md",
+            "id": "q001",
+            "question_type": "unspecified",
+            "gold_answer": "",
             "expected_sources": ["legacy.md"],
+            "answerable": True,
             "should_answer": True,
+            "expected_behavior": "answer_with_citation",
+            "chat_history": [],
             "requires_rewrite": False,
         },
         {
             "question": "What is not covered?",
             "expected_keywords": [],
             "expected_sources": [],
+            "id": "q002",
+            "question_type": "unspecified",
+            "gold_answer": "",
+            "answerable": False,
             "should_answer": False,
+            "expected_behavior": "fallback",
+            "chat_history": [],
             "requires_rewrite": True,
         },
     ]
@@ -77,6 +89,48 @@ def test_load_eval_questions_rejects_non_string_sources(tmp_path):
 
     with pytest.raises(ValueError, match="expected_sources"):
         load_eval_questions(path)
+
+
+def test_load_eval_questions_normalizes_richer_schema(tmp_path):
+    path = tmp_path / "eval.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "q001",
+                    "question": "How does grading help?",
+                    "question_type": "single_doc",
+                    "gold_answer": "It checks retrieved evidence before answering.",
+                    "expected_sources": ["notes.md"],
+                    "expected_keywords": ["evidence"],
+                    "answerable": True,
+                    "expected_behavior": "answer_with_citation",
+                    "chat_history": [{"role": "user", "content": "Discuss RAG."}],
+                },
+                {
+                    "question": "Legacy?",
+                    "expected_source": "legacy.md",
+                    "should_answer": False,
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    questions = load_eval_questions(path)
+
+    assert questions[0]["id"] == "q001"
+    assert questions[0]["question_type"] == "single_doc"
+    assert questions[0]["gold_answer"] == "It checks retrieved evidence before answering."
+    assert questions[0]["answerable"] is True
+    assert questions[0]["should_answer"] is True
+    assert questions[0]["expected_behavior"] == "answer_with_citation"
+    assert questions[0]["chat_history"] == [{"role": "user", "content": "Discuss RAG."}]
+    assert questions[1]["id"] == "q002"
+    assert questions[1]["expected_sources"] == ["legacy.md"]
+    assert questions[1]["answerable"] is False
+    assert questions[1]["should_answer"] is False
+    assert questions[1]["expected_behavior"] == "fallback"
 
 
 def test_evaluate_questions_computes_agentic_summary_metrics():
