@@ -157,7 +157,14 @@ def write_evaluation_artifacts(report: dict[str, Any], output_dir: str | Path) -
         _write_json(artifact_dir / "comparison_result.json", report)
         return
 
-    _write_json(artifact_dir / "agentic_result.json", report)
+    _write_json(
+        artifact_dir / "agentic_result.json",
+        {
+            "system": "agentic_rag",
+            "summary": report.get("summary", {}),
+            "results": report.get("results", []),
+        },
+    )
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

@@ -783,6 +783,47 @@ def test_main_writes_comparison_artifacts(tmp_path):
     assert len(comparison_payload["results"]) == 1
 
 
+def test_main_writes_single_system_agentic_artifact_schema(tmp_path):
+    path = tmp_path / "eval.json"
+    output_dir = tmp_path / "artifacts"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "What is Agentic RAG?",
+                    "expected_keywords": ["retrieval"],
+                    "expected_sources": ["notes.md"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_agentic(question):
+        return {
+            "answer": "Agentic RAG uses retrieval.",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+        }
+
+    exit_code = main(
+        ["--questions", str(path), "--output-dir", str(output_dir)],
+        run_agent_fn=fake_agentic,
+        run_naive_fn=None,
+    )
+
+    agentic_path = output_dir / "agentic_result.json"
+    payload = json.loads(agentic_path.read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert agentic_path.exists()
+    assert payload["system"] == "agentic_rag"
+    assert "summary" in payload
+    assert "results" in payload
+    assert len(payload["results"]) == 1
+
+
 def test_main_reports_question_load_errors_without_traceback(tmp_path, capsys):
     missing_path = tmp_path / "missing.json"
 
