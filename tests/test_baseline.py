@@ -5,9 +5,11 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+from unittest.mock import patch
 
 from baseline import run_naive_rag
 from baseline.run_baseline import main as baseline_main
+import baseline.run_baseline as baseline_module
 from evaluation.baselines import run_naive_rag as compatibility_run_naive_rag
 
 
@@ -118,6 +120,21 @@ def test_baseline_cli_writes_output_json(tmp_path):
     assert row["retry_count"] == 0
     assert row["retrieved_doc_count"] == 1
     assert row["relevant_doc_count"] == 1
+
+
+def test_baseline_cli_help_does_not_load_execution_dependencies():
+    def fail_if_called():
+        raise AssertionError("execution-only dependency loader should not run for --help")
+
+    with patch.object(baseline_module, "_load_naive_rag_runner", side_effect=fail_if_called), patch.object(
+        baseline_module, "_load_evaluation_tools", side_effect=fail_if_called
+    ):
+        try:
+            baseline_main(["--help"])
+        except SystemExit as exc:
+            assert exc.code == 0
+        else:
+            raise AssertionError("--help should exit via SystemExit")
 
 
 def test_baseline_cli_module_import_is_lazy():

@@ -14,11 +14,6 @@ def main(
 ) -> int:
     """Run baseline evaluation and write a JSON artifact."""
 
-    if run_naive_fn is None:
-        run_naive_fn = _load_naive_rag_runner()
-
-    evaluate_questions, load_eval_questions = _load_evaluation_tools()
-
     parser = argparse.ArgumentParser(description="Run the naive RAG baseline.")
     parser.add_argument(
         "--questions",
@@ -33,6 +28,11 @@ def main(
         help="Path to write baseline result JSON.",
     )
     args = parser.parse_args(argv)
+
+    if run_naive_fn is None:
+        run_naive_fn = _load_naive_rag_runner()
+
+    evaluate_questions, load_eval_questions = _load_evaluation_tools()
 
     questions = load_eval_questions(args.questions)
     report = evaluate_questions(questions, run_agent_fn=run_naive_fn)
