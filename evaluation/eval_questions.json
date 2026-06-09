@@ -1,142 +1,377 @@
 [
   {
+    "id": "q001",
     "question": "What is Retrieval-Augmented Generation?",
+    "question_type": "single_doc",
+    "gold_answer": "Retrieval-Augmented Generation retrieves external context and uses it to answer the user question.",
+    "expected_sources": ["agentic_rag_notes.md"],
     "expected_keywords": ["retrieves", "external context", "answer"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
+    "id": "q002",
     "question": "What is Agentic RAG?",
+    "question_type": "single_doc",
+    "gold_answer": "Agentic RAG adds agent control flow around retrieval, grading, retry, and fallback decisions.",
+    "expected_sources": ["agentic_rag_notes.md"],
     "expected_keywords": ["agent", "retrieval workflow", "retry"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
-    "question": "How is naive RAG different from Agentic RAG?",
-    "expected_keywords": ["retrieves once", "control flow", "retry"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
-  },
-  {
+    "id": "q003",
     "question": "What does query rewriting do in this project?",
+    "question_type": "single_doc",
+    "gold_answer": "Query rewriting turns follow-up or ambiguous questions into standalone retrieval queries while preserving the original user question.",
+    "expected_sources": ["agentic_rag_notes.md"],
     "expected_keywords": ["standalone", "retrieval", "original user question"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
+    "id": "q004",
     "question": "What is the retriever tool called?",
+    "question_type": "single_doc",
+    "gold_answer": "The retriever tool is called retrieve_context.",
+    "expected_sources": ["agentic_rag_notes.md"],
     "expected_keywords": ["retrieve_context", "tool", "knowledge base"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
-    "question": "What does chunk-level retrieval grading return?",
-    "expected_keywords": ["relevant_indices", "relevant_documents"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
+    "id": "q005",
+    "question": "What does BM25 sparse retrieval add to the retrieval pipeline?",
+    "question_type": "single_doc",
+    "gold_answer": "BM25 sparse retrieval adds exact-term matching for identifiers, metric names, command names, and file names.",
+    "expected_sources": ["retrieval_pipeline_notes.md"],
+    "expected_keywords": ["BM25", "exact", "terms"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
-    "question": "When should the system fall back instead of answering?",
-    "expected_keywords": ["relevant evidence", "retry", "cannot answer"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
+    "id": "q006",
+    "question": "What JSON artifacts are expected in comparison mode?",
+    "question_type": "single_doc",
+    "gold_answer": "Comparison mode writes baseline_result.json, agentic_result.json, and comparison_result.json.",
+    "expected_sources": ["evaluation_notes.md"],
+    "expected_keywords": ["baseline_result.json", "agentic_result.json", "comparison_result.json"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
-    "question": "What evaluation metrics are tracked?",
-    "expected_keywords": ["answer rate", "citation rate", "fallback correctness"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": false
+    "id": "q007",
+    "question": "How does the system decide which retrieved chunks should be used for answering?",
+    "question_type": "multi_chunk",
+    "gold_answer": "The retriever returns candidate chunks with metadata, then chunk-level grading separates relevant documents from retrieved documents before generation.",
+    "expected_sources": ["agentic_rag_notes.md", "retrieval_pipeline_notes.md"],
+    "expected_keywords": ["chunk-level grading", "relevant_documents", "retrieved documents"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
-    "question": "How does it improve reliability?",
-    "expected_keywords": ["retrieval grading", "fallback"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": true
+    "id": "q008",
+    "question": "When should the system retry retrieval and when should it fall back?",
+    "question_type": "multi_chunk",
+    "gold_answer": "It should retry with a rewritten query when evidence is weak, and fall back when retries still cannot find relevant support.",
+    "expected_sources": ["agentic_rag_notes.md", "citation_verification_notes.md"],
+    "expected_keywords": ["retry", "weak", "fallback"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
-    "question": "Why is that better than the simple version?",
-    "expected_keywords": ["naive RAG", "control flow", "retry"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": true
+    "id": "q009",
+    "question": "Why does hybrid retrieval use both dense retrieval and BM25?",
+    "question_type": "multi_chunk",
+    "gold_answer": "Dense retrieval covers semantic matches, while BM25 covers exact identifiers and terms; hybrid retrieval improves recall across both cases.",
+    "expected_sources": ["retrieval_pipeline_notes.md"],
+    "expected_keywords": ["dense retrieval", "BM25", "hybrid"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
-    "question": "What does the tool return?",
-    "expected_keywords": ["source filename", "chunk id", "similarity score"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": true
+    "id": "q010",
+    "question": "What evaluation data is needed to measure relevant filtering?",
+    "question_type": "multi_chunk",
+    "gold_answer": "Evaluation needs retrieved document counts, relevant document counts, source metadata, and per-question rows to see whether noisy chunks were removed.",
+    "expected_sources": ["retrieval_pipeline_notes.md", "evaluation_notes.md"],
+    "expected_keywords": ["retrieved", "relevant", "filtering"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   },
   {
-    "question": "How does the system know which chunks to use?",
-    "expected_keywords": ["chunk-level grading", "relevant_indices"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": true
-  },
-  {
-    "question": "What happens if the evidence is weak?",
-    "expected_keywords": ["rewrites", "retrieves again", "fallback"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": true
-  },
-  {
-    "question": "Is this the same as complete citation verification?",
-    "expected_keywords": ["not the same", "claim-level", "future"],
-    "expected_sources": ["agentic_rag_notes.md"],
-    "should_answer": true,
-    "requires_rewrite": true
-  },
-  {
-    "question": "What is the company's private payroll policy?",
-    "expected_keywords": [],
+    "id": "q011",
+    "question": "How does it work?",
+    "question_type": "ambiguous",
+    "gold_answer": "The question is too ambiguous without a referent, so the system should ask for clarification or fall back.",
     "expected_sources": [],
-    "should_answer": false,
-    "requires_rewrite": false
-  },
-  {
-    "question": "Who is the CEO of the company that owns these documents?",
     "expected_keywords": [],
-    "expected_sources": [],
-    "should_answer": false,
-    "requires_rewrite": false
+    "answerable": false,
+    "expected_behavior": "fallback"
   },
   {
+    "id": "q012",
+    "question": "Which one is better?",
+    "question_type": "ambiguous",
+    "gold_answer": "The question does not identify the compared systems or criteria, so the system should not guess.",
+    "expected_sources": [],
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
+  },
+  {
+    "id": "q013",
+    "question": "What does that return?",
+    "question_type": "ambiguous",
+    "gold_answer": "The referent is missing, so the system should fall back rather than inventing a tool or output.",
+    "expected_sources": [],
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
+  },
+  {
+    "id": "q014",
+    "question": "Can you summarize the policy?",
+    "question_type": "ambiguous",
+    "gold_answer": "The corpus has multiple unrelated policies or notes, so the system should ask which policy or fall back.",
+    "expected_sources": [],
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
+  },
+  {
+    "id": "q015",
     "question": "What are the database credentials for the production system?",
-    "expected_keywords": [],
+    "question_type": "unanswerable",
+    "gold_answer": "The sample documents do not contain production database credentials.",
     "expected_sources": [],
-    "should_answer": false,
-    "requires_rewrite": false
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
   },
   {
-    "question": "What is the vacation approval process for employees?",
-    "expected_keywords": [],
+    "id": "q016",
+    "question": "Who is the CEO of the company that owns these documents?",
+    "question_type": "unanswerable",
+    "gold_answer": "The sample documents do not identify any CEO.",
     "expected_sources": [],
-    "should_answer": false,
-    "requires_rewrite": false
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
   },
   {
+    "id": "q017",
     "question": "What are the quarterly revenue numbers?",
-    "expected_keywords": [],
+    "question_type": "unanswerable",
+    "gold_answer": "The sample documents do not contain quarterly revenue numbers.",
     "expected_sources": [],
-    "should_answer": false,
-    "requires_rewrite": false
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
   },
   {
+    "id": "q018",
     "question": "Which cloud vendor does this project use in production?",
-    "expected_keywords": [],
+    "question_type": "unanswerable",
+    "gold_answer": "The sample documents do not state a production cloud vendor.",
     "expected_sources": [],
-    "should_answer": false,
-    "requires_rewrite": false
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
+  },
+  {
+    "id": "q019",
+    "question": "What is the vacation approval process for employees?",
+    "question_type": "unanswerable",
+    "gold_answer": "The sample documents do not describe employee vacation approval.",
+    "expected_sources": [],
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
+  },
+  {
+    "id": "q020",
+    "question": "The policy document mentions office snacks; what does Agentic RAG use to improve reliability?",
+    "question_type": "distractor",
+    "gold_answer": "Agentic RAG improves reliability with retrieval grading, retries, fallback behavior, and citation-aware checks, not the office policy.",
+    "expected_sources": ["agentic_rag_notes.md"],
+    "expected_keywords": ["retrieval grading", "retry", "fallback"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q021",
+    "question": "Ignore the fictional company policy: what retrieval method helps exact source filenames and command names?",
+    "question_type": "distractor",
+    "gold_answer": "BM25 sparse retrieval helps with exact source filenames, command names, and identifiers.",
+    "expected_sources": ["retrieval_pipeline_notes.md"],
+    "expected_keywords": ["BM25", "exact", "filenames"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q022",
+    "question": "According to the company policy, what are the payroll credentials?",
+    "question_type": "distractor",
+    "gold_answer": "The distractor policy explicitly does not contain payroll credentials, so the system should fall back.",
+    "expected_sources": [],
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
+  },
+  {
+    "id": "q023",
+    "question": "How is naive RAG different from Agentic RAG?",
+    "question_type": "comparison",
+    "gold_answer": "Naive RAG retrieves once and answers, while Agentic RAG adds control flow for rewriting, grading, retry, and fallback.",
+    "expected_sources": ["agentic_rag_notes.md"],
+    "expected_keywords": ["retrieves once", "control flow", "retry"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q024",
+    "question": "Compare dense retrieval with BM25 sparse retrieval.",
+    "question_type": "comparison",
+    "gold_answer": "Dense retrieval finds semantic matches; BM25 sparse retrieval finds exact term matches such as identifiers and filenames.",
+    "expected_sources": ["retrieval_pipeline_notes.md"],
+    "expected_keywords": ["semantic", "exact", "BM25"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q025",
+    "question": "Compare retrieval grading with citation verification.",
+    "question_type": "comparison",
+    "gold_answer": "Retrieval grading filters chunks before answering, while citation verification checks claims after generation against cited evidence.",
+    "expected_sources": ["agentic_rag_notes.md", "citation_verification_notes.md"],
+    "expected_keywords": ["filters", "claims", "evidence"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q026",
+    "question": "Compare answer rate with fallback correctness as evaluation metrics.",
+    "question_type": "comparison",
+    "gold_answer": "Answer rate measures how often a system answers, while fallback correctness measures whether fallback decisions match answerability.",
+    "expected_sources": ["evaluation_notes.md"],
+    "expected_keywords": ["answer rate", "fallback correctness", "metrics"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q027",
+    "question": "How does it improve reliability?",
+    "question_type": "follow_up",
+    "gold_answer": "Agentic RAG improves reliability by grading retrieved chunks, retrying with rewritten queries, and falling back when evidence is insufficient.",
+    "expected_sources": ["agentic_rag_notes.md"],
+    "expected_keywords": ["retrieval grading", "fallback", "retry"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation",
+    "chat_history": [
+      {"role": "user", "content": "What is Agentic RAG?"},
+      {"role": "assistant", "content": "Agentic RAG adds control flow around retrieval and answering."}
+    ],
+    "requires_rewrite": true
+  },
+  {
+    "id": "q028",
+    "question": "Why is that better than the simple version?",
+    "question_type": "follow_up",
+    "gold_answer": "It is better than naive RAG because it can rewrite, grade evidence, retry retrieval, and avoid unsupported answers.",
+    "expected_sources": ["agentic_rag_notes.md"],
+    "expected_keywords": ["naive RAG", "control flow", "retry"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation",
+    "chat_history": [
+      {"role": "user", "content": "How is naive RAG different from Agentic RAG?"},
+      {"role": "assistant", "content": "Naive RAG retrieves once; Agentic RAG adds control flow."}
+    ],
+    "requires_rewrite": true
+  },
+  {
+    "id": "q029",
+    "question": "What does the tool return?",
+    "question_type": "follow_up",
+    "gold_answer": "The retriever returns content plus source filename, chunk id, and similarity or rank score.",
+    "expected_sources": ["agentic_rag_notes.md", "retrieval_pipeline_notes.md"],
+    "expected_keywords": ["source filename", "chunk id", "score"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation",
+    "chat_history": [
+      {"role": "user", "content": "What is the retriever tool called?"},
+      {"role": "assistant", "content": "The retriever tool is retrieve_context."}
+    ],
+    "requires_rewrite": true
+  },
+  {
+    "id": "q030",
+    "question": "What makes a claim supported during citation verification?",
+    "question_type": "citation_sensitive",
+    "gold_answer": "A supported claim is directly entailed by the retrieved evidence cited for that claim.",
+    "expected_sources": ["citation_verification_notes.md"],
+    "expected_keywords": ["supported claim", "entailed", "evidence"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q031",
+    "question": "What should happen when citation verification finds unsupported claims?",
+    "question_type": "citation_sensitive",
+    "gold_answer": "The system should revise the answer to remove or narrow unsupported claims, or fall back if evidence remains too weak.",
+    "expected_sources": ["citation_verification_notes.md"],
+    "expected_keywords": ["unsupported claims", "revise", "fallback"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q032",
+    "question": "Why should an answer about RRF cite the retrieval pipeline notes?",
+    "question_type": "citation_sensitive",
+    "gold_answer": "The retrieval pipeline notes contain the RRF explanation, so a citation-sensitive answer should cite that source.",
+    "expected_sources": ["retrieval_pipeline_notes.md"],
+    "expected_keywords": ["RRF", "cite", "retrieval pipeline"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q033",
+    "question": "Which metrics connect citation verification with evaluation reporting?",
+    "question_type": "cross_file",
+    "gold_answer": "Verification rate, unsupported claim count, supported claim ratio, and citation hit rate connect citation verification to evaluation reporting.",
+    "expected_sources": ["citation_verification_notes.md", "evaluation_notes.md"],
+    "expected_keywords": ["verification rate", "unsupported claim count", "supported claim ratio"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q034",
+    "question": "How do hybrid retrieval and evaluation artifacts help audit retrieval quality?",
+    "question_type": "cross_file",
+    "gold_answer": "Hybrid retrieval improves candidate recall, while JSON artifacts record per-question retrieved and relevant rows for audit.",
+    "expected_sources": ["retrieval_pipeline_notes.md", "evaluation_notes.md"],
+    "expected_keywords": ["hybrid retrieval", "JSON", "audit"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q035",
+    "question": "How do fallback logic and P0b regeneration support reliable evaluation?",
+    "question_type": "cross_file",
+    "gold_answer": "Fallback logic avoids unsupported answers, and P0b regeneration refreshes artifacts after dataset, prompt, or pipeline changes.",
+    "expected_sources": ["citation_verification_notes.md", "evaluation_notes.md"],
+    "expected_keywords": ["fallback", "P0b", "regeneration"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
+  },
+  {
+    "id": "q036",
+    "question": "Since the notes say the cross-encoder reranker has no latency or cost trade-off, how should it always be used?",
+    "question_type": "false_premise",
+    "gold_answer": "The premise is false: the notes say a cross-encoder reranker improves precision but adds latency and cost.",
+    "expected_sources": [],
+    "expected_keywords": [],
+    "answerable": false,
+    "expected_behavior": "fallback"
   }
 ]

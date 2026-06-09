@@ -250,6 +250,40 @@ def test_load_eval_questions_rejects_invalid_expected_behavior(tmp_path):
         load_eval_questions(path)
 
 
+def test_default_eval_dataset_has_required_coverage():
+    questions = load_eval_questions()
+    required_types = {
+        "single_doc",
+        "multi_chunk",
+        "ambiguous",
+        "unanswerable",
+        "distractor",
+        "comparison",
+        "follow_up",
+        "citation_sensitive",
+        "cross_file",
+        "false_premise",
+    }
+    allowed_sources = {
+        "agentic_rag_notes.md",
+        "retrieval_pipeline_notes.md",
+        "citation_verification_notes.md",
+        "evaluation_notes.md",
+        "distractor_company_policy.md",
+    }
+
+    assert len(questions) >= 30
+    assert required_types.issubset({question["question_type"] for question in questions})
+    assert all(question["id"].startswith("q") for question in questions)
+    assert all(question["expected_behavior"] for question in questions)
+    assert all(
+        source in allowed_sources
+        for question in questions
+        for source in question["expected_sources"]
+        if source
+    )
+
+
 def test_evaluate_questions_computes_agentic_summary_metrics():
     questions = [
         {
