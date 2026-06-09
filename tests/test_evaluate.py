@@ -321,6 +321,36 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
     assert report["results"][1]["fallback_correct"] is True
 
 
+def test_evaluate_questions_respects_answerable_without_should_answer():
+    questions = [
+        {
+            "question": "Missing?",
+            "answerable": False,
+            "expected_keywords": [],
+            "expected_sources": [],
+        }
+    ]
+    timer_values = iter([0.0, 0.1])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_runner(question):
+        return {
+            "answer": "The provided documents do not contain enough information.",
+            "citations": [],
+            "retrieved_documents": [],
+            "relevant_documents": [],
+            "retry_count": 0,
+            "fallback_reason": "No evidence.",
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_runner, timer=fake_timer)
+
+    assert report["results"][0]["fallback_correct"] is True
+    assert report["summary"]["fallback_correctness_rate"] == 1.0
+
+
 def test_evaluate_questions_compares_naive_and_agentic_results():
     questions = [
         {

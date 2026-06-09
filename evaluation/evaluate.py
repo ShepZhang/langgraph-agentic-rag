@@ -277,7 +277,7 @@ def _build_success_result(
         raise ValueError("fallback_reason must be a string")
 
     fallback_triggered = bool(fallback_reason.strip()) or _is_fallback_answer(answer)
-    should_answer = bool(item.get("should_answer", True))
+    should_answer = _get_answerable(item)
     answer_returned = bool(answer.strip()) and not fallback_triggered
     expected_keywords = item.get("expected_keywords", [])
     expected_sources = item.get("expected_sources", [])
@@ -443,6 +443,31 @@ def _normalize_expected_sources(record: dict[str, Any]) -> list[str]:
         record.get("expected_source"),
         field_name="expected_source",
     )
+
+
+def _get_answerable(item: dict[str, Any]) -> bool:
+    has_answerable = "answerable" in item
+    has_should_answer = "should_answer" in item
+
+    if has_answerable:
+        answerable = item.get("answerable")
+        if not isinstance(answerable, bool):
+            raise ValueError("answerable must be a boolean")
+        if has_should_answer:
+            should_answer = item.get("should_answer")
+            if not isinstance(should_answer, bool):
+                raise ValueError("should_answer must be a boolean")
+            if answerable != should_answer:
+                raise ValueError("answerable and should_answer must match")
+        return answerable
+
+    if has_should_answer:
+        should_answer = item.get("should_answer")
+        if not isinstance(should_answer, bool):
+            raise ValueError("should_answer must be a boolean")
+        return should_answer
+
+    return True
 
 
 def _normalize_chat_history(value: Any) -> list[dict[str, Any]]:
