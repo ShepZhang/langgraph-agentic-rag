@@ -726,6 +726,63 @@ def test_main_prints_report_with_injected_runner(tmp_path, capsys):
     assert "| Metric | Naive RAG | Agentic RAG |" in captured.out
 
 
+def test_main_writes_comparison_artifacts(tmp_path):
+    path = tmp_path / "eval.json"
+    output_dir = tmp_path / "artifacts"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "question": "What is Agentic RAG?",
+                    "expected_keywords": ["retrieval"],
+                    "expected_sources": ["notes.md"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_agentic(question):
+        return {
+            "answer": "Agentic RAG uses retrieval.",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+        }
+
+    def fake_naive(question):
+        return {
+            "answer": "Naive RAG uses retrieval.",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+        }
+
+    exit_code = main(
+        ["--questions", str(path), "--output-dir", str(output_dir)],
+        run_agent_fn=fake_agentic,
+        run_naive_fn=fake_naive,
+    )
+
+    baseline_path = output_dir / "baseline_result.json"
+    agentic_path = output_dir / "agentic_result.json"
+    comparison_path = output_dir / "comparison_result.json"
+    baseline_payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+    agentic_payload = json.loads(agentic_path.read_text(encoding="utf-8"))
+    comparison_payload = json.loads(comparison_path.read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert baseline_path.exists()
+    assert agentic_path.exists()
+    assert comparison_path.exists()
+    assert baseline_payload["system"] == "naive_rag"
+    assert agentic_payload["system"] == "agentic_rag"
+    assert comparison_payload["summary"]["mode"] == "comparison"
+    assert len(baseline_payload["results"]) == 1
+    assert len(agentic_payload["results"]) == 1
+    assert len(comparison_payload["results"]) == 1
+
+
 def test_main_reports_question_load_errors_without_traceback(tmp_path, capsys):
     missing_path = tmp_path / "missing.json"
 

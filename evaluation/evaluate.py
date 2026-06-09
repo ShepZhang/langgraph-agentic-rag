@@ -107,6 +107,12 @@ def main(
         type=Path,
         help="Path to evaluation questions JSON.",
     )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        type=Path,
+        help="Directory for JSON evaluation artifacts.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -119,8 +125,47 @@ def main(
         run_agent_fn=run_agent_fn,
         run_naive_fn=run_naive_fn,
     )
+    if args.output_dir is not None:
+        write_evaluation_artifacts(report, args.output_dir)
     print(format_report(report))
     return 0
+
+
+def write_evaluation_artifacts(report: dict[str, Any], output_dir: str | Path) -> None:
+    """Write structured JSON artifacts for downstream evaluation analysis."""
+
+    artifact_dir = Path(output_dir)
+    summary = report.get("summary", {})
+    if summary.get("mode") == "comparison":
+        paired_results = report.get("results", [])
+        _write_json(
+            artifact_dir / "baseline_result.json",
+            {
+                "system": "naive_rag",
+                "summary": summary.get("naive", {}),
+                "results": [paired.get("naive", {}) for paired in paired_results],
+            },
+        )
+        _write_json(
+            artifact_dir / "agentic_result.json",
+            {
+                "system": "agentic_rag",
+                "summary": summary.get("agentic", {}),
+                "results": [paired.get("agentic", {}) for paired in paired_results],
+            },
+        )
+        _write_json(artifact_dir / "comparison_result.json", report)
+        return
+
+    _write_json(artifact_dir / "agentic_result.json", report)
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 def _evaluate_comparison(
