@@ -1,0 +1,4 @@
+method: + Conditional Retry / Fallback
+runner: agentic
+status: supported
+notes: Uses the current agentic workflow label; P0a does not independently toggle retry or fallback logic.

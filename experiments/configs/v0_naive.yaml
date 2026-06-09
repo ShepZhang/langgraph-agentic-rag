@@ -1,0 +1,4 @@
+method: Naive RAG
+runner: naive
+status: supported
+notes: Baseline naive retrieval-augmented generation runner.

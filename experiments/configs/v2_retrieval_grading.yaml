@@ -1,0 +1,4 @@
+method: + Retrieval Grading
+runner: agentic
+status: supported
+notes: Uses the current agentic workflow label; P0a does not independently toggle retrieval grading.

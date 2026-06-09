@@ -1,0 +1,4 @@
+method: + Claim-level Citation Verification
+runner: pending
+status: pending
+notes: Pending until claim-level citation verification can be independently toggled for ablation.
