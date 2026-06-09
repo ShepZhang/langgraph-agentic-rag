@@ -41,7 +41,7 @@ The command follows the same loader -> chunker -> create_vectorstore path used
 by the app and prints the number of files, documents, and chunks.
 
 ```bash
-python -c "from pathlib import Path; from rag.loader import load_documents; from rag.chunker import split_documents; from rag.vectorstore import create_vectorstore; files=sorted(Path('sample_docs').glob('*.md')); docs=load_documents(files); chunks=split_documents(docs); create_vectorstore(chunks); print(f'files={len(files)} docs={len(docs)} chunks={len(chunks)}')"
+.venv/bin/python -c "from pathlib import Path; from rag.loader import load_documents; from rag.chunker import split_documents; from rag.vectorstore import create_vectorstore; files=sorted(Path('sample_docs').glob('*.md')); docs=load_documents(files); chunks=split_documents(docs); create_vectorstore(chunks); print(f'files={len(files)} docs={len(docs)} chunks={len(chunks)}')"
 ```
 
 ## Start The UI
@@ -98,7 +98,7 @@ Run the fixed question matrix after building the sample index and configuring a
 chat LLM:
 
 ```bash
-python -m evaluation.matrix --questions evaluation/eval_questions.json --json-output evaluation/results/deepseek_matrix_YYYY-MM-DD.json
+.venv/bin/python -m evaluation.matrix --questions evaluation/eval_questions.json --json-output evaluation/results/deepseek_matrix_YYYY-MM-DD.json
 ```
 
 ## Demo Sequence

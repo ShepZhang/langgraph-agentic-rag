@@ -143,8 +143,9 @@ def test_demo_excludes_secrets_and_includes_reproducibility_commands():
     for required_text in [
         ".venv/bin/python -m pip install -r requirements.txt",
         ".venv/bin/python app.py",
+        ".venv/bin/python -c",
+        ".venv/bin/python -m evaluation.matrix",
         "python app.py",
-        "evaluation.matrix",
         "sample_docs",
         "RERANKER_ENABLED=true",
         "RERANKER_ENABLED=false",
