@@ -313,6 +313,27 @@ After P1/P2 algorithm upgrades, run P0b:
 - update `experiments/report.md` with real observed metrics
 - update README with honest, reproducible results and trade-off analysis
 
+## Roadmap: Interactive Evaluation Dashboard
+
+After P0b results are reproducible from CLI and JSON artifacts, add an interactive evaluation dashboard as a later product-facing milestone.
+
+Candidate scope:
+
+- Add an Evaluation tab to the existing Gradio app.
+- Allow selecting `baseline`, `agentic`, or an ablation config.
+- Run evaluation from the UI without requiring terminal commands.
+- Display metric cards for correctness, context relevance, citation hit rate, fallback accuracy, unsupported claim count, average retry count, and average latency.
+- Show a baseline-vs-agentic comparison table.
+- Show failed cases with failure type, reason, expected sources, retrieved sources, fallback reason, and citation status.
+- Allow opening a per-question detail view that includes answer, citations, retrieved chunks, relevant chunks, retry count, and error text.
+- Link dashboard rows to trace IDs after trace logging is implemented.
+
+Dashboard non-goals for P0a:
+
+- Do not add interactive charts before the evaluation artifacts are stable.
+- Do not make dashboard results the source of truth; JSON artifacts remain the reproducible evaluation record.
+- Do not block P1/P2 algorithm work on UI polish.
+
 ## Roadmap: Upgrade To Approach B
 
 After P0b, refactor the evaluation code into a fuller framework:
