@@ -110,6 +110,46 @@ EXPECTED_FACTS_BY_SOURCE = {
 }
 
 
+def test_portfolio_documentation_files_exist():
+    documentation_files = [
+        PROJECT_ROOT / "docs/evaluation.md",
+        PROJECT_ROOT / "docs/demo.md",
+        PROJECT_ROOT / "assets/architecture.png",
+    ]
+
+    assert all(path.exists() for path in documentation_files)
+
+
+def test_demo_contains_required_scenarios():
+    demo_text = (PROJECT_ROOT / "docs/demo.md").read_text(encoding="utf-8")
+
+    for heading in [
+        "Direct Answer",
+        "Contextual Follow-Up",
+        "Query Rewrite",
+        "Correct Fallback",
+        "Reranker",
+        "Citation Safety",
+    ]:
+        assert heading in demo_text
+
+
+def test_demo_excludes_secrets_and_includes_reproducibility_commands():
+    demo_text = (PROJECT_ROOT / "docs/demo.md").read_text(encoding="utf-8")
+
+    for forbidden_text in ["OPENAI_API_KEY=", "sk-", "Bearer"]:
+        assert forbidden_text not in demo_text
+
+    for required_text in [
+        "python app.py",
+        "evaluation.matrix",
+        "sample_docs",
+        "RERANKER_ENABLED=true",
+        "RERANKER_ENABLED=false",
+    ]:
+        assert required_text in demo_text
+
+
 def test_portfolio_sample_corpus_files_exist_and_load():
     assert all(path.exists() for path in SAMPLE_DOCS)
 
