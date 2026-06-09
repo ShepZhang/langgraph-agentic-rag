@@ -35,7 +35,7 @@ def main(
     evaluate_questions, load_eval_questions = _load_evaluation_tools()
 
     questions = load_eval_questions(args.questions)
-    report = evaluate_questions(questions, run_agent_fn=run_naive_fn)
+    report = evaluate_questions(questions, run_naive_fn)
     payload = {
         "system": "naive_rag",
         "summary": report["summary"],

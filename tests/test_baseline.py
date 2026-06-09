@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import importlib
 import json
+import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 from baseline import run_naive_rag
@@ -137,10 +138,23 @@ def test_baseline_cli_help_does_not_load_execution_dependencies():
             raise AssertionError("--help should exit via SystemExit")
 
 
-def test_baseline_cli_module_import_is_lazy():
-    sys.modules.pop("baseline.run_baseline", None)
-    module = importlib.import_module("baseline.run_baseline")
-
-    assert "run_naive_rag" not in module.__dict__
-    assert "evaluate_questions" not in module.__dict__
-    assert "load_eval_questions" not in module.__dict__
+def test_baseline_cli_module_import_does_not_load_runtime_dependencies():
+    code = (
+        "import importlib.util\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "module_path = Path('baseline/run_baseline.py').resolve()\n"
+        "spec = importlib.util.spec_from_file_location('baseline.run_baseline', module_path)\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(module)\n"
+        "assert 'baseline.naive_rag' not in sys.modules\n"
+        "assert 'evaluation.evaluate' not in sys.modules\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
