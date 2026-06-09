@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import time
 from pathlib import Path
@@ -226,9 +227,9 @@ def _build_success_result(
     expected_sources = item.get("expected_sources", [])
     unsupported_claim_count = _count_unsupported_claims(claims)
     supported_claim_count = _count_supported_claims(claims)
-    total_claim_count = supported_claim_count + unsupported_claim_count
+    total_claim_count = len(claims)
     token_usage = agent_result.get("token_usage")
-    estimated_cost = agent_result.get("estimated_cost")
+    estimated_cost = _safe_cost(agent_result.get("estimated_cost"))
 
     return {
         "question": item["question"],
@@ -254,7 +255,8 @@ def _build_success_result(
         "unsupported_claim_count": unsupported_claim_count,
         "supported_claim_count": supported_claim_count,
         "total_claim_count": total_claim_count,
-        "source_hit": _has_expected_source(expected_sources, citations, retrieved_documents),
+        "source_hit": _has_expected_source(expected_sources, citations, [])
+        or _has_expected_source(expected_sources, retrieved_documents, []),
         "keyword_hit": (
             answer_returned and _has_expected_keywords(answer, expected_keywords)
         ),
@@ -376,9 +378,10 @@ def _summarize(
         for result in results
     ]
     estimated_cost = sum(
-        float(result["estimated_cost"] or 0)
+        cost
         for result in results
-        if isinstance(result.get("estimated_cost"), int | float)
+        for cost in [_safe_cost(result.get("estimated_cost"))]
+        if cost is not None
     )
 
     return {
@@ -743,6 +746,15 @@ def _count_unsupported_claims(claims: list[Any]) -> int:
             or claim.get("verification_label") == "unsupported"
         )
     )
+
+
+def _safe_cost(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    cost = float(value)
+    if not math.isfinite(cost):
+        return None
+    return cost
 
 
 def _extract_total_tokens(token_usage: Any) -> int | None:

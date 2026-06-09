@@ -808,3 +808,86 @@ def test_evaluate_questions_computes_reliability_metrics():
     assert summary["citation_verification_pass_rate"] == 0.0
     assert summary["average_token_usage"] == 60.0
     assert summary["estimated_cost"] == 0.0003
+
+
+def test_evaluate_questions_treats_source_hit_as_combined_evidence_and_citation_hit_as_citations_only():
+    questions = [
+        {
+            "question": "Source mismatch?",
+            "expected_sources": ["notes.md"],
+        }
+    ]
+    timer_values = iter([0.0, 0.25])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_runner(question):
+        return {
+            "answer": "Answer with a wrong citation.",
+            "citations": [{"source": "wrong.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+            "retry_count": 0,
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_runner, timer=fake_timer)
+
+    assert report["results"][0]["source_hit"] is True
+    assert report["results"][0]["citation_hit"] is False
+    assert report["summary"]["source_hit_rate"] == 1.0
+    assert report["summary"]["citation_hit_rate"] == 0.0
+
+
+def test_evaluate_questions_filters_invalid_estimated_cost_values():
+    questions = [
+        {"question": "Bool cost?", "expected_sources": []},
+        {"question": "NaN cost?", "expected_sources": []},
+        {"question": "Inf cost?", "expected_sources": []},
+        {"question": "Valid cost?", "expected_sources": []},
+    ]
+    timer_values = iter([0.0, 0.1, 0.1, 0.2, 0.2, 0.3, 0.3, 0.4])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_runner(question):
+        if question == "Bool cost?":
+            return {"answer": "ok", "estimated_cost": True}
+        if question == "NaN cost?":
+            return {"answer": "ok", "estimated_cost": float("nan")}
+        if question == "Inf cost?":
+            return {"answer": "ok", "estimated_cost": float("inf")}
+        return {"answer": "ok", "estimated_cost": 0.125}
+
+    report = evaluate_questions(questions, run_agent_fn=fake_runner, timer=fake_timer)
+
+    assert report["summary"]["estimated_cost"] == 0.125
+
+
+def test_evaluate_questions_uses_all_claims_as_supported_ratio_denominator():
+    questions = [
+        {
+            "question": "Claim ratio?",
+            "expected_sources": [],
+        }
+    ]
+    timer_values = iter([0.0, 0.25])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_runner(question):
+        return {
+            "answer": "ok",
+            "claims": [
+                {"claim": "supported claim", "supported": True},
+                {"claim": "unlabeled claim"},
+            ],
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_runner, timer=fake_timer)
+
+    assert report["results"][0]["supported_claim_count"] == 1
+    assert report["results"][0]["total_claim_count"] == 2
+    assert report["summary"]["supported_claim_ratio"] == 0.5
