@@ -11,15 +11,28 @@ with raw output saved under `evaluation/results/`.
 
 ## Environment Setup
 
+Create and activate a virtual environment before running the commands below:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+```
+
 Copy `.env.example` to `.env`, then configure the OpenAI-compatible provider
-settings for DeepSeek or another compatible endpoint. Fill in the provider
-credential only in your local `.env`; do not commit it and do not paste it into
-demo notes.
+settings for DeepSeek or another compatible endpoint. The matrix runner fails
+early when the chat LLM is not configured. Fill in the provider credential only
+in your local `.env`; do not commit it and do not paste it into demo notes.
 
 Local Ollama can also be used by setting `LLM_PROVIDER=ollama` and configuring
 the Ollama model fields. The published benchmark used DeepSeek through the
 OpenAI-compatible path, so use the same provider family when reproducing that
 report.
+
+The default embedding model is `sentence-transformers/all-MiniLM-L6-v2`. The
+reranker demo uses `cross-encoder/ms-marco-MiniLM-L-6-v2`. First-time users may
+need network access to download these Hugging Face models; later runs can use
+the local cache. In restricted environments, set `HF_HUB_OFFLINE=1` and
+`TRANSFORMERS_OFFLINE=1` only after the models are already cached.
 
 ## Build The Sample Index
 
@@ -33,18 +46,28 @@ python -c "from pathlib import Path; from rag.loader import load_documents; from
 
 ## Start The UI
 
+If the virtual environment is not activated, use the repository-local Python
+interpreter:
+
+```bash
+.venv/bin/python app.py
+```
+
+If the virtual environment is activated, this shorter command is equivalent:
+
 ```bash
 python app.py
 ```
 
-If the system only exposes Python 3 as `python3`, use this equivalent command:
+If the system only exposes Python 3 as `python3`, use this after activating the
+virtual environment:
 
 ```bash
 python3 app.py
 ```
 
-Open the Gradio URL printed by the process. The default port is configured in
-`.env.example`.
+Open the Gradio URL printed by the process. The default host and port are
+configured in `.env.example`.
 
 ## Reranker Toggle
 
@@ -71,7 +94,8 @@ to the agent and UI.
 
 ## Evaluation Command
 
-Run the fixed question matrix after building the sample index:
+Run the fixed question matrix after building the sample index and configuring a
+chat LLM:
 
 ```bash
 python -m evaluation.matrix --questions evaluation/eval_questions.json --json-output evaluation/results/deepseek_matrix_YYYY-MM-DD.json
@@ -104,9 +128,9 @@ history so the current query is about Agentic RAG reliability instead of a vague
 chunks support the follow-up.
 
 UI fields to inspect: `Rewritten question`, `Retry count`, `Answer`,
-`Citations`, `Retrieved chunks`. Inspect `current_query` through the rewritten
-question field and verify the retry count stays reasonable for a supported
-follow-up.
+`Citations`, `Retrieved chunks`. The visible `Rewritten question` field is the
+UI display for the agent's current retrieval query; verify the retry count stays
+reasonable for a supported follow-up.
 
 ### Query Rewrite
 
@@ -119,8 +143,8 @@ paid-time-off query, retrieve handbook evidence, and answer with the annual PTO
 fact.
 
 UI fields to inspect: `Rewritten question`, `Answer`, `Citations`,
-`Retrieved chunks`. Confirm `current_query` reflects the normalized PTO intent
-and the retrieved chunks include `employee_handbook.md`.
+`Retrieved chunks`. Confirm the visible rewritten question reflects the
+normalized PTO intent and the retrieved chunks include `employee_handbook.md`.
 
 ### Reranker
 

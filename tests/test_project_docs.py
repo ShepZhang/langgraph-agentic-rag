@@ -141,11 +141,18 @@ def test_demo_excludes_secrets_and_includes_reproducibility_commands():
         assert forbidden_text not in demo_text
 
     for required_text in [
+        ".venv/bin/python -m pip install -r requirements.txt",
+        ".venv/bin/python app.py",
         "python app.py",
         "evaluation.matrix",
         "sample_docs",
         "RERANKER_ENABLED=true",
         "RERANKER_ENABLED=false",
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "HF_HUB_OFFLINE=1",
+        "TRANSFORMERS_OFFLINE=1",
+        "chat LLM",
     ]:
         assert required_text in demo_text
 
