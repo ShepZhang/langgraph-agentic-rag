@@ -304,6 +304,15 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
         "citation_rate": 0.5,
         "verification_rate": 0.5,
         "average_claim_count": 0.5,
+        "correctness_score": 1.0,
+        "context_relevance_score": 1.0,
+        "citation_hit_rate": 1.0,
+        "fallback_accuracy": 1.0,
+        "unsupported_claim_count": 0,
+        "supported_claim_ratio": 1.0,
+        "citation_verification_pass_rate": 0.5,
+        "average_token_usage": 0.0,
+        "estimated_cost": 0,
         "source_hit_rate": 1.0,
         "keyword_hit_rate": 1.0,
         "fallback_correctness_rate": 1.0,
@@ -730,3 +739,72 @@ def test_main_reports_question_load_errors_without_traceback(tmp_path, capsys):
     assert exc_info.value.code == 2
     assert "Unable to load evaluation questions" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_evaluate_questions_computes_reliability_metrics():
+    questions = [
+        {
+            "id": "q001",
+            "question": "Supported?",
+            "gold_answer": "The answer mentions supported evidence.",
+            "expected_keywords": ["supported", "evidence"],
+            "expected_sources": ["notes.md"],
+            "answerable": True,
+            "should_answer": True,
+            "expected_behavior": "answer_with_citation",
+        },
+        {
+            "id": "q002",
+            "question": "Missing?",
+            "expected_keywords": [],
+            "expected_sources": [],
+            "answerable": False,
+            "should_answer": False,
+            "expected_behavior": "fallback",
+        },
+    ]
+    timer_values = iter([0.0, 1.0, 1.0, 2.0])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_runner(question):
+        if question == "Supported?":
+            return {
+                "answer": "The answer mentions supported evidence [1].",
+                "citations": [{"source": "notes.md"}],
+                "retrieved_documents": [{"source": "notes.md"}],
+                "relevant_documents": [{"source": "notes.md"}],
+                "claims": [
+                    {"claim": "supported evidence", "supported": True},
+                    {"claim": "extra claim", "supported": False},
+                ],
+                "claim_verification": {"verified": False},
+                "is_verified": False,
+                "retry_count": 1,
+                "token_usage": {"total_tokens": 120},
+                "estimated_cost": 0.0003,
+            }
+        return {
+            "answer": "The provided documents do not contain enough information.",
+            "citations": [],
+            "retrieved_documents": [],
+            "relevant_documents": [],
+            "claims": [],
+            "is_verified": False,
+            "retry_count": 0,
+            "fallback_reason": "No evidence.",
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_runner, timer=fake_timer)
+    summary = report["summary"]
+
+    assert summary["correctness_score"] == 1.0
+    assert summary["context_relevance_score"] == 1.0
+    assert summary["citation_hit_rate"] == 1.0
+    assert summary["fallback_accuracy"] == 1.0
+    assert summary["unsupported_claim_count"] == 1
+    assert summary["supported_claim_ratio"] == 0.5
+    assert summary["citation_verification_pass_rate"] == 0.0
+    assert summary["average_token_usage"] == 60.0
+    assert summary["estimated_cost"] == 0.0003

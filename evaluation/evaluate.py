@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -223,23 +224,47 @@ def _build_success_result(
     answer_returned = bool(answer.strip()) and not fallback_triggered
     expected_keywords = item.get("expected_keywords", [])
     expected_sources = item.get("expected_sources", [])
+    unsupported_claim_count = _count_unsupported_claims(claims)
+    supported_claim_count = _count_supported_claims(claims)
+    total_claim_count = supported_claim_count + unsupported_claim_count
+    token_usage = agent_result.get("token_usage")
+    estimated_cost = agent_result.get("estimated_cost")
 
     return {
         "question": item["question"],
         "answer_returned": answer_returned,
         "fallback_triggered": fallback_triggered,
         "fallback_correct": fallback_triggered is (not should_answer),
+        "correct": _is_correct_answer(
+            answer=answer,
+            answer_returned=answer_returned,
+            expected_keywords=expected_keywords,
+            gold_answer=str(item.get("gold_answer", "")),
+            should_answer=should_answer,
+        ),
+        "context_relevant": _has_expected_source(
+            expected_sources,
+            relevant_documents,
+            retrieved_documents,
+        ),
+        "citation_hit": _has_expected_source(expected_sources, citations, []),
         "citation_returned": bool(citations),
         "is_verified": bool(agent_result.get("is_verified", False)),
         "claim_count": len(claims),
+        "unsupported_claim_count": unsupported_claim_count,
+        "supported_claim_count": supported_claim_count,
+        "total_claim_count": total_claim_count,
         "source_hit": _has_expected_source(expected_sources, citations, retrieved_documents),
         "keyword_hit": (
             answer_returned and _has_expected_keywords(answer, expected_keywords)
         ),
+        "citation_verification_passed": bool(agent_result.get("is_verified", False)),
         "rewrite_triggered": retry_count > 0,
         "retry_count": retry_count,
         "retrieved_doc_count": len(retrieved_documents),
         "relevant_doc_count": len(relevant_documents),
+        "token_usage": token_usage,
+        "estimated_cost": estimated_cost,
         "latency": 0,
         "error": None,
         "answer": answer,
@@ -256,15 +281,24 @@ def _build_error_result(item: dict[str, Any]) -> dict[str, Any]:
         "answer_returned": False,
         "fallback_triggered": False,
         "fallback_correct": False,
+        "correct": False,
+        "context_relevant": False,
+        "citation_hit": False,
         "citation_returned": False,
         "is_verified": False,
         "claim_count": 0,
+        "unsupported_claim_count": 0,
+        "supported_claim_count": 0,
+        "total_claim_count": 0,
         "source_hit": False,
         "keyword_hit": False,
+        "citation_verification_passed": False,
         "rewrite_triggered": False,
         "retry_count": 0,
         "retrieved_doc_count": 0,
         "relevant_doc_count": 0,
+        "token_usage": None,
+        "estimated_cost": None,
         "latency": 0,
         "error": None,
         "answer": "",
@@ -291,6 +325,15 @@ def _summarize(
             "fallback_correctness_rate": 0,
             "verification_rate": 0,
             "average_claim_count": 0,
+            "correctness_score": 0,
+            "context_relevance_score": 0,
+            "citation_hit_rate": 0,
+            "fallback_accuracy": 0,
+            "unsupported_claim_count": 0,
+            "supported_claim_ratio": 0,
+            "citation_verification_pass_rate": 0,
+            "average_token_usage": 0,
+            "estimated_cost": 0,
             "average_retry_count": 0,
             "average_retrieved_docs": 0,
             "average_relevant_docs": 0,
@@ -307,6 +350,17 @@ def _summarize(
     source_hit_count = sum(1 for result in results if result["source_hit"])
     keyword_hit_count = sum(1 for result in results if result["keyword_hit"])
     fallback_correct_count = sum(1 for result in results if result["fallback_correct"])
+    correct_count = sum(1 for result in results if result["correct"])
+    context_relevant_count = sum(1 for result in results if result["context_relevant"])
+    citation_hit_count = sum(1 for result in results if result["citation_hit"])
+    unsupported_claim_count = sum(
+        result["unsupported_claim_count"] for result in results
+    )
+    supported_claim_count = sum(result["supported_claim_count"] for result in results)
+    total_claim_count = sum(result["total_claim_count"] for result in results)
+    verification_pass_count = sum(
+        1 for result in results if result["citation_verification_passed"]
+    )
     source_expected_count = sum(
         1 for item in questions if item.get("expected_sources", [])
     )
@@ -317,6 +371,15 @@ def _summarize(
     error_count = sum(1 for result in results if result["error"])
     retrieved_doc_count = sum(result["retrieved_doc_count"] for result in results)
     relevant_doc_count = sum(result["relevant_doc_count"] for result in results)
+    token_values = [
+        _extract_total_tokens(result.get("token_usage")) or 0
+        for result in results
+    ]
+    estimated_cost = sum(
+        float(result["estimated_cost"] or 0)
+        for result in results
+        if isinstance(result.get("estimated_cost"), int | float)
+    )
 
     return {
         "total_questions": total_questions,
@@ -325,6 +388,18 @@ def _summarize(
         "citation_rate": _rate(citation_count, total_questions),
         "verification_rate": _rate(verified_count, total_questions),
         "average_claim_count": _average(result["claim_count"] for result in results),
+        "correctness_score": _rate(correct_count, total_questions),
+        "context_relevance_score": _rate(context_relevant_count, source_expected_count),
+        "citation_hit_rate": _rate(citation_hit_count, source_expected_count),
+        "fallback_accuracy": _rate(fallback_correct_count, total_questions),
+        "unsupported_claim_count": unsupported_claim_count,
+        "supported_claim_ratio": _rate(supported_claim_count, total_claim_count),
+        "citation_verification_pass_rate": _rate(
+            verification_pass_count,
+            total_questions,
+        ),
+        "average_token_usage": _average(token_values),
+        "estimated_cost": round(estimated_cost, 6),
         "source_hit_rate": _rate(source_hit_count, source_expected_count),
         "keyword_hit_rate": _rate(keyword_hit_count, keyword_expected_count),
         "fallback_correctness_rate": _rate(fallback_correct_count, total_questions),
@@ -612,6 +687,74 @@ def _has_expected_keywords(answer: Any, expected_keywords: list[Any]) -> bool:
 
     lower_answer = answer.lower()
     return all(str(keyword).lower() in lower_answer for keyword in expected_keywords)
+
+
+def _is_correct_answer(
+    answer: str,
+    answer_returned: bool,
+    expected_keywords: list[Any],
+    gold_answer: str,
+    should_answer: bool,
+) -> bool:
+    if not should_answer:
+        return not answer_returned
+    if not answer_returned:
+        return False
+    if expected_keywords:
+        return _has_expected_keywords(answer, expected_keywords)
+    if gold_answer.strip():
+        return _has_gold_answer_overlap(answer, gold_answer)
+    return True
+
+
+def _has_gold_answer_overlap(answer: str, gold_answer: str) -> bool:
+    answer_terms = _content_terms(answer)
+    gold_terms = _content_terms(gold_answer)
+    if not gold_terms:
+        return False
+    overlap = answer_terms.intersection(gold_terms)
+    return len(overlap) / len(gold_terms) >= 0.5
+
+
+def _content_terms(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-zA-Z0-9_]+", text.lower())
+        if len(token) > 2
+    }
+
+
+def _count_supported_claims(claims: list[Any]) -> int:
+    return sum(
+        1
+        for claim in claims
+        if isinstance(claim, dict)
+        and (claim.get("supported") is True or claim.get("verification_label") == "supported")
+    )
+
+
+def _count_unsupported_claims(claims: list[Any]) -> int:
+    return sum(
+        1
+        for claim in claims
+        if isinstance(claim, dict)
+        and (
+            claim.get("supported") is False
+            or claim.get("verification_label") == "unsupported"
+        )
+    )
+
+
+def _extract_total_tokens(token_usage: Any) -> int | None:
+    if not isinstance(token_usage, dict):
+        return None
+    value = token_usage.get("total_tokens")
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_fallback_answer(answer: str) -> bool:
