@@ -39,6 +39,51 @@ def test_initial_rewrite_normalizes_query_without_incrementing_retry_count():
     assert "Tell me about Agentic RAG" in llm.prompts[0]
 
 
+def test_initial_rewrite_records_structured_query_transform():
+    llm = FakeLLM(
+        [
+            (
+                '{"strategy": "multi_query", '
+                '"rewritten_query": "What advantages does Agentic RAG have compared with naive RAG?", '
+                '"expanded_queries": ["Agentic RAG benefits", "Agentic RAG reliability controls"], '
+                '"sub_questions": ["ignored"], '
+                '"reason": "The follow-up needs context and expansion."}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state(
+        "What advantages does it have?",
+        chat_history=[{"role": "user", "content": "We are discussing Agentic RAG."}],
+    )
+
+    update = nodes.rewrite_query_node(state)
+
+    assert update["current_query"] == (
+        "What advantages does Agentic RAG have compared with naive RAG?"
+    )
+    assert update["rewritten_question"] == update["current_query"]
+    assert update["standalone_question"] == update["current_query"]
+    assert update["query_transform_strategy"] == "multi_query"
+    assert update["expanded_queries"] == [
+        "Agentic RAG benefits",
+        "Agentic RAG reliability controls",
+    ]
+    assert update["sub_questions"] == []
+    assert update["query_transform"] == {
+        "strategy": "multi_query",
+        "rewritten_query": update["current_query"],
+        "expanded_queries": [
+            "Agentic RAG benefits",
+            "Agentic RAG reliability controls",
+        ],
+        "sub_questions": [],
+        "reason": "The follow-up needs context and expansion.",
+    }
+    assert "Return JSON only" in llm.prompts[0]
+    assert "multi_query" in llm.prompts[0]
+
+
 def test_initial_rewrite_uses_original_question_for_blank_response():
     llm = FakeLLM(["   "])
     nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
@@ -48,6 +93,8 @@ def test_initial_rewrite_uses_original_question_for_blank_response():
 
     assert update["rewritten_question"] == "What is Agentic RAG?"
     assert update["current_query"] == "What is Agentic RAG?"
+    assert update["standalone_question"] == "What is Agentic RAG?"
+    assert update["query_transform_strategy"] == "rewrite"
     assert update["rewrite_count"] == 0
     assert update["retry_count"] == 0
 

@@ -12,11 +12,14 @@ from langchain_core.messages import BaseMessage
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
     CLAIM_VERIFICATION_PROMPT,
-    QUERY_REWRITE_PROMPT,
     RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
-    format_chat_history,
     format_documents,
+)
+from agent.query_transform import (
+    build_query_transform_prompt,
+    fallback_query_transform,
+    parse_query_transform_response,
 )
 from agent.state import AgentState, Citation, RetrievedDocument
 from agent.tools import create_retriever_tool
@@ -47,15 +50,31 @@ class AgentNodes:
                 grading_reason=state.get("grading_reason") or "No grading reason.",
                 documents=format_documents(state.get("documents", [])),
             )
-        else:
-            prompt = QUERY_REWRITE_PROMPT.format(
-                chat_history=format_chat_history(state.get("chat_history", [])),
-                question=state["question"],
+            raw_result = _coerce_llm_text(self.llm.invoke(prompt))
+            rewritten_question = raw_result.strip()
+            if not rewritten_question:
+                rewritten_question = state.get("current_query") or state["question"]
+            query_transform = fallback_query_transform(
+                rewritten_question,
+                reason="Retry rewrite after failed retrieval.",
             )
-
-        rewritten_question = _coerce_llm_text(self.llm.invoke(prompt)).strip()
-        if not rewritten_question:
-            rewritten_question = state.get("current_query") or state["question"]
+        else:
+            prompt = build_query_transform_prompt(
+                question=state["question"],
+                chat_history=state.get("chat_history", []),
+            )
+            raw_result = _coerce_llm_text(self.llm.invoke(prompt))
+            query_transform = parse_query_transform_response(
+                raw_result,
+                original_question=state["question"],
+            )
+            rewritten_question = query_transform["rewritten_query"].strip()
+            if not rewritten_question:
+                rewritten_question = state.get("current_query") or state["question"]
+                query_transform = fallback_query_transform(
+                    rewritten_question,
+                    reason="Blank rewritten query; using fallback question.",
+                )
 
         previous_queries = list(state.get("previous_queries", []))
         if is_retry and rewritten_question in previous_queries:
@@ -77,6 +96,12 @@ class AgentNodes:
         return {
             "current_query": rewritten_question,
             "rewritten_question": rewritten_question,
+            "standalone_question": rewritten_question,
+            "query_transform": query_transform,
+            "query_transform_strategy": query_transform["strategy"],
+            "query_transform_reason": query_transform["reason"],
+            "expanded_queries": query_transform["expanded_queries"],
+            "sub_questions": query_transform["sub_questions"],
             "previous_queries": previous_queries,
             "retry_count": retry_count,
             "rewrite_count": retry_count,

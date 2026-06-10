@@ -49,6 +49,12 @@ class AgentState(TypedDict):
     question: str
     current_query: str
     rewritten_question: str
+    standalone_question: str
+    query_transform: dict[str, object]
+    query_transform_strategy: str
+    query_transform_reason: str
+    expanded_queries: list[str]
+    sub_questions: list[str]
     chat_history: list[ChatMessage]
     previous_queries: list[str]
     documents: list[RetrievedDocument]
@@ -80,6 +86,12 @@ def create_initial_state(
         "question": question,
         "current_query": "",
         "rewritten_question": "",
+        "standalone_question": "",
+        "query_transform": {},
+        "query_transform_strategy": "",
+        "query_transform_reason": "",
+        "expanded_queries": [],
+        "sub_questions": [],
         "chat_history": chat_history or [],
         "previous_queries": [],
         "documents": [],

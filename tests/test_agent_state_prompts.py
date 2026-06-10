@@ -20,6 +20,12 @@ def test_create_initial_state_sets_defaults():
     assert state["question"] == "What is RAG?"
     assert state["current_query"] == ""
     assert state["rewritten_question"] == ""
+    assert state["standalone_question"] == ""
+    assert state["query_transform"] == {}
+    assert state["query_transform_strategy"] == ""
+    assert state["query_transform_reason"] == ""
+    assert state["expanded_queries"] == []
+    assert state["sub_questions"] == []
     assert state["chat_history"] == []
     assert state["previous_queries"] == []
     assert state["documents"] == []
