@@ -2,7 +2,7 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates query rewriting, retrieval grading, conditional retry, fallback handling, citation-aware answer generation, lightweight claim verification, evaluation artifacts, and ablation scaffolding to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates query rewriting, optional hybrid retrieval, reranking, retrieval grading, conditional retry, fallback handling, citation-aware answer generation, lightweight claim verification, evaluation artifacts, and ablation scaffolding to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
 
 The project is production-oriented as an architecture and evaluation exercise, but it is not described as production-ready. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
@@ -38,7 +38,8 @@ UI Layer
   Gradio document upload, indexing, QA, citations, retrieved chunks, diagnostics
 
 RAG Layer
-  loader -> chunker -> embeddings -> Chroma vector store -> retriever
+  loader -> chunker -> embeddings -> Chroma vector store
+  dense retrieval + optional BM25 retrieval + RRF fusion + optional reranker
 
 Agent Layer
   LangGraph state -> nodes -> conditional edges -> answer or fallback
@@ -87,6 +88,7 @@ Key state fields:
 - Recursive chunking with source, source path, file hash, page, and chunk id metadata.
 - Local sentence-transformers embeddings by default.
 - Persistent Chroma vector store with deterministic chunk IDs, explicit rebuild, and incremental add support.
+- Optional hybrid retrieval: dense vector search and BM25 sparse search are fused with Reciprocal Rank Fusion before grading.
 - Retriever exposed as an Agent tool named `retrieve_context`.
 - Optional cross-encoder reranker: retrieve candidate chunks, rerank them, then pass the strongest chunks to grading.
 - Query rewriting for vague or context-dependent questions.
@@ -190,6 +192,33 @@ python app.py
    - retrieval diagnostics
 
 The chat LLM is required for query rewriting, retrieval grading, answer generation, and claim verification. If the selected provider is missing required configuration, the app returns a clear configuration error instead of producing offline fake answers.
+
+## Hybrid Retrieval Pipeline
+
+P1a adds a configurable retrieval path for term-sensitive document QA:
+
+```text
+query
++-- dense retriever top-k from Chroma
++-- BM25 sparse retriever top-k over indexed chunks
++-- RRF fusion
+    -> optional reranker
+    -> retrieval grading
+    -> answer generation or fallback
+```
+
+This path is disabled by default to preserve the original dense retrieval behavior. Enable it with:
+
+```bash
+HYBRID_RETRIEVAL_ENABLED=true
+DENSE_TOP_K=20
+BM25_TOP_K=20
+FUSION_TOP_K=20
+```
+
+Dense retrieval is useful for semantic similarity. BM25 improves recall for exact terms such as filenames, abbreviations, identifiers, and domain-specific keywords. RRF deduplicates overlapping chunks by `chunk_id` and combines rank signals without requiring dense and sparse scores to be on the same scale.
+
+The current BM25 implementation is dependency-free and intentionally lightweight. It uses token-level exact matching without stemming or learned sparse expansion.
 
 ## Tests
 
@@ -317,6 +346,10 @@ Comparison Summary
 - `CHUNK_SIZE`: Text chunk size.
 - `CHUNK_OVERLAP`: Text chunk overlap.
 - `TOP_K`: Number of chunks retrieved per query.
+- `HYBRID_RETRIEVAL_ENABLED`: Enable dense + BM25 retrieval with RRF fusion. Default is `false`.
+- `DENSE_TOP_K`: Number of dense vector candidates used by hybrid retrieval.
+- `BM25_TOP_K`: Number of sparse keyword candidates used by hybrid retrieval.
+- `FUSION_TOP_K`: Number of fused candidates kept before optional reranking.
 - `RERANKER_ENABLED`: Enable optional cross-encoder reranking. Default is `false`.
 - `RERANKER_MODEL`: Cross-encoder model used when reranking is enabled.
 - `RERANKER_CANDIDATE_TOP_K`: Number of initial vector candidates to retrieve before reranking.
@@ -341,6 +374,9 @@ agentic-rag-document-qa/
 │   ├── chunker.py
 │   ├── embeddings.py
 │   ├── vectorstore.py
+│   ├── bm25_retriever.py
+│   ├── fusion.py
+│   ├── hybrid_retriever.py
 │   ├── retriever.py
 │   └── reranker.py
 ├── agent/
@@ -379,7 +415,8 @@ agentic-rag-document-qa/
 
 ## Resume Highlights
 
-- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with query rewriting, retrieval, retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
+- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with query rewriting, hybrid retrieval, reranking, retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
+- Implemented a configurable dense retrieval + BM25 sparse retrieval + RRF fusion pipeline so the system can combine semantic recall with exact keyword, filename, and identifier matching.
 - Added a standalone naive RAG baseline and comparison runner so Agentic RAG can be evaluated against retrieve-once RAG on the same documents and same questions.
 - Designed a reliability evaluation foundation covering correctness, context relevance, source hit rate, citation hit rate, fallback accuracy, unsupported claims, retry count, latency, token usage, and cost fields.
 - Expanded the default evaluation dataset to 36 structured questions across single-doc, multi-chunk, ambiguous, unanswerable, distractor, comparison, follow-up, citation-sensitive, cross-file, and false-premise cases.
@@ -391,6 +428,7 @@ agentic-rag-document-qa/
 - Claim-level citation verification is lightweight and LLM-based. It checks claims against selected evidence chunks, but it is not a formal proof system.
 - Citation marker consistency is deterministic, but it only checks marker/index alignment. It does not prove that every cited claim is true.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
+- Hybrid BM25 retrieval is lightweight exact-token matching. It does not currently include stemming, learned sparse expansion, or per-workspace corpus filtering.
 - Evaluation uses a local 36-question reliability dataset. It is useful for reproducible project-level comparison, but it is not a benchmark-grade public dataset.
 - P0a ablation configs are framework-ready. Some current rows are proxy runs over the full Agentic RAG workflow because independent module toggles will be added later.
 - Token usage and estimated cost are recorded only when the active model client exposes usage metadata.
@@ -407,10 +445,10 @@ agentic-rag-document-qa/
 - Deterministic citation marker consistency implemented: answer markers must match selected citation indices.
 - Deterministic vectorstore IDs implemented: chunk identity is derived from source metadata and content for incremental add de-duplication.
 - Optional reranker implemented: vector retrieval can over-retrieve candidates, apply a local cross-encoder reranker, and pass reranked chunks into grading.
+- P1a hybrid retrieval implemented: dense retrieval, BM25 sparse retrieval, RRF fusion, and configurable dense/BM25/fusion top-k values.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - P0b: regenerate baseline, agentic, and ablation artifacts after P1/P2 algorithm upgrades, then update `experiments/report.md` with observed trade-offs.
 - Upgrade evaluation to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records and prompt/model config snapshots.
-- Add hybrid retrieval with dense retrieval, BM25 sparse retrieval, RRF fusion, and configurable retrieval top-k values.
 - Add independently toggleable reranker and citation-verification ablations.
 - Add structured query transformation with rewrite, multi-query expansion, and decomposition routing.
 - Add structured retrieval grading with relevance labels, confidence, reasons, and state-level routing decisions.

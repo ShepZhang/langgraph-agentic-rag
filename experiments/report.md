@@ -32,6 +32,7 @@ The generated JSON artifacts in `experiments/results/` are the reproducible sour
 | + Query Rewrite | pending | pending | pending | pending | pending | pending | proxy until independent toggle |
 | + Retrieval Grading | pending | pending | pending | pending | pending | pending | proxy until independent toggle |
 | + Retry / Fallback | pending | pending | pending | pending | pending | pending | proxy until independent toggle |
+| + Hybrid Retrieval | pending | pending | pending | pending | pending | pending | implemented in P1a, pending P0b eval |
 | + Reranker | pending | pending | pending | pending | pending | pending | pending P1/P2 final run |
 | + Citation Verification | pending | pending | pending | pending | pending | pending | pending P1/P2 final run |
 
@@ -47,6 +48,7 @@ The generated JSON artifacts in `experiments/results/` are the reproducible sour
 
 - P0a is an infrastructure checkpoint, not the final algorithm comparison.
 - Current v1-v3 ablation rows use the current full Agentic RAG workflow as a proxy because independent toggles are not implemented yet.
+- Hybrid retrieval is implemented after P0a and should be evaluated in the next P0b run with `HYBRID_RETRIEVAL_ENABLED=true`.
 - Reranker and full claim-level citation-verification ablations should be regenerated after P1/P2 algorithm upgrades.
 - The interactive evaluation dashboard is deferred until CLI and JSON artifacts are stable.
 
