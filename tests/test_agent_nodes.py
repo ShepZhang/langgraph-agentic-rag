@@ -144,8 +144,73 @@ def test_retrieve_node_uses_current_query_and_increments_retrieval_attempt():
     update = nodes.retrieve_node(state)
 
     assert calls == ["rewritten"]
-    assert update["documents"] == [{"content": "context", "source": "notes.md"}]
+    assert update["documents"][0]["content"] == "context"
+    assert update["documents"][0]["source"] == "notes.md"
+    assert update["documents"][0]["matched_queries"] == ["rewritten"]
+    assert update["documents"][0]["retrieval_query_count"] == 1
+    assert update["documents"][0]["multi_query_rank"] == 1
+    assert update["retrieval_queries"] == ["rewritten"]
+    assert update["multi_query_used"] is False
+    assert update["multi_query_result_count"] == 1
     assert update["retrieval_attempt"] == 2
+
+
+def test_retrieve_node_executes_and_merges_multi_query_retrieval():
+    calls = []
+
+    def fake_retriever(query):
+        calls.append(query)
+        if query == "Agentic RAG advantages":
+            return [
+                {
+                    "content": "Agentic RAG uses grading.",
+                    "source": "notes.md",
+                    "chunk_id": "notes:c1",
+                },
+                {
+                    "content": "Hybrid retrieval combines signals.",
+                    "source": "retrieval.md",
+                    "chunk_id": "retrieval:c2",
+                },
+            ]
+        return [
+            {
+                "content": "Agentic RAG uses grading.",
+                "source": "notes.md",
+                "chunk_id": "notes:c1",
+            },
+            {
+                "content": "Fallback handles missing evidence.",
+                "source": "notes.md",
+                "chunk_id": "notes:c3",
+            },
+        ]
+
+    nodes = AgentNodes(llm=FakeLLM([]), retriever_fn=fake_retriever)
+    state = create_initial_state("original")
+    state["current_query"] = "Agentic RAG advantages"
+    state["query_transform_strategy"] = "multi_query"
+    state["expanded_queries"] = ["reliability controls", "Agentic RAG advantages"]
+
+    update = nodes.retrieve_node(state)
+
+    assert calls == ["Agentic RAG advantages", "reliability controls"]
+    assert update["retrieval_queries"] == [
+        "Agentic RAG advantages",
+        "reliability controls",
+    ]
+    assert update["multi_query_used"] is True
+    assert update["multi_query_result_count"] == 3
+    assert [document["chunk_id"] for document in update["documents"]] == [
+        "notes:c1",
+        "retrieval:c2",
+        "notes:c3",
+    ]
+    assert update["documents"][0]["matched_queries"] == [
+        "Agentic RAG advantages",
+        "reliability controls",
+    ]
+    assert update["documents"][0]["multi_query_rank"] == 1
 
 
 def test_grade_documents_node_marks_empty_docs_irrelevant_without_llm_call():

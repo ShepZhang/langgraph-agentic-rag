@@ -23,6 +23,9 @@ class RetrievedDocument(TypedDict, total=False):
     chunk_id: str | None
     score: float | None
     rerank_score: float | None
+    matched_queries: list[str]
+    retrieval_query_count: int
+    multi_query_rank: int
 
 
 class Citation(TypedDict, total=False):
@@ -55,6 +58,9 @@ class AgentState(TypedDict):
     query_transform_reason: str
     expanded_queries: list[str]
     sub_questions: list[str]
+    retrieval_queries: list[str]
+    multi_query_used: bool
+    multi_query_result_count: int
     chat_history: list[ChatMessage]
     previous_queries: list[str]
     documents: list[RetrievedDocument]
@@ -92,6 +98,9 @@ def create_initial_state(
         "query_transform_reason": "",
         "expanded_queries": [],
         "sub_questions": [],
+        "retrieval_queries": [],
+        "multi_query_used": False,
+        "multi_query_result_count": 0,
         "chat_history": chat_history or [],
         "previous_queries": [],
         "documents": [],

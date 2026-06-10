@@ -26,6 +26,9 @@ def test_create_initial_state_sets_defaults():
     assert state["query_transform_reason"] == ""
     assert state["expanded_queries"] == []
     assert state["sub_questions"] == []
+    assert state["retrieval_queries"] == []
+    assert state["multi_query_used"] is False
+    assert state["multi_query_result_count"] == 0
     assert state["chat_history"] == []
     assert state["previous_queries"] == []
     assert state["documents"] == []

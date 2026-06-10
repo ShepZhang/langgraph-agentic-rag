@@ -9,6 +9,7 @@ from typing import Any
 
 from langchain_core.messages import BaseMessage
 
+from agent.multi_query import build_retrieval_queries, merge_retrieved_documents
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
     CLAIM_VERIFICATION_PROMPT,
@@ -114,16 +115,30 @@ class AgentNodes:
         query = state.get("current_query") or state.get("rewritten_question") or state[
             "question"
         ]
-        documents = self.retriever_tool.invoke({"query": query})
+        retrieval_queries = build_retrieval_queries(
+            current_query=query,
+            expanded_queries=state.get("expanded_queries", []),
+            strategy=state.get("query_transform_strategy", "rewrite"),
+        )
+        query_results = [
+            (retrieval_query, self.retriever_tool.invoke({"query": retrieval_query}))
+            for retrieval_query in retrieval_queries
+        ]
+        documents = merge_retrieved_documents(query_results)
         retrieval_attempt = state.get("retrieval_attempt", 0) + 1
+        multi_query_used = len(retrieval_queries) > 1
         logger.info(
-            "Retrieved documents count=%s attempt=%s query=%s",
+            "Retrieved documents count=%s attempt=%s query_count=%s query=%s",
             len(documents),
             retrieval_attempt,
+            len(retrieval_queries),
             query,
         )
         return {
             "documents": documents,
+            "retrieval_queries": retrieval_queries,
+            "multi_query_used": multi_query_used,
+            "multi_query_result_count": len(documents),
             "retrieval_attempt": retrieval_attempt,
         }
 
