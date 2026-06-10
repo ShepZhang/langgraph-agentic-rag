@@ -63,6 +63,9 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
     assert result["query_transform_strategy"] == "rewrite"
     assert result["expanded_queries"] == []
     assert result["sub_questions"] == []
+    assert result["retrieval_queries"] == ["rewritten agentic rag question"]
+    assert result["multi_query_used"] is False
+    assert result["multi_query_result_count"] == 1
     assert result["query_transform"]["rewritten_query"] == "rewritten agentic rag question"
     assert result["rewrite_count"] == 0
     assert result["retry_count"] == 0
@@ -87,8 +90,75 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
             "snippet": "Agentic RAG uses retrieval and agent control flow.",
         }
     ]
-    assert result["retrieved_documents"] == documents
-    assert result["relevant_documents"] == documents
+    assert result["retrieved_documents"][0]["content"] == documents[0]["content"]
+    assert result["retrieved_documents"][0]["source"] == documents[0]["source"]
+    assert result["retrieved_documents"][0]["matched_queries"] == [
+        "rewritten agentic rag question"
+    ]
+    assert result["relevant_documents"][0]["content"] == documents[0]["content"]
+
+
+def test_run_agent_executes_multi_query_retrieval_and_exposes_diagnostics():
+    from agent.graph import run_agent
+
+    llm = FakeLLM(
+        [
+            (
+                '{"strategy": "multi_query", '
+                '"rewritten_query": "Agentic RAG reliability advantages", '
+                '"expanded_queries": ["retrieval grading reliability", "fallback handling"], '
+                '"sub_questions": [], '
+                '"reason": "Expand reliability concepts."}'
+            ),
+            '{"relevant": true, "relevant_indices": [1], "reason": "matches"}',
+            (
+                '{"answer": "Agentic RAG uses retrieval grading [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"verified": true, "claims": ['
+                '{"claim": "Agentic RAG uses retrieval grading", '
+                '"supported": true, "citation_indices": [1]}'
+                '], "reason": "Supported."}'
+            ),
+        ]
+    )
+    retriever_queries = []
+
+    def fake_retriever(query):
+        retriever_queries.append(query)
+        if query == "Agentic RAG reliability advantages":
+            return [
+                {
+                    "content": "Agentic RAG uses retrieval grading.",
+                    "source": "notes.md",
+                    "chunk_id": "notes:c1",
+                }
+            ]
+        return [
+            {
+                "content": "Agentic RAG uses retrieval grading.",
+                "source": "notes.md",
+                "chunk_id": "notes:c1",
+            }
+        ]
+
+    result = run_agent(
+        "What reliability advantages does it have?",
+        llm=llm,
+        retriever_fn=fake_retriever,
+        settings=get_settings(),
+    )
+
+    assert retriever_queries == [
+        "Agentic RAG reliability advantages",
+        "retrieval grading reliability",
+        "fallback handling",
+    ]
+    assert result["retrieval_queries"] == retriever_queries
+    assert result["multi_query_used"] is True
+    assert result["multi_query_result_count"] == 1
+    assert result["retrieved_documents"][0]["matched_queries"] == retriever_queries
 
 
 def test_run_agent_retries_then_falls_back_when_documents_are_irrelevant():
