@@ -122,6 +122,24 @@ class VectorStoreManager:
         docs = store.similarity_search(query, k=k)
         return [(doc, None) for doc in docs]
 
+    def get_all_documents(self) -> list[Document]:
+        """Return all stored chunks for sparse retrieval."""
+
+        store = self.load_vectorstore()
+        if not hasattr(store, "get"):
+            return []
+
+        payload = store.get(include=["documents", "metadatas"])
+        page_contents = payload.get("documents") or []
+        metadatas = payload.get("metadatas") or []
+        documents: list[Document] = []
+        for index, page_content in enumerate(page_contents):
+            metadata = metadatas[index] if index < len(metadatas) else {}
+            documents.append(
+                Document(page_content=page_content, metadata=metadata or {})
+            )
+        return documents
+
     def _reset_collection(self, chroma_cls: type[Any]) -> None:
         """Delete the existing Chroma collection before rebuilding the index."""
 

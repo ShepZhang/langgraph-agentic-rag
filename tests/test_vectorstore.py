@@ -153,6 +153,42 @@ def test_similarity_search_with_none_top_k_uses_settings(tmp_path, monkeypatch):
     assert manager.store.queries == [("question", 7)]
 
 
+def test_get_all_documents_reads_chroma_documents_and_metadata(tmp_path):
+    class CorpusStore:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, include=None):
+            self.calls.append(include)
+            return {
+                "documents": ["alpha chunk", "beta chunk"],
+                "metadatas": [
+                    {"source": "a.md", "chunk_id": "a-1"},
+                    {"source": "b.md", "chunk_id": "b-1"},
+                ],
+            }
+
+    settings = replace(get_settings(), chroma_persist_dir=tmp_path / "chroma")
+    manager = VectorStoreManager(settings=settings, embedding_model=object())
+    manager.store = CorpusStore()
+
+    docs = manager.get_all_documents()
+
+    assert manager.store.calls == [["documents", "metadatas"]]
+    assert docs == [
+        Document(page_content="alpha chunk", metadata={"source": "a.md", "chunk_id": "a-1"}),
+        Document(page_content="beta chunk", metadata={"source": "b.md", "chunk_id": "b-1"}),
+    ]
+
+
+def test_get_all_documents_returns_empty_when_store_cannot_export(tmp_path):
+    settings = replace(get_settings(), chroma_persist_dir=tmp_path / "chroma")
+    manager = VectorStoreManager(settings=settings, embedding_model=object())
+    manager.store = object()
+
+    assert manager.get_all_documents() == []
+
+
 def test_build_document_id_is_stable_and_content_sensitive():
     doc = Document(
         page_content="same content",
