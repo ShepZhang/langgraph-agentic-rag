@@ -131,9 +131,9 @@
   },
   {
     "id": "q014",
-    "question": "Can you summarize the policy?",
+    "question": "Can you summarize it?",
     "question_type": "ambiguous",
-    "gold_answer": "The corpus has multiple unrelated policies or notes, so the system should ask which policy or fall back.",
+    "gold_answer": "The referent is missing, so the system should fall back or ask for clarification instead of choosing a document.",
     "expected_sources": [],
     "expected_keywords": [],
     "answerable": false,
@@ -369,9 +369,9 @@
     "question": "Since the notes say the cross-encoder reranker has no latency or cost trade-off, how should it always be used?",
     "question_type": "false_premise",
     "gold_answer": "The premise is false: the notes say a cross-encoder reranker improves precision but adds latency and cost.",
-    "expected_sources": [],
-    "expected_keywords": [],
-    "answerable": false,
-    "expected_behavior": "fallback"
+    "expected_sources": ["retrieval_pipeline_notes.md"],
+    "expected_keywords": ["latency", "cost", "precision"],
+    "answerable": true,
+    "expected_behavior": "answer_with_citation"
   }
 ]

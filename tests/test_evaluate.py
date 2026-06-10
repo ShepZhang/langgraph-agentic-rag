@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import json
+from pathlib import Path
 
 import pytest
 
@@ -252,36 +254,34 @@ def test_load_eval_questions_rejects_invalid_expected_behavior(tmp_path):
 
 def test_default_eval_dataset_has_required_coverage():
     questions = load_eval_questions()
-    required_types = {
-        "single_doc",
-        "multi_chunk",
-        "ambiguous",
-        "unanswerable",
-        "distractor",
-        "comparison",
-        "follow_up",
-        "citation_sensitive",
-        "cross_file",
-        "false_premise",
-    }
-    allowed_sources = {
-        "agentic_rag_notes.md",
-        "retrieval_pipeline_notes.md",
-        "citation_verification_notes.md",
-        "evaluation_notes.md",
-        "distractor_company_policy.md",
-    }
+    type_counts = Counter(question["question_type"] for question in questions)
+    by_id = {question["id"]: question for question in questions}
 
-    assert len(questions) >= 30
-    assert required_types.issubset({question["question_type"] for question in questions})
-    assert all(question["id"].startswith("q") for question in questions)
+    assert len(questions) == 36
+    assert [question["id"] for question in questions] == [
+        f"q{index:03d}" for index in range(1, 37)
+    ]
+    assert type_counts["single_doc"] >= 6
+    assert type_counts["multi_chunk"] >= 4
+    assert type_counts["ambiguous"] >= 4
+    assert type_counts["unanswerable"] >= 5
+    assert type_counts["distractor"] >= 3
+    assert type_counts["comparison"] >= 4
+    assert type_counts["follow_up"] >= 3
+    assert type_counts["citation_sensitive"] >= 3
+    assert type_counts["cross_file"] >= 3
+    assert type_counts["false_premise"] >= 1
     assert all(question["expected_behavior"] for question in questions)
     assert all(
-        source in allowed_sources
+        (Path("sample_docs") / source).exists()
         for question in questions
         for source in question["expected_sources"]
         if source
     )
+    assert by_id["q014"]["question"] == "Can you summarize it?"
+    assert by_id["q014"]["answerable"] is False
+    assert by_id["q036"]["answerable"] is True
+    assert "retrieval_pipeline_notes.md" in by_id["q036"]["expected_sources"]
 
 
 def test_evaluate_questions_computes_agentic_summary_metrics():
