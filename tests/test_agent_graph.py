@@ -59,6 +59,11 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
     assert result["answer"] == "Agentic RAG uses retrieval and agent control flow [1]."
     assert result["rewritten_question"] == "rewritten agentic rag question"
     assert result["current_query"] == "rewritten agentic rag question"
+    assert result["standalone_question"] == "rewritten agentic rag question"
+    assert result["query_transform_strategy"] == "rewrite"
+    assert result["expanded_queries"] == []
+    assert result["sub_questions"] == []
+    assert result["query_transform"]["rewritten_query"] == "rewritten agentic rag question"
     assert result["rewrite_count"] == 0
     assert result["retry_count"] == 0
     assert result["retrieval_attempt"] == 1
