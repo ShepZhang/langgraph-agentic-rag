@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 from langchain_core.documents import Document
 
@@ -11,6 +11,18 @@ from config import Settings, get_settings
 
 ScoredDocument = tuple[Document, float | None]
 RerankedDocument = tuple[Document, float | None, float]
+
+
+class RerankerRecord(TypedDict):
+    """Structured reranker output for diagnostics and evaluation artifacts."""
+
+    document_id: str | None
+    chunk_id: str | None
+    content: str
+    metadata: dict[str, Any]
+    vector_score: float | None
+    rerank_score: float
+    rank: int
 
 
 class CrossEncoderReranker:
@@ -47,6 +59,28 @@ class CrossEncoderReranker:
         ]
         return sorted(reranked, key=lambda item: item[2], reverse=True)[:top_k]
 
+    def rerank_as_records(
+        self,
+        query: str,
+        documents: list[ScoredDocument],
+        top_k: int,
+    ) -> list[RerankerRecord]:
+        """Return reranked candidates as explicit diagnostic records."""
+
+        reranked = self.rerank(query, documents, top_k=top_k)
+        return [
+            _format_reranker_record(
+                document=document,
+                vector_score=vector_score,
+                rerank_score=rerank_score,
+                rank=rank,
+            )
+            for rank, (document, vector_score, rerank_score) in enumerate(
+                reranked,
+                start=1,
+            )
+        ]
+
 
 def get_reranker(settings: Settings | None = None) -> CrossEncoderReranker:
     """Create the configured reranker."""
@@ -61,3 +95,23 @@ def _load_cross_encoder(model_name: str) -> Any:
     from sentence_transformers import CrossEncoder
 
     return CrossEncoder(model_name)
+
+
+def _format_reranker_record(
+    document: Document,
+    vector_score: float | None,
+    rerank_score: float,
+    rank: int,
+) -> RerankerRecord:
+    metadata = dict(document.metadata or {})
+    document_id = metadata.get("document_id")
+    chunk_id = metadata.get("chunk_id")
+    return {
+        "document_id": str(document_id) if document_id is not None else None,
+        "chunk_id": str(chunk_id) if chunk_id is not None else None,
+        "content": document.page_content,
+        "metadata": metadata,
+        "vector_score": vector_score,
+        "rerank_score": rerank_score,
+        "rank": rank,
+    }
