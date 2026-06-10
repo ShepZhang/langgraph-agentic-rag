@@ -2,7 +2,7 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates query rewriting, optional hybrid retrieval, reranking, retrieval grading, conditional retry, fallback handling, citation-aware answer generation, lightweight claim verification, evaluation artifacts, and ablation scaffolding to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, retrieval grading, conditional retry, fallback handling, citation-aware answer generation, lightweight claim verification, evaluation artifacts, and ablation scaffolding to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
 
 The project is production-oriented as an architecture and evaluation exercise, but it is not described as production-ready. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
@@ -18,14 +18,14 @@ This project makes the retrieval process agentic:
 
 ```text
 question
--> query rewrite
+-> query transformation
 -> retriever tool
 -> retrieval grading
 -> conditional retry
 -> grounded answer with citations
 ```
 
-The agent checks whether retrieved chunks can actually answer the question. If they are not relevant enough, it rewrites the query and retries retrieval before falling back with a clear unable-to-answer response.
+The agent checks whether retrieved chunks can actually answer the question. If they are not relevant enough, it rewrites the retrieval query and retries before falling back with a clear unable-to-answer response.
 
 The system keeps a strict distinction between the original user question and the retrieval query. `current_query` is optimized for search; grading and answer generation still target the original user question.
 
@@ -62,7 +62,7 @@ START
 
 Implemented LangGraph nodes:
 
-- `rewrite_query_node`: normalizes the first query, then uses failed retrieval context for retry rewrites.
+- `rewrite_query_node`: performs structured query transformation on the first attempt, then uses failed retrieval context for retry rewrites.
 - `retrieve_node`: calls the `retrieve_context` tool over the private Chroma index.
 - `grade_documents_node`: asks the LLM for chunk-level `relevant_indices`, then filters `relevant_documents`.
 - `generate_answer_node`: generates JSON answers from relevant chunks, checks citation marker consistency, maps `used_citation_indices` to evidence, and verifies cited claims before returning normal answers.
@@ -71,6 +71,11 @@ Implemented LangGraph nodes:
 Key state fields:
 
 - `current_query`: query currently used for retrieval.
+- `standalone_question`: standalone retrieval-ready version of the user question.
+- `query_transform`: structured query transformation record.
+- `query_transform_strategy`: one of `rewrite`, `multi_query`, or `decomposition`.
+- `expanded_queries`: complementary retrieval queries recorded for future multi-query retrieval.
+- `sub_questions`: decomposition sub-questions recorded for future multi-hop retrieval.
 - `question`: original user question. Grading and answer generation use this as the target.
 - `previous_queries`: retrieval queries already attempted.
 - `retrieval_attempt`: number of actual retriever calls.
@@ -92,7 +97,7 @@ Key state fields:
 - Retriever exposed as an Agent tool named `retrieve_context`.
 - Optional cross-encoder reranker: retrieve candidate chunks, rerank them, then pass the strongest chunks to grading.
 - Reranker diagnostics: the reranker can emit structured records with document id, chunk id, original score, rerank score, rank, content, and metadata.
-- Query rewriting for vague or context-dependent questions.
+- Structured query transformation with direct rewrite, multi-query expansion metadata, and decomposition metadata.
 - Chunk-level retrieval grading with conservative handling for invalid grading output.
 - Conditional retry with configurable max retry count.
 - Citation-aware grounded answer generation using only selected evidence chunks.
@@ -388,6 +393,7 @@ agentic-rag-document-qa/
 │   ├── state.py
 │   ├── nodes.py
 │   ├── edges.py
+│   ├── query_transform.py
 │   ├── tools.py
 │   └── prompts.py
 ├── baseline/
@@ -420,7 +426,7 @@ agentic-rag-document-qa/
 
 ## Resume Highlights
 
-- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with query rewriting, hybrid retrieval, reranking, retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
+- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with structured query transformation, hybrid retrieval, reranking, retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
 - Implemented a configurable dense retrieval + BM25 sparse retrieval + RRF fusion pipeline so the system can combine semantic recall with exact keyword, filename, and identifier matching.
 - Added reranker evaluation readiness with explicit candidate top-k vs final top-n settings, structured reranker records, and sanitized runtime config snapshots in evaluation artifacts.
 - Added a standalone naive RAG baseline and comparison runner so Agentic RAG can be evaluated against retrieve-once RAG on the same documents and same questions.
@@ -434,6 +440,7 @@ agentic-rag-document-qa/
 - Claim-level citation verification is lightweight and LLM-based. It checks claims against selected evidence chunks, but it is not a formal proof system.
 - Citation marker consistency is deterministic, but it only checks marker/index alignment. It does not prove that every cited claim is true.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
+- Query transformation records `expanded_queries` and `sub_questions`, but retrieval currently executes only `current_query`; multi-query retrieval execution is planned for P1d.
 - Hybrid BM25 retrieval is lightweight exact-token matching. It does not currently include stemming, learned sparse expansion, or per-workspace corpus filtering.
 - Evaluation uses a local 36-question reliability dataset. It is useful for reproducible project-level comparison, but it is not a benchmark-grade public dataset.
 - P0a ablation configs are framework-ready. Some current rows are proxy runs over the full Agentic RAG workflow because independent module toggles will be added later.
@@ -444,7 +451,7 @@ agentic-rag-document-qa/
 ## Roadmap
 
 - RAG core implemented: loading, chunking, embeddings, Chroma indexing, and retrieval.
-- LangGraph agent workflow implemented: query rewriting, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
+- LangGraph agent workflow implemented: query transformation, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
 - P0a evaluation infrastructure implemented: naive baseline, richer schema, 36-question dataset, reliability metrics, JSON artifacts, and ablation scaffolding.
 - Claim-level verification implemented: cited normal answers are checked against selected evidence before being returned.
@@ -453,11 +460,12 @@ agentic-rag-document-qa/
 - Optional reranker implemented: vector retrieval can over-retrieve candidates, apply a local cross-encoder reranker, and pass reranked chunks into grading.
 - P1a hybrid retrieval implemented: dense retrieval, BM25 sparse retrieval, RRF fusion, and configurable dense/BM25/fusion top-k values.
 - P1b reranker evaluation readiness implemented: explicit `RERANKER_TOP_N`, structured reranker records, and sanitized runtime config snapshots in evaluation/ablation artifacts.
+- P1c structured query transformation implemented: direct rewrite, multi-query expansion metadata, decomposition metadata, and result payload fields.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - P0b: regenerate baseline, agentic, and ablation artifacts after P1/P2 algorithm upgrades, then update `experiments/report.md` with observed trade-offs.
 - Upgrade evaluation to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records and prompt/model config snapshots.
 - Add independently toggleable reranker and citation-verification ablations.
-- Add structured query transformation with rewrite, multi-query expansion, and decomposition routing.
+- Add P1d multi-query retrieval execution that consumes `expanded_queries` and fuses per-query retrieval results.
 - Add structured retrieval grading with relevance labels, confidence, reasons, and state-level routing decisions.
 - Upgrade lightweight verification into full claim-level citation verification with extraction, verification, revision, and fallback loops.
 - Add FastAPI API layer.
