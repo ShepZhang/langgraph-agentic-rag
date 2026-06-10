@@ -52,7 +52,12 @@ class Retriever:
     def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
         """Retrieve and normalize relevant chunks."""
 
-        final_top_k = top_k if top_k is not None else self.settings.top_k
+        if top_k is not None:
+            final_top_k = top_k
+        elif self.reranker:
+            final_top_k = self.settings.reranker_top_n
+        else:
+            final_top_k = self.settings.top_k
         candidate_top_k = final_top_k
         if self.reranker:
             candidate_top_k = max(final_top_k, self.settings.reranker_candidate_top_k)

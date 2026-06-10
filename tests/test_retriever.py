@@ -46,6 +46,18 @@ class FakeReranker:
         ][:top_k]
 
 
+class PassthroughReranker:
+    def __init__(self):
+        self.calls = []
+
+    def rerank(self, query, documents, top_k):
+        self.calls.append((query, documents, top_k))
+        return [
+            (document, score, 1.0 - index)
+            for index, (document, score) in enumerate(documents[:top_k])
+        ]
+
+
 class FakeHybridRetriever:
     def __init__(self, results):
         self.results = results
@@ -123,6 +135,7 @@ def test_retriever_fetches_candidate_top_k_and_reranks_when_enabled():
         get_settings(),
         top_k=2,
         reranker_enabled=True,
+        reranker_top_n=2,
         reranker_candidate_top_k=3,
     )
     manager = CandidateManager()
@@ -141,6 +154,46 @@ def test_retriever_fetches_candidate_top_k_and_reranks_when_enabled():
     assert [chunk["source"] for chunk in chunks] == ["best.md", "weak.md"]
     assert [chunk["score"] for chunk in chunks] == [0.6, 0.4]
     assert [chunk["rerank_score"] for chunk in chunks] == [0.99, 0.77]
+
+
+def test_retriever_uses_reranker_top_n_as_default_final_count():
+    class CandidateManager:
+        def __init__(self):
+            self.calls = []
+
+        def similarity_search(self, query, top_k=None):
+            self.calls.append((query, top_k))
+            return [
+                (
+                    Document(
+                        page_content=f"context {index}",
+                        metadata={"source": f"{index}.md"},
+                    ),
+                    float(index),
+                )
+                for index in range(4)
+            ]
+
+    settings = replace(
+        get_settings(),
+        top_k=2,
+        reranker_enabled=True,
+        reranker_top_n=3,
+        reranker_candidate_top_k=4,
+    )
+    manager = CandidateManager()
+    reranker = PassthroughReranker()
+    retriever = Retriever(
+        vectorstore_manager=manager,
+        reranker=reranker,
+        settings=settings,
+    )
+
+    chunks = retriever.retrieve("question")
+
+    assert manager.calls == [("question", 4)]
+    assert reranker.calls[0][2] == 3
+    assert [chunk["source"] for chunk in chunks] == ["0.md", "1.md", "2.md"]
 
 
 def test_retriever_uses_hybrid_retrieval_when_enabled():
@@ -202,6 +255,7 @@ def test_retriever_reranks_hybrid_candidate_pool_when_enabled():
         hybrid_retrieval_enabled=True,
         reranker_enabled=True,
         top_k=2,
+        reranker_top_n=2,
         reranker_candidate_top_k=3,
         fusion_top_k=5,
     )
