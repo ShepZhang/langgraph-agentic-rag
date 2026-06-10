@@ -56,6 +56,53 @@ def test_get_settings_defaults_reranker_off(monkeypatch):
     assert settings.reranker_candidate_top_k >= settings.top_k
 
 
+def test_get_settings_defaults_hybrid_retrieval_off(monkeypatch):
+    monkeypatch.delenv("HYBRID_RETRIEVAL_ENABLED", raising=False)
+    monkeypatch.delenv("DENSE_TOP_K", raising=False)
+    monkeypatch.delenv("BM25_TOP_K", raising=False)
+    monkeypatch.delenv("FUSION_TOP_K", raising=False)
+
+    settings = get_settings()
+
+    assert settings.hybrid_retrieval_enabled is False
+    assert settings.dense_top_k == 20
+    assert settings.bm25_top_k == 20
+    assert settings.fusion_top_k == 20
+
+
+def test_get_settings_accepts_hybrid_retrieval_config(monkeypatch):
+    monkeypatch.setenv("HYBRID_RETRIEVAL_ENABLED", "true")
+    monkeypatch.setenv("DENSE_TOP_K", "12")
+    monkeypatch.setenv("BM25_TOP_K", "14")
+    monkeypatch.setenv("FUSION_TOP_K", "7")
+
+    settings = get_settings()
+
+    assert settings.hybrid_retrieval_enabled is True
+    assert settings.dense_top_k == 12
+    assert settings.bm25_top_k == 14
+    assert settings.fusion_top_k == 7
+
+
+@pytest.mark.parametrize(
+    ("env_name", "message"),
+    [
+        ("DENSE_TOP_K", "DENSE_TOP_K"),
+        ("BM25_TOP_K", "BM25_TOP_K"),
+        ("FUSION_TOP_K", "FUSION_TOP_K"),
+    ],
+)
+def test_get_settings_rejects_invalid_hybrid_top_k(
+    monkeypatch,
+    env_name,
+    message,
+):
+    monkeypatch.setenv(env_name, "0")
+
+    with pytest.raises(ValueError, match=message):
+        get_settings()
+
+
 def test_get_settings_accepts_reranker_config(monkeypatch):
     monkeypatch.setenv("RERANKER_ENABLED", "true")
     monkeypatch.setenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")

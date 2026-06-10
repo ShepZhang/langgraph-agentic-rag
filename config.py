@@ -33,6 +33,10 @@ class Settings:
     chunk_size: int
     chunk_overlap: int
     top_k: int
+    hybrid_retrieval_enabled: bool
+    dense_top_k: int
+    bm25_top_k: int
+    fusion_top_k: int
     reranker_enabled: bool
     reranker_model: str
     reranker_candidate_top_k: int
@@ -58,6 +62,12 @@ class Settings:
             raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
         if self.top_k <= 0:
             raise ValueError("TOP_K must be greater than 0")
+        if self.dense_top_k <= 0:
+            raise ValueError("DENSE_TOP_K must be greater than 0")
+        if self.bm25_top_k <= 0:
+            raise ValueError("BM25_TOP_K must be greater than 0")
+        if self.fusion_top_k <= 0:
+            raise ValueError("FUSION_TOP_K must be greater than 0")
         if self.reranker_candidate_top_k <= 0:
             raise ValueError("RERANKER_CANDIDATE_TOP_K must be greater than 0")
         if self.reranker_enabled and not self.reranker_model:
@@ -205,6 +215,10 @@ def get_settings() -> Settings:
         chunk_size=_get_int("CHUNK_SIZE", 800),
         chunk_overlap=_get_int("CHUNK_OVERLAP", 120),
         top_k=_get_int("TOP_K", 4),
+        hybrid_retrieval_enabled=_get_bool("HYBRID_RETRIEVAL_ENABLED", False),
+        dense_top_k=_get_int("DENSE_TOP_K", 20),
+        bm25_top_k=_get_int("BM25_TOP_K", 20),
+        fusion_top_k=_get_int("FUSION_TOP_K", 20),
         reranker_enabled=_get_bool("RERANKER_ENABLED", False),
         reranker_model=os.getenv(
             "RERANKER_MODEL",
