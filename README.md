@@ -74,11 +74,14 @@ Key state fields:
 - `standalone_question`: standalone retrieval-ready version of the user question.
 - `query_transform`: structured query transformation record.
 - `query_transform_strategy`: one of `rewrite`, `multi_query`, or `decomposition`.
-- `expanded_queries`: complementary retrieval queries recorded for future multi-query retrieval.
+- `expanded_queries`: complementary retrieval queries used by multi-query retrieval.
 - `sub_questions`: decomposition sub-questions recorded for future multi-hop retrieval.
+- `retrieval_queries`: actual queries executed by the retriever node.
+- `multi_query_used`: whether the retriever node executed more than one query.
+- `multi_query_result_count`: number of unique chunks after multi-query merge.
 - `question`: original user question. Grading and answer generation use this as the target.
 - `previous_queries`: retrieval queries already attempted.
-- `retrieval_attempt`: number of actual retriever calls.
+- `retrieval_attempt`: number of retriever-node executions.
 - `retry_count`: number of failed-retrieval rewrites. Initial query normalization does not count as retry.
 - `documents`: raw retrieved chunks.
 - `relevant_documents`: chunks accepted by retrieval grading.
@@ -97,7 +100,7 @@ Key state fields:
 - Retriever exposed as an Agent tool named `retrieve_context`.
 - Optional cross-encoder reranker: retrieve candidate chunks, rerank them, then pass the strongest chunks to grading.
 - Reranker diagnostics: the reranker can emit structured records with document id, chunk id, original score, rerank score, rank, content, and metadata.
-- Structured query transformation with direct rewrite, multi-query expansion metadata, and decomposition metadata.
+- Structured query transformation with direct rewrite, multi-query retrieval execution, and decomposition metadata.
 - Chunk-level retrieval grading with conservative handling for invalid grading output.
 - Conditional retry with configurable max retry count.
 - Citation-aware grounded answer generation using only selected evidence chunks.
@@ -393,6 +396,7 @@ agentic-rag-document-qa/
 │   ├── state.py
 │   ├── nodes.py
 │   ├── edges.py
+│   ├── multi_query.py
 │   ├── query_transform.py
 │   ├── tools.py
 │   └── prompts.py
@@ -426,7 +430,7 @@ agentic-rag-document-qa/
 
 ## Resume Highlights
 
-- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with structured query transformation, hybrid retrieval, reranking, retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
+- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with structured query transformation, multi-query retrieval, hybrid retrieval, reranking, retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
 - Implemented a configurable dense retrieval + BM25 sparse retrieval + RRF fusion pipeline so the system can combine semantic recall with exact keyword, filename, and identifier matching.
 - Added reranker evaluation readiness with explicit candidate top-k vs final top-n settings, structured reranker records, and sanitized runtime config snapshots in evaluation artifacts.
 - Added a standalone naive RAG baseline and comparison runner so Agentic RAG can be evaluated against retrieve-once RAG on the same documents and same questions.
@@ -440,7 +444,7 @@ agentic-rag-document-qa/
 - Claim-level citation verification is lightweight and LLM-based. It checks claims against selected evidence chunks, but it is not a formal proof system.
 - Citation marker consistency is deterministic, but it only checks marker/index alignment. It does not prove that every cited claim is true.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
-- Query transformation records `expanded_queries` and `sub_questions`, but retrieval currently executes only `current_query`; multi-query retrieval execution is planned for P1d.
+- Query transformation executes `expanded_queries` for `multi_query` strategy, but decomposition `sub_questions` are still recorded as metadata rather than executed as separate retrieval hops.
 - Hybrid BM25 retrieval is lightweight exact-token matching. It does not currently include stemming, learned sparse expansion, or per-workspace corpus filtering.
 - Evaluation uses a local 36-question reliability dataset. It is useful for reproducible project-level comparison, but it is not a benchmark-grade public dataset.
 - P0a ablation configs are framework-ready. Some current rows are proxy runs over the full Agentic RAG workflow because independent module toggles will be added later.
@@ -461,13 +465,14 @@ agentic-rag-document-qa/
 - P1a hybrid retrieval implemented: dense retrieval, BM25 sparse retrieval, RRF fusion, and configurable dense/BM25/fusion top-k values.
 - P1b reranker evaluation readiness implemented: explicit `RERANKER_TOP_N`, structured reranker records, and sanitized runtime config snapshots in evaluation/ablation artifacts.
 - P1c structured query transformation implemented: direct rewrite, multi-query expansion metadata, decomposition metadata, and result payload fields.
+- P1d multi-query retrieval execution implemented: `expanded_queries` are retrieved, de-duplicated, and merged with matched-query diagnostics before grading.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - P0b: regenerate baseline, agentic, and ablation artifacts after P1/P2 algorithm upgrades, then update `experiments/report.md` with observed trade-offs.
 - Upgrade evaluation to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records and prompt/model config snapshots.
 - Add independently toggleable reranker and citation-verification ablations.
-- Add P1d multi-query retrieval execution that consumes `expanded_queries` and fuses per-query retrieval results.
 - Add structured retrieval grading with relevance labels, confidence, reasons, and state-level routing decisions.
 - Upgrade lightweight verification into full claim-level citation verification with extraction, verification, revision, and fallback loops.
+- Add decomposition sub-question retrieval for multi-hop workflows.
 - Add FastAPI API layer.
 - Add trace logging for node state changes, route decisions, final answers, citations, latency, token usage, and errors.
 - Add workspace and multi-knowledge-base isolation using workspace IDs and collection or metadata filtering.

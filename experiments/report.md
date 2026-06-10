@@ -31,7 +31,7 @@ Each artifact includes a sanitized `runtime_config` snapshot for reproducibility
 | Method | Correctness | Context Relevance | Citation Accuracy | Fallback Accuracy | Unsupported Claims | Avg Latency | Status |
 |---|---:|---:|---:|---:|---:|---:|---|
 | Naive RAG | pending | pending | pending | pending | pending | pending | infrastructure-ready |
-| + Query Transformation | pending | pending | pending | pending | pending | pending | implemented in P1c, pending P0b eval |
+| + Query Transformation / Multi-query Retrieval | pending | pending | pending | pending | pending | pending | implemented in P1c/P1d, pending P0b eval |
 | + Retrieval Grading | pending | pending | pending | pending | pending | pending | proxy until independent toggle |
 | + Retry / Fallback | pending | pending | pending | pending | pending | pending | proxy until independent toggle |
 | + Hybrid Retrieval | pending | pending | pending | pending | pending | pending | implemented in P1a, pending P0b eval |
@@ -52,7 +52,7 @@ Each artifact includes a sanitized `runtime_config` snapshot for reproducibility
 - Current v1-v3 ablation rows use the current full Agentic RAG workflow as a proxy because independent toggles are not implemented yet.
 - Hybrid retrieval is implemented after P0a and should be evaluated in the next P0b run with `HYBRID_RETRIEVAL_ENABLED=true`.
 - P1b reranker evaluation readiness is implemented after P0a. Future P0b runs should record `RERANKER_TOP_N`, `RERANKER_CANDIDATE_TOP_K`, and reranker model in each artifact.
-- P1c structured query transformation is implemented after P0a. It records rewrite, multi-query, and decomposition metadata; executing all expanded queries is deferred to P1d.
+- P1c/P1d structured query transformation and multi-query retrieval are implemented after P0a. Multi-query strategy executes expanded queries and merges deduplicated chunks; decomposition sub-question retrieval remains future work.
 - Reranker and full claim-level citation-verification ablations should be regenerated after P1/P2 algorithm upgrades.
 - The interactive evaluation dashboard is deferred until CLI and JSON artifacts are stable.
 
