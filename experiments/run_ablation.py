@@ -10,6 +10,7 @@ from typing import Any, Callable
 from agent.graph import run_agent
 from evaluation.baselines import run_naive_rag
 from evaluation.evaluate import evaluate_questions, load_eval_questions
+from evaluation.runtime_config import build_runtime_config_snapshot
 
 
 DEFAULT_CONFIG_DIR = Path(__file__).with_name("configs")
@@ -95,6 +96,7 @@ def main(
             "P0a provides evaluation infrastructure and reproducible artifacts. "
             "Final ablation numbers should be refreshed after P0b/P1/P2."
         ),
+        "runtime_config": build_runtime_config_snapshot(),
         "questions_path": str(args.questions),
         "config_dir": str(args.config_dir),
         "runs": [

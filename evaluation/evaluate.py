@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from agent.graph import run_agent
 from evaluation.baselines import run_naive_rag
+from evaluation.runtime_config import build_runtime_config_snapshot
 
 
 DEFAULT_EVAL_PATH = Path(__file__).with_name("eval_questions.json")
@@ -136,12 +137,14 @@ def write_evaluation_artifacts(report: dict[str, Any], output_dir: str | Path) -
 
     artifact_dir = Path(output_dir)
     summary = report.get("summary", {})
+    runtime_config = build_runtime_config_snapshot()
     if summary.get("mode") == "comparison":
         paired_results = report.get("results", [])
         _write_json(
             artifact_dir / "baseline_result.json",
             {
                 "system": "naive_rag",
+                "runtime_config": runtime_config,
                 "summary": summary.get("naive", {}),
                 "results": [paired.get("naive", {}) for paired in paired_results],
             },
@@ -150,17 +153,22 @@ def write_evaluation_artifacts(report: dict[str, Any], output_dir: str | Path) -
             artifact_dir / "agentic_result.json",
             {
                 "system": "agentic_rag",
+                "runtime_config": runtime_config,
                 "summary": summary.get("agentic", {}),
                 "results": [paired.get("agentic", {}) for paired in paired_results],
             },
         )
-        _write_json(artifact_dir / "comparison_result.json", report)
+        _write_json(
+            artifact_dir / "comparison_result.json",
+            {"runtime_config": runtime_config, **report},
+        )
         return
 
     _write_json(
         artifact_dir / "agentic_result.json",
         {
             "system": "agentic_rag",
+            "runtime_config": runtime_config,
             "summary": report.get("summary", {}),
             "results": report.get("results", []),
         },

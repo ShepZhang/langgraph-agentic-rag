@@ -34,11 +34,16 @@ def test_load_ablation_configs_reads_simple_yaml(tmp_path):
     ]
 
 
-def test_ablation_main_writes_result_json_and_report(tmp_path):
+def test_ablation_main_writes_result_json_and_report(tmp_path, monkeypatch):
     questions_path = tmp_path / "questions.json"
     output_dir = tmp_path / "artifacts"
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
+    monkeypatch.setenv("HYBRID_RETRIEVAL_ENABLED", "true")
+    monkeypatch.setenv("RERANKER_ENABLED", "true")
+    monkeypatch.setenv("RERANKER_TOP_N", "4")
+    monkeypatch.setenv("RERANKER_CANDIDATE_TOP_K", "8")
     questions_path.write_text(
         json.dumps(
             [
@@ -128,6 +133,9 @@ def test_ablation_main_writes_result_json_and_report(tmp_path):
     assert exit_code == 0
     assert result_path.exists()
     assert report_path.exists()
+    assert payload["runtime_config"]["retriever"]["hybrid_retrieval_enabled"] is True
+    assert payload["runtime_config"]["reranker"]["top_n"] == 4
+    assert "secret-key" not in json.dumps(payload, ensure_ascii=False)
     assert [run["id"] for run in payload["runs"]] == [
         "v0_naive",
         "v1_agentic",

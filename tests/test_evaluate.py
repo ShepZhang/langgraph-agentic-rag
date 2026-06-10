@@ -760,9 +760,15 @@ def test_main_prints_report_with_injected_runner(tmp_path, capsys):
     assert "| Metric | Naive RAG | Agentic RAG |" in captured.out
 
 
-def test_main_writes_comparison_artifacts(tmp_path):
+def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
     path = tmp_path / "eval.json"
     output_dir = tmp_path / "artifacts"
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://secret-base.example/v1")
+    monkeypatch.setenv("HYBRID_RETRIEVAL_ENABLED", "true")
+    monkeypatch.setenv("RERANKER_ENABLED", "true")
+    monkeypatch.setenv("RERANKER_TOP_N", "6")
+    monkeypatch.setenv("RERANKER_CANDIDATE_TOP_K", "9")
     path.write_text(
         json.dumps(
             [
@@ -812,6 +818,16 @@ def test_main_writes_comparison_artifacts(tmp_path):
     assert baseline_payload["system"] == "naive_rag"
     assert agentic_payload["system"] == "agentic_rag"
     assert comparison_payload["summary"]["mode"] == "comparison"
+    assert baseline_payload["runtime_config"]["retriever"]["hybrid_retrieval_enabled"] is True
+    assert agentic_payload["runtime_config"]["reranker"]["top_n"] == 6
+    assert comparison_payload["runtime_config"]["reranker"]["candidate_top_k"] == 9
+    serialized_payloads = json.dumps(
+        [baseline_payload, agentic_payload, comparison_payload],
+        ensure_ascii=False,
+    )
+    assert "secret-key" not in serialized_payloads
+    assert "secret-base" not in serialized_payloads
+    assert "OPENAI_API_KEY" not in serialized_payloads
     assert len(baseline_payload["results"]) == 1
     assert len(agentic_payload["results"]) == 1
     assert len(comparison_payload["results"]) == 1
@@ -853,6 +869,10 @@ def test_main_writes_single_system_agentic_artifact_schema(tmp_path):
     assert exit_code == 0
     assert agentic_path.exists()
     assert payload["system"] == "agentic_rag"
+    assert "runtime_config" in payload
+    assert "llm" in payload["runtime_config"]
+    assert "retriever" in payload["runtime_config"]
+    assert "reranker" in payload["runtime_config"]
     assert "summary" in payload
     assert "results" in payload
     assert len(payload["results"]) == 1
