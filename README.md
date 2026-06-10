@@ -1,8 +1,10 @@
-# Agentic RAG Document QA System
+# Reliability-oriented Agentic RAG Document QA System
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-This project is a lightweight Agentic RAG prototype for private document QA, focusing on explicit LangGraph-based retrieval control, query rewriting, retrieval grading, retry routing, citation-aware answer generation, and lightweight claim-level citation verification. The focus is the Agentic RAG workflow, not backend authentication or production deployment infrastructure.
+Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates query rewriting, retrieval grading, conditional retry, fallback handling, citation-aware answer generation, lightweight claim verification, evaluation artifacts, and ablation scaffolding to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+
+The project is production-oriented as an architecture and evaluation exercise, but it is not described as production-ready. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
 ## Why This Is Not a Naive RAG Demo
 
@@ -42,7 +44,7 @@ Agent Layer
   LangGraph state -> nodes -> conditional edges -> answer or fallback
 
 Evaluation Layer
-  eval_questions.json -> evaluation runner -> summary metrics
+  eval_questions.json -> baseline/agentic runners -> JSON artifacts -> report
 ```
 
 ## Agent Workflow
@@ -94,7 +96,10 @@ Key state fields:
 - Citation safety: normal answers without valid supporting citation indices or matching answer citation markers fall back instead of returning unsupported answers.
 - Lightweight claim-level verification: normal cited answers are split into claims and checked against selected citation chunks.
 - Gradio UI for upload, indexing, question answering, citations, retrieved chunks, and retry diagnostics.
-- Lightweight evaluation runner comparing naive RAG and Agentic RAG on answer, fallback, citation, source-hit, keyword-hit, retry, relevant filtering, latency, and error metrics.
+- Naive RAG baseline package and CLI for retrieve-once comparison.
+- Reliability evaluation runner comparing naive RAG and Agentic RAG on shared documents and a shared structured question set.
+- JSON evaluation artifacts for baseline, agentic, comparison, and ablation runs.
+- Ablation framework with explicit proxy/pending labels for modules that do not yet have independent toggles.
 
 ## Tech Stack
 
@@ -198,51 +203,66 @@ Tests use fake LLMs and mocked vector stores, so they do not require real OpenAI
 
 ## Evaluation
 
-Run the lightweight evaluation script:
+P0a builds the evaluation infrastructure first. The current runner compares naive RAG and Agentic RAG on the same 36-question structured dataset and can write reproducible JSON artifacts.
+
+Run comparison evaluation:
 
 ```bash
-.venv/bin/python -m evaluation.evaluate --questions evaluation/eval_questions.json
+.venv/bin/python -m evaluation.evaluate \
+  --questions evaluation/eval_questions.json \
+  --output-dir experiments/results
 ```
 
-By default, evaluation compares:
+Run the naive baseline only:
+
+```bash
+.venv/bin/python -m baseline.run_baseline \
+  --questions evaluation/eval_questions.json \
+  --output experiments/results/baseline_result.json
+```
+
+Run the ablation framework:
+
+```bash
+.venv/bin/python -m experiments.run_ablation \
+  --questions evaluation/eval_questions.json \
+  --output-dir experiments/results
+```
+
+Evaluation compares:
 
 - `Naive RAG`: question -> retrieve -> generate.
 - `Agentic RAG`: question -> rewrite -> retrieve -> grade -> retry or answer.
 
-Reported comparison metrics:
+Generated artifacts:
+
+- `experiments/results/baseline_result.json`
+- `experiments/results/agentic_result.json`
+- `experiments/results/comparison_result.json`
+- `experiments/results/ablation_result.json`
+- `experiments/results/ablation_report.md`
+- `experiments/report.md`
+
+Metric fields include:
 
 - `answer_rate`
-- `fallback_rate`
-- `citation_rate`
+- `correctness_score`
+- `context_relevance_score`
 - `source_hit_rate`
-- `keyword_hit_rate`
-- `fallback_correctness_rate`
-- `naive_source_hit_rate`
-- `agentic_source_hit_rate`
-- `naive_keyword_hit_rate`
-- `agentic_keyword_hit_rate`
-- `naive_citation_rate`
-- `agentic_citation_rate`
-- `naive_verification_rate`
-- `agentic_verification_rate`
-- `naive_fallback_correctness_rate`
-- `agentic_fallback_correctness_rate`
-- `naive_average_latency`
-- `agentic_average_latency`
-
-Agentic-specific metrics:
-
+- `citation_hit_rate`
+- `fallback_accuracy`
+- `unsupported_claim_count`
+- `supported_claim_ratio`
+- `citation_verification_pass_rate`
 - `average_retry_count`
-- `average_retrieved_docs`
-- `average_relevant_docs`
-- `relevant_filtering_rate`
-- `verification_rate`
-- `average_claim_count`
-- `rewrite_triggered_count`
+- `average_latency`
+- `average_token_usage`
+- `estimated_cost`
 - `error_count`
 
 If the LLM config or vector index is missing, evaluation records errors per question and still prints a report.
-The current evaluation set is a lightweight local QA set for demonstration. It is useful for comparing behavior, but it is not a rigorous benchmark.
+
+The P0a report is an infrastructure checkpoint. Final results should be regenerated in P0b after the P1/P2 retrieval and verification upgrades. Current ablation rows that use `current_agentic_workflow` are proxy runs, not proof that each module has already been independently toggled.
 
 ## Example Output
 
@@ -321,7 +341,8 @@ agentic-rag-document-qa/
 │   ├── chunker.py
 │   ├── embeddings.py
 │   ├── vectorstore.py
-│   └── retriever.py
+│   ├── retriever.py
+│   └── reranker.py
 ├── agent/
 │   ├── graph.py
 │   ├── state.py
@@ -329,55 +350,74 @@ agentic-rag-document-qa/
 │   ├── edges.py
 │   ├── tools.py
 │   └── prompts.py
+├── baseline/
+│   ├── naive_rag.py
+│   └── run_baseline.py
 ├── evaluation/
 │   ├── baselines.py
 │   ├── eval_questions.json
 │   └── evaluate.py
+├── experiments/
+│   ├── run_ablation.py
+│   ├── configs/
+│   └── report.md
 ├── docs/
-│   └── design.md
+│   ├── design.md
+│   └── resume_bullets.md
 ├── ui/
 │   └── gradio_app.py
 ├── assets/
 │   └── architecture.png
 ├── sample_docs/
-│   └── agentic_rag_notes.md
+│   ├── agentic_rag_notes.md
+│   ├── retrieval_pipeline_notes.md
+│   ├── citation_verification_notes.md
+│   ├── evaluation_notes.md
+│   └── distractor_company_policy.md
 └── tests/
 ```
 
 ## Resume Highlights
 
-- Built an Agentic RAG workflow with LangGraph, decomposing document QA into query rewriting, retrieval, retrieval grading, answer generation, and fallback nodes.
-- Wrapped vector retrieval as an Agent tool so the workflow can explicitly call a private knowledge base instead of relying on model parameters alone.
-- Implemented chunk-level retrieval grading and conditional retry to improve reliability on vague or poorly matched questions.
-- Designed citation-aware answer generation where the model returns `used_citation_indices`, so final citations map only to evidence chunks used in the answer.
-- Added deterministic citation marker consistency checks so answer markers like `[1]` must match `used_citation_indices` before claim verification runs.
-- Added lightweight claim-level citation verification that checks whether generated answer claims are supported by selected evidence chunks before returning a normal answer.
-- Added provider-aware LLM configuration for remote OpenAI-compatible APIs and local Ollama models without changing the LangGraph workflow.
-- Implemented deterministic vectorstore IDs from source metadata and chunk content, allowing incremental add while skipping chunks already indexed.
-- Supported PDF, Markdown, and TXT ingestion with chunk metadata, local embeddings, Chroma indexing, and Gradio-based document QA.
-- Added lightweight evaluation comparing naive RAG and Agentic RAG across source hit rate, keyword hit rate, citation rate, fallback correctness, retry behavior, and relevant chunk filtering.
+- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with query rewriting, retrieval, retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
+- Added a standalone naive RAG baseline and comparison runner so Agentic RAG can be evaluated against retrieve-once RAG on the same documents and same questions.
+- Designed a reliability evaluation foundation covering correctness, context relevance, source hit rate, citation hit rate, fallback accuracy, unsupported claims, retry count, latency, token usage, and cost fields.
+- Expanded the default evaluation dataset to 36 structured questions across single-doc, multi-chunk, ambiguous, unanswerable, distractor, comparison, follow-up, citation-sensitive, cross-file, and false-premise cases.
+- Added ablation-study scaffolding with explicit proxy/pending labels, preventing current full-workflow runs from being misrepresented as independently toggled module results.
+- Preserved a modular roadmap toward hybrid retrieval, real reranker ablation, structured retrieval grading, claim-level citation verification, trace logging, FastAPI service APIs, workspace isolation, and an interactive evaluation dashboard.
 
 ## Current Limitations
 
 - Claim-level citation verification is lightweight and LLM-based. It checks claims against selected evidence chunks, but it is not a formal proof system.
 - Citation marker consistency is deterministic, but it only checks marker/index alignment. It does not prove that every cited claim is true.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
-- Evaluation uses a lightweight local QA set and should be expanded with larger datasets for more rigorous benchmarking.
+- Evaluation uses a local 36-question reliability dataset. It is useful for reproducible project-level comparison, but it is not a benchmark-grade public dataset.
+- P0a ablation configs are framework-ready. Some current rows are proxy runs over the full Agentic RAG workflow because independent module toggles will be added later.
+- Token usage and estimated cost are recorded only when the active model client exposes usage metadata.
 - The Gradio `Build Index` workflow intentionally rebuilds the active collection for a clean uploaded knowledge base. The lower-level vectorstore API also supports incremental `add_documents` with deterministic IDs.
-- The project is a prototype and is not intended for production deployment without further hardening.
+- The project is not production-ready without authentication, authorization, deployment hardening, persistent trace storage, and operational monitoring.
 
 ## Roadmap
 
 - RAG core implemented: loading, chunking, embeddings, Chroma indexing, and retrieval.
 - LangGraph agent workflow implemented: query rewriting, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
-- Evaluation runner implemented: naive-vs-agentic comparison, answer/fallback/citation/source/keyword metrics, retry metrics, and relevant filtering metrics.
+- P0a evaluation infrastructure implemented: naive baseline, richer schema, 36-question dataset, reliability metrics, JSON artifacts, and ablation scaffolding.
 - Claim-level verification implemented: cited normal answers are checked against selected evidence before being returned.
 - Deterministic citation marker consistency implemented: answer markers must match selected citation indices.
 - Deterministic vectorstore IDs implemented: chunk identity is derived from source metadata and content for incremental add de-duplication.
 - Optional reranker implemented: vector retrieval can over-retrieve candidates, apply a local cross-encoder reranker, and pass reranked chunks into grading.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
+- P0b: regenerate baseline, agentic, and ablation artifacts after P1/P2 algorithm upgrades, then update `experiments/report.md` with observed trade-offs.
+- Upgrade evaluation to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records and prompt/model config snapshots.
+- Add hybrid retrieval with dense retrieval, BM25 sparse retrieval, RRF fusion, and configurable retrieval top-k values.
+- Add independently toggleable reranker and citation-verification ablations.
+- Add structured query transformation with rewrite, multi-query expansion, and decomposition routing.
+- Add structured retrieval grading with relevance labels, confidence, reasons, and state-level routing decisions.
+- Upgrade lightweight verification into full claim-level citation verification with extraction, verification, revision, and fallback loops.
 - Add FastAPI API layer.
-- Add model-specific prompt tuning and cost/latency evaluation for local Ollama models.
+- Add trace logging for node state changes, route decisions, final answers, citations, latency, token usage, and errors.
+- Add workspace and multi-knowledge-base isolation using workspace IDs and collection or metadata filtering.
+- Add an interactive Evaluation Dashboard in Gradio for running evaluations, comparing baseline vs agentic results, inspecting failed cases, and later linking rows to trace IDs.
+- Add model-specific prompt tuning and cost/latency evaluation for local and remote models.
 - Add human-reviewed claim labels for stricter citation validation.
-- Add richer reranker evaluation and model/latency comparisons.
