@@ -7,6 +7,7 @@ from typing import Any, TypedDict
 from langchain_core.documents import Document
 
 from config import Settings, get_settings
+from rag.hybrid_retriever import HybridRetriever
 from rag.reranker import get_reranker
 from rag.vectorstore import get_vectorstore_manager
 
@@ -28,11 +29,19 @@ class Retriever:
     def __init__(
         self,
         vectorstore_manager: Any | None = None,
+        hybrid_retriever: Any | None = None,
         reranker: Any | None = None,
         settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.vectorstore_manager = vectorstore_manager or get_vectorstore_manager()
+        if self.settings.hybrid_retrieval_enabled:
+            self.hybrid_retriever = hybrid_retriever or HybridRetriever(
+                self.vectorstore_manager,
+                settings=self.settings,
+            )
+        else:
+            self.hybrid_retriever = None
         if reranker is not None:
             self.reranker = reranker
         elif self.settings.reranker_enabled:
@@ -45,13 +54,18 @@ class Retriever:
 
         final_top_k = top_k if top_k is not None else self.settings.top_k
         candidate_top_k = final_top_k
-        if self.settings.reranker_enabled:
+        if self.reranker:
             candidate_top_k = max(final_top_k, self.settings.reranker_candidate_top_k)
 
-        results = self.vectorstore_manager.similarity_search(
-            query,
-            top_k=candidate_top_k,
-        )
+        if self.hybrid_retriever:
+            if self.reranker:
+                candidate_top_k = max(candidate_top_k, self.settings.fusion_top_k)
+            results = self.hybrid_retriever.retrieve(query, top_k=candidate_top_k)
+        else:
+            results = self.vectorstore_manager.similarity_search(
+                query,
+                top_k=candidate_top_k,
+            )
         if not self.reranker:
             return [_normalize_result(document, score) for document, score in results]
 

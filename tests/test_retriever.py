@@ -46,6 +46,16 @@ class FakeReranker:
         ][:top_k]
 
 
+class FakeHybridRetriever:
+    def __init__(self, results):
+        self.results = results
+        self.calls = []
+
+    def retrieve(self, query, top_k=None):
+        self.calls.append((query, top_k))
+        return self.results[:top_k]
+
+
 def test_retriever_returns_normalized_chunks():
     manager = FakeVectorStoreManager()
     retriever = Retriever(vectorstore_manager=manager)
@@ -130,6 +140,84 @@ def test_retriever_fetches_candidate_top_k_and_reranks_when_enabled():
     assert reranker.calls[0][2] == 2
     assert [chunk["source"] for chunk in chunks] == ["best.md", "weak.md"]
     assert [chunk["score"] for chunk in chunks] == [0.6, 0.4]
+    assert [chunk["rerank_score"] for chunk in chunks] == [0.99, 0.77]
+
+
+def test_retriever_uses_hybrid_retrieval_when_enabled():
+    manager = FakeVectorStoreManager()
+    hybrid = FakeHybridRetriever(
+        [
+            (
+                Document(
+                    page_content="Hybrid context",
+                    metadata={
+                        "source": "hybrid.md",
+                        "chunk_id": "hybrid-1",
+                        "fusion_score": 0.03,
+                    },
+                ),
+                0.03,
+            )
+        ]
+    )
+    settings = replace(
+        get_settings(),
+        hybrid_retrieval_enabled=True,
+        reranker_enabled=False,
+        top_k=2,
+    )
+    retriever = Retriever(
+        vectorstore_manager=manager,
+        hybrid_retriever=hybrid,
+        settings=settings,
+    )
+
+    chunks = retriever.retrieve("question", top_k=1)
+
+    assert manager.calls == []
+    assert hybrid.calls == [("question", 1)]
+    assert chunks == [
+        {
+            "content": "Hybrid context",
+            "source": "hybrid.md",
+            "page": None,
+            "chunk_id": "hybrid-1",
+            "score": 0.03,
+        }
+    ]
+
+
+def test_retriever_reranks_hybrid_candidate_pool_when_enabled():
+    hybrid_results = [
+        (
+            Document(page_content=f"context {index}", metadata={"source": f"{index}.md"}),
+            float(index),
+        )
+        for index in range(5)
+    ]
+    hybrid = FakeHybridRetriever(hybrid_results)
+    reranker = FakeReranker()
+    settings = replace(
+        get_settings(),
+        hybrid_retrieval_enabled=True,
+        reranker_enabled=True,
+        top_k=2,
+        reranker_candidate_top_k=3,
+        fusion_top_k=5,
+    )
+    retriever = Retriever(
+        vectorstore_manager=FakeVectorStoreManager(),
+        hybrid_retriever=hybrid,
+        reranker=reranker,
+        settings=settings,
+    )
+
+    chunks = retriever.retrieve("question")
+
+    assert hybrid.calls == [("question", 5)]
+    assert reranker.calls[0][0] == "question"
+    assert reranker.calls[0][2] == 2
+    assert [chunk["source"] for chunk in chunks] == ["2.md", "0.md"]
     assert [chunk["rerank_score"] for chunk in chunks] == [0.99, 0.77]
 
 
