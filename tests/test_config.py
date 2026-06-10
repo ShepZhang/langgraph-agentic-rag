@@ -106,21 +106,37 @@ def test_get_settings_rejects_invalid_hybrid_top_k(
 def test_get_settings_accepts_reranker_config(monkeypatch):
     monkeypatch.setenv("RERANKER_ENABLED", "true")
     monkeypatch.setenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
-    monkeypatch.setenv("TOP_K", "3")
+    monkeypatch.setenv("RERANKER_TOP_N", "3")
     monkeypatch.setenv("RERANKER_CANDIDATE_TOP_K", "8")
 
     settings = get_settings()
 
     assert settings.reranker_enabled is True
     assert settings.reranker_model == "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    assert settings.reranker_top_n == 3
     assert settings.reranker_candidate_top_k == 8
+
+
+def test_get_settings_defaults_reranker_top_n(monkeypatch):
+    monkeypatch.delenv("RERANKER_TOP_N", raising=False)
+
+    settings = get_settings()
+
+    assert settings.reranker_top_n == 5
+
+
+def test_get_settings_rejects_invalid_reranker_top_n(monkeypatch):
+    monkeypatch.setenv("RERANKER_TOP_N", "0")
+
+    with pytest.raises(ValueError, match="RERANKER_TOP_N"):
+        get_settings()
 
 
 def test_get_settings_rejects_enabled_reranker_with_too_small_candidate_top_k(
     monkeypatch,
 ):
     monkeypatch.setenv("RERANKER_ENABLED", "true")
-    monkeypatch.setenv("TOP_K", "5")
+    monkeypatch.setenv("RERANKER_TOP_N", "5")
     monkeypatch.setenv("RERANKER_CANDIDATE_TOP_K", "3")
 
     with pytest.raises(ValueError, match="RERANKER_CANDIDATE_TOP_K"):

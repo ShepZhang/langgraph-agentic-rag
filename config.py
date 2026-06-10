@@ -39,6 +39,7 @@ class Settings:
     fusion_top_k: int
     reranker_enabled: bool
     reranker_model: str
+    reranker_top_n: int
     reranker_candidate_top_k: int
     max_retry_count: int
     temperature: float
@@ -72,9 +73,12 @@ class Settings:
             raise ValueError("RERANKER_CANDIDATE_TOP_K must be greater than 0")
         if self.reranker_enabled and not self.reranker_model:
             raise ValueError("RERANKER_MODEL must not be empty when reranker is enabled")
-        if self.reranker_enabled and self.reranker_candidate_top_k < self.top_k:
+        if self.reranker_top_n <= 0:
+            raise ValueError("RERANKER_TOP_N must be greater than 0")
+        if self.reranker_enabled and self.reranker_candidate_top_k < self.reranker_top_n:
             raise ValueError(
-                "RERANKER_CANDIDATE_TOP_K must be greater than or equal to TOP_K "
+                "RERANKER_CANDIDATE_TOP_K must be greater than or equal to "
+                "RERANKER_TOP_N "
                 "when reranker is enabled"
             )
         if self.max_retry_count < 0:
@@ -224,6 +228,7 @@ def get_settings() -> Settings:
             "RERANKER_MODEL",
             "cross-encoder/ms-marco-MiniLM-L-6-v2",
         ).strip(),
+        reranker_top_n=_get_int("RERANKER_TOP_N", 5),
         reranker_candidate_top_k=_get_int("RERANKER_CANDIDATE_TOP_K", 12),
         max_retry_count=_get_int_with_fallback(
             "MAX_RETRY_COUNT",
