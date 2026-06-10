@@ -24,6 +24,8 @@ The generated JSON artifacts in `experiments/results/` are the reproducible sour
 - `agentic_result.json`
 - `comparison_result.json`
 
+Each artifact includes a sanitized `runtime_config` snapshot for reproducibility. It records LLM model/temperature, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name without API keys, base URLs, or local persistence paths.
+
 ## Ablation Table
 
 | Method | Correctness | Context Relevance | Citation Accuracy | Fallback Accuracy | Unsupported Claims | Avg Latency | Status |
@@ -49,6 +51,7 @@ The generated JSON artifacts in `experiments/results/` are the reproducible sour
 - P0a is an infrastructure checkpoint, not the final algorithm comparison.
 - Current v1-v3 ablation rows use the current full Agentic RAG workflow as a proxy because independent toggles are not implemented yet.
 - Hybrid retrieval is implemented after P0a and should be evaluated in the next P0b run with `HYBRID_RETRIEVAL_ENABLED=true`.
+- P1b reranker evaluation readiness is implemented after P0a. Future P0b runs should record `RERANKER_TOP_N`, `RERANKER_CANDIDATE_TOP_K`, and reranker model in each artifact.
 - Reranker and full claim-level citation-verification ablations should be regenerated after P1/P2 algorithm upgrades.
 - The interactive evaluation dashboard is deferred until CLI and JSON artifacts are stable.
 

@@ -91,6 +91,7 @@ Key state fields:
 - Optional hybrid retrieval: dense vector search and BM25 sparse search are fused with Reciprocal Rank Fusion before grading.
 - Retriever exposed as an Agent tool named `retrieve_context`.
 - Optional cross-encoder reranker: retrieve candidate chunks, rerank them, then pass the strongest chunks to grading.
+- Reranker diagnostics: the reranker can emit structured records with document id, chunk id, original score, rerank score, rank, content, and metadata.
 - Query rewriting for vague or context-dependent questions.
 - Chunk-level retrieval grading with conservative handling for invalid grading output.
 - Conditional retry with configurable max retry count.
@@ -272,6 +273,8 @@ Generated artifacts:
 - `experiments/results/ablation_report.md`
 - `experiments/report.md`
 
+Evaluation artifacts include a sanitized `runtime_config` snapshot covering model name, temperature, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name. API keys, base URLs, local persistence paths, and other secrets are intentionally excluded.
+
 Metric fields include:
 
 - `answer_rate`
@@ -352,7 +355,8 @@ Comparison Summary
 - `FUSION_TOP_K`: Number of fused candidates kept before optional reranking.
 - `RERANKER_ENABLED`: Enable optional cross-encoder reranking. Default is `false`.
 - `RERANKER_MODEL`: Cross-encoder model used when reranking is enabled.
-- `RERANKER_CANDIDATE_TOP_K`: Number of initial vector candidates to retrieve before reranking.
+- `RERANKER_TOP_N`: Number of chunks kept after reranking when no explicit `top_k` is passed.
+- `RERANKER_CANDIDATE_TOP_K`: Number of dense or fused candidates retrieved before reranking.
 - `MAX_RETRY_COUNT`: Maximum failed-retrieval retry rewrites.
 - `CHROMA_PERSIST_DIR`: Local Chroma persistence path.
 - `CHROMA_COLLECTION_NAME`: Chroma collection name.
@@ -392,7 +396,8 @@ agentic-rag-document-qa/
 ├── evaluation/
 │   ├── baselines.py
 │   ├── eval_questions.json
-│   └── evaluate.py
+│   ├── evaluate.py
+│   └── runtime_config.py
 ├── experiments/
 │   ├── run_ablation.py
 │   ├── configs/
@@ -417,6 +422,7 @@ agentic-rag-document-qa/
 
 - Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with query rewriting, hybrid retrieval, reranking, retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
 - Implemented a configurable dense retrieval + BM25 sparse retrieval + RRF fusion pipeline so the system can combine semantic recall with exact keyword, filename, and identifier matching.
+- Added reranker evaluation readiness with explicit candidate top-k vs final top-n settings, structured reranker records, and sanitized runtime config snapshots in evaluation artifacts.
 - Added a standalone naive RAG baseline and comparison runner so Agentic RAG can be evaluated against retrieve-once RAG on the same documents and same questions.
 - Designed a reliability evaluation foundation covering correctness, context relevance, source hit rate, citation hit rate, fallback accuracy, unsupported claims, retry count, latency, token usage, and cost fields.
 - Expanded the default evaluation dataset to 36 structured questions across single-doc, multi-chunk, ambiguous, unanswerable, distractor, comparison, follow-up, citation-sensitive, cross-file, and false-premise cases.
@@ -446,6 +452,7 @@ agentic-rag-document-qa/
 - Deterministic vectorstore IDs implemented: chunk identity is derived from source metadata and content for incremental add de-duplication.
 - Optional reranker implemented: vector retrieval can over-retrieve candidates, apply a local cross-encoder reranker, and pass reranked chunks into grading.
 - P1a hybrid retrieval implemented: dense retrieval, BM25 sparse retrieval, RRF fusion, and configurable dense/BM25/fusion top-k values.
+- P1b reranker evaluation readiness implemented: explicit `RERANKER_TOP_N`, structured reranker records, and sanitized runtime config snapshots in evaluation/ablation artifacts.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - P0b: regenerate baseline, agentic, and ablation artifacts after P1/P2 algorithm upgrades, then update `experiments/report.md` with observed trade-offs.
 - Upgrade evaluation to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records and prompt/model config snapshots.
