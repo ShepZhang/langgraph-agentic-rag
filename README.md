@@ -347,6 +347,14 @@ Metric fields include:
 
 If an individual question fails, evaluation records the exception and marks the variant `completed_with_errors`. Configuration, index, or runner-construction failures leave an `incomplete` checkpoint instead of publishing misleading aggregate results.
 
+Latest P0b single-run snapshot using `deepseek-v4-flash`:
+
+- V0 Naive RAG: correctness `0.6111`, fallback accuracy `0.8611`, average latency `4.46s`.
+- V5 with hybrid retrieval and reranking: highest heuristic correctness at `0.6389`, average latency `28.70s`.
+- V6 with claim-level verification: zero unsupported final claims and supported-claim ratio `1.0000`, but correctness `0.5833` and average latency `41.25s`.
+
+These numbers do not support a blanket claim that the complete Agentic workflow always outperforms naive RAG. They show module-specific trade-offs: reranking helped heuristic correctness in this run, while strict citation verification improved claim support diagnostics at the cost of answer acceptance and latency. See `experiments/report.md` and the generated JSON artifacts for the complete table and limitations.
+
 ## Example Output
 
 Example answer payload:
