@@ -37,6 +37,12 @@ def test_create_initial_state_sets_defaults():
     assert state["relevant_document_count"] == 0
     assert state["partial_document_count"] == 0
     assert state["max_relevance_confidence"] == 0.0
+    assert state["partial_relevance_recovery"] == {
+        "triggered": False,
+        "action": "none",
+        "reason": "",
+        "partial_document_indices": [],
+    }
     assert state["grading_reason"] == ""
     assert state["answer"] == ""
     assert state["citations"] == []

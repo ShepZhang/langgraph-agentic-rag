@@ -55,6 +55,15 @@ class DocumentGrade(TypedDict):
     reason: str
 
 
+class PartialRelevanceRecovery(TypedDict):
+    """Recovery decision for partially relevant retrieval evidence."""
+
+    triggered: bool
+    action: str
+    reason: str
+    partial_document_indices: list[int]
+
+
 class AgentState(TypedDict):
     """State passed between LangGraph nodes."""
 
@@ -78,6 +87,7 @@ class AgentState(TypedDict):
     relevant_document_count: int
     partial_document_count: int
     max_relevance_confidence: float
+    partial_relevance_recovery: PartialRelevanceRecovery
     grading_reason: str
     answer: str
     citations: list[Citation]
@@ -122,6 +132,12 @@ def create_initial_state(
         "relevant_document_count": 0,
         "partial_document_count": 0,
         "max_relevance_confidence": 0.0,
+        "partial_relevance_recovery": {
+            "triggered": False,
+            "action": "none",
+            "reason": "",
+            "partial_document_indices": [],
+        },
         "grading_reason": "",
         "answer": "",
         "citations": [],

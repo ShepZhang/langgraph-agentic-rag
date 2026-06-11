@@ -102,6 +102,7 @@ def run_agent(
         "relevant_document_count": final_state["relevant_document_count"],
         "partial_document_count": final_state["partial_document_count"],
         "max_relevance_confidence": final_state["max_relevance_confidence"],
+        "partial_relevance_recovery": final_state["partial_relevance_recovery"],
         "fallback_reason": final_state["fallback_reason"],
         "route": final_state["route"],
     }

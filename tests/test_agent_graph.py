@@ -83,6 +83,12 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
     assert result["relevant_document_count"] == 1
     assert result["partial_document_count"] == 0
     assert result["max_relevance_confidence"] == 1.0
+    assert result["partial_relevance_recovery"] == {
+        "triggered": False,
+        "action": "none",
+        "reason": "",
+        "partial_document_indices": [],
+    }
     assert result["is_verified"] is True
     assert result["claim_verification_reason"] == "Supported by chunk 1."
     assert result["claims"] == [
