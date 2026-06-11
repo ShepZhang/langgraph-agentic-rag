@@ -222,6 +222,10 @@ def test_grade_documents_node_marks_empty_docs_irrelevant_without_llm_call():
 
     assert update["is_relevant"] is False
     assert update["relevant_documents"] == []
+    assert update["document_grades"] == []
+    assert update["relevant_document_count"] == 0
+    assert update["partial_document_count"] == 0
+    assert update["max_relevance_confidence"] == 0.0
     assert "No documents" in update["grading_reason"]
     assert update["route"] == "rewrite_query"
     assert llm.prompts == []
@@ -248,11 +252,103 @@ def test_grade_documents_node_parses_relevant_indices_and_filters_documents():
 
     assert update["is_relevant"] is True
     assert update["relevant_documents"] == [{"content": "answer context", "source": "b.md"}]
+    assert update["document_grades"] == [
+        {
+            "document_index": 2,
+            "relevance": "relevant",
+            "confidence": 1.0,
+            "reason": "Chunk 2 directly answers the question.",
+        }
+    ]
+    assert update["relevant_document_count"] == 1
+    assert update["partial_document_count"] == 0
+    assert update["max_relevance_confidence"] == 1.0
     assert update["grading_reason"] == "Chunk 2 directly answers the question."
     assert update["route"] == "generate_answer"
     assert "Original user question:\nquestion" in llm.prompts[0]
     assert "Retrieval query:\nrewritten question" in llm.prompts[0]
     assert "grade the retrieved chunks against the original user question" in llm.prompts[0]
+
+
+def test_grade_documents_node_records_structured_document_grades():
+    llm = FakeLLM(
+        [
+            (
+                '{"grades": ['
+                '{"document_index": 1, "relevance": "partially_relevant", '
+                '"confidence": 0.62, "reason": "Mentions reliability but lacks answer."},'
+                '{"document_index": 2, "relevance": "relevant", '
+                '"confidence": 0.87, "reason": "Directly explains grading."},'
+                '{"document_index": 3, "relevance": "irrelevant", '
+                '"confidence": 0.11, "reason": "Wrong topic."}'
+                '], "reason": "Chunk 2 directly answers."}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("How does grading improve reliability?")
+    state["current_query"] = "retrieval grading reliability"
+    state["documents"] = [
+        {"content": "Reliability overview", "source": "a.md"},
+        {"content": "Grading filters weak chunks", "source": "b.md"},
+        {"content": "Office policy", "source": "c.md"},
+    ]
+
+    update = nodes.grade_documents_node(state)
+
+    assert update["is_relevant"] is True
+    assert update["relevant_documents"] == [
+        {"content": "Grading filters weak chunks", "source": "b.md"}
+    ]
+    assert update["document_grades"] == [
+        {
+            "document_index": 1,
+            "relevance": "partially_relevant",
+            "confidence": 0.62,
+            "reason": "Mentions reliability but lacks answer.",
+        },
+        {
+            "document_index": 2,
+            "relevance": "relevant",
+            "confidence": 0.87,
+            "reason": "Directly explains grading.",
+        },
+        {
+            "document_index": 3,
+            "relevance": "irrelevant",
+            "confidence": 0.11,
+            "reason": "Wrong topic.",
+        },
+    ]
+    assert update["relevant_document_count"] == 1
+    assert update["partial_document_count"] == 1
+    assert update["max_relevance_confidence"] == 0.87
+    assert update["route"] == "generate_answer"
+
+
+def test_grade_documents_node_retries_when_only_partially_relevant():
+    llm = FakeLLM(
+        [
+            (
+                '{"grades": ['
+                '{"document_index": 1, "relevance": "partially_relevant", '
+                '"confidence": 0.91, "reason": "Mentions the topic only."}'
+                '], "reason": "No direct answer."}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["documents"] = [{"content": "related context", "source": "a.md"}]
+
+    update = nodes.grade_documents_node(state)
+
+    assert update["is_relevant"] is False
+    assert update["relevant_documents"] == []
+    assert update["relevant_document_count"] == 0
+    assert update["partial_document_count"] == 1
+    assert update["max_relevance_confidence"] == 0.91
+    assert update["route"] == "rewrite_query"
 
 
 def test_grade_documents_node_parses_fenced_relevance_json():

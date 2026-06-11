@@ -33,6 +33,10 @@ def test_create_initial_state_sets_defaults():
     assert state["previous_queries"] == []
     assert state["documents"] == []
     assert state["relevant_documents"] == []
+    assert state["document_grades"] == []
+    assert state["relevant_document_count"] == 0
+    assert state["partial_document_count"] == 0
+    assert state["max_relevance_confidence"] == 0.0
     assert state["grading_reason"] == ""
     assert state["answer"] == ""
     assert state["citations"] == []

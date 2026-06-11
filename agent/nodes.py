@@ -22,6 +22,7 @@ from agent.query_transform import (
     fallback_query_transform,
     parse_query_transform_response,
 )
+from agent.retrieval_grading import parse_retrieval_grading_response
 from agent.state import AgentState, Citation, RetrievedDocument
 from agent.tools import create_retriever_tool
 
@@ -152,6 +153,10 @@ class AgentNodes:
             return {
                 "is_relevant": False,
                 "relevant_documents": [],
+                "document_grades": [],
+                "relevant_document_count": 0,
+                "partial_document_count": 0,
+                "max_relevance_confidence": 0.0,
                 "grading_reason": reason,
                 "route": "rewrite_query",
             }
@@ -162,20 +167,30 @@ class AgentNodes:
             documents=format_documents(documents),
         )
         raw_result = _coerce_llm_text(self.llm.invoke(prompt))
-        grading = _parse_grading_result(raw_result, document_count=len(documents))
+        grading = parse_retrieval_grading_response(
+            raw_result,
+            document_count=len(documents),
+        )
         relevant_documents = [
             documents[index - 1] for index in grading["relevant_indices"]
         ]
         is_relevant = bool(relevant_documents)
+        partial_document_count = len(grading["partially_relevant_indices"])
+        max_relevance_confidence = _max_grade_confidence(grading["grades"])
         logger.info(
-            "Retrieval grading relevant=%s relevant_count=%s reason=%s",
+            "Retrieval grading relevant=%s relevant_count=%s partial_count=%s reason=%s",
             is_relevant,
             len(relevant_documents),
+            partial_document_count,
             grading["reason"],
         )
         return {
             "is_relevant": is_relevant,
             "relevant_documents": relevant_documents,
+            "document_grades": grading["grades"],
+            "relevant_document_count": len(relevant_documents),
+            "partial_document_count": partial_document_count,
+            "max_relevance_confidence": max_relevance_confidence,
             "grading_reason": grading["reason"],
             "route": "generate_answer" if is_relevant else "rewrite_query",
         }
@@ -615,6 +630,14 @@ def _fallback_update(reason: str) -> dict[str, Any]:
         "route": "fallback",
         "fallback_reason": reason,
     }
+
+
+def _max_grade_confidence(grades: list[dict[str, Any]]) -> float:
+    """Return the highest normalized grade confidence."""
+
+    if not grades:
+        return 0.0
+    return max(float(grade.get("confidence", 0.0)) for grade in grades)
 
 
 def _format_previous_queries(previous_queries: list[str]) -> str:

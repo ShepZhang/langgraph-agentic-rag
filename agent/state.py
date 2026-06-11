@@ -46,6 +46,15 @@ class ClaimVerification(TypedDict, total=False):
     reason: str
 
 
+class DocumentGrade(TypedDict):
+    """Structured retrieval grading record for a document chunk."""
+
+    document_index: int
+    relevance: str
+    confidence: float
+    reason: str
+
+
 class AgentState(TypedDict):
     """State passed between LangGraph nodes."""
 
@@ -65,6 +74,10 @@ class AgentState(TypedDict):
     previous_queries: list[str]
     documents: list[RetrievedDocument]
     relevant_documents: list[RetrievedDocument]
+    document_grades: list[DocumentGrade]
+    relevant_document_count: int
+    partial_document_count: int
+    max_relevance_confidence: float
     grading_reason: str
     answer: str
     citations: list[Citation]
@@ -105,6 +118,10 @@ def create_initial_state(
         "previous_queries": [],
         "documents": [],
         "relevant_documents": [],
+        "document_grades": [],
+        "relevant_document_count": 0,
+        "partial_document_count": 0,
+        "max_relevance_confidence": 0.0,
         "grading_reason": "",
         "answer": "",
         "citations": [],
