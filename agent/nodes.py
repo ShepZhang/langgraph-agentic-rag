@@ -12,10 +12,17 @@ from langchain_core.messages import BaseMessage
 from agent.multi_query import build_retrieval_queries, merge_retrieved_documents
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
+    CITATION_VERIFICATION_PROMPT,
+    CLAIM_EXTRACTION_PROMPT,
     CLAIM_VERIFICATION_PROMPT,
     RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
     format_documents,
+)
+from agent.citation_verification import (
+    build_claim_verification_summary,
+    parse_citation_verification_response,
+    parse_claim_extraction_response,
 )
 from agent.query_transform import (
     build_query_transform_prompt,
@@ -298,6 +305,100 @@ class AgentNodes:
             "citation_verification_skipped": False,
             "is_verified": False,
             "route": "extract_claims",
+        }
+
+    def extract_claims_node(self, state: AgentState) -> dict[str, Any]:
+        """Extract atomic claims from the draft answer."""
+
+        if state.get("citation_verification_skipped"):
+            return {
+                "claims": [],
+                "claim_verification_reason": (
+                    "Unable-to-answer response; claim extraction skipped."
+                ),
+                "route": "finalize_answer",
+            }
+
+        draft_answer = state.get("draft_answer", "").strip()
+        if not draft_answer:
+            return _fallback_update("Claim extraction skipped because draft answer is empty.")
+
+        cited_documents = state.get("cited_documents", [])
+        valid_chunk_ids = _selected_citation_chunk_ids(cited_documents)
+        prompt = CLAIM_EXTRACTION_PROMPT.format(
+            question=state["question"],
+            answer=draft_answer,
+            documents=format_documents(cited_documents),
+        )
+        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
+        extraction = parse_claim_extraction_response(
+            raw_result,
+            valid_chunk_ids=valid_chunk_ids,
+        )
+        if extraction is None:
+            logger.warning("Claim extraction returned invalid JSON.")
+            return _fallback_update("Claim extraction returned invalid JSON.")
+
+        return {
+            "claims": extraction["claims"],
+            "claim_verification_reason": extraction["reason"],
+            "route": "verify_citations",
+        }
+
+    def verify_citations_node(self, state: AgentState) -> dict[str, Any]:
+        """Verify extracted claims against selected citation chunks."""
+
+        if state.get("citation_verification_skipped"):
+            return {
+                "citation_verification_passed": False,
+                "route": "finalize_answer",
+            }
+
+        claims = state.get("claims", [])
+        if not claims:
+            return _fallback_update("Claim extraction returned no verifiable claims.")
+
+        cited_documents = state.get("cited_documents", [])
+        valid_chunk_ids = _selected_citation_chunk_ids(cited_documents)
+        prompt = CITATION_VERIFICATION_PROMPT.format(
+            question=state["question"],
+            answer=state.get("draft_answer", ""),
+            claims=json.dumps(claims, ensure_ascii=False),
+            documents=format_documents(cited_documents),
+        )
+        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
+        verification = parse_citation_verification_response(
+            raw_result,
+            valid_chunk_ids=valid_chunk_ids,
+        )
+        if verification is None:
+            logger.warning("Citation verification returned invalid JSON.")
+            return _fallback_update("Citation verification returned invalid JSON.")
+
+        summary = build_claim_verification_summary(
+            verification["results"],
+            reason=verification["reason"],
+        )
+        passed = summary["verified"] is True
+        unsupported_claims = summary["unsupported_claims"]
+        if passed:
+            route = "finalize_answer"
+        elif state.get("citation_revision_count", 0) < state.get(
+            "max_citation_revision_count",
+            1,
+        ):
+            route = "revise_answer"
+        else:
+            route = "fallback"
+
+        return {
+            "claim_verification_results": verification["results"],
+            "unsupported_claims": unsupported_claims,
+            "claim_verification": summary,
+            "claim_verification_reason": summary["reason"],
+            "citation_verification_passed": passed,
+            "is_verified": passed,
+            "route": route,
         }
 
     def fallback_node(self, state: AgentState) -> dict[str, Any]:
@@ -739,6 +840,30 @@ def _format_partial_relevance_context(state: AgentState) -> str:
             f"confidence={confidence} reason={reason}\n  {snippet}"
         )
     return "\n".join(lines)
+
+
+def _selected_citation_chunk_ids(documents: list[RetrievedDocument]) -> list[str]:
+    """Return valid chunk IDs for selected citation documents."""
+
+    chunk_ids: list[str] = []
+    for index, document in enumerate(documents, start=1):
+        chunk_id = _document_chunk_id(document, index)
+        if chunk_id not in chunk_ids:
+            chunk_ids.append(chunk_id)
+    return chunk_ids
+
+
+def _document_chunk_id(document: RetrievedDocument, index: int) -> str:
+    """Return a citation-verification chunk ID for a selected document."""
+
+    chunk_id = document.get("chunk_id")
+    if chunk_id:
+        return str(chunk_id)
+    source = document.get("source") or "unknown-source"
+    page = document.get("page")
+    if page is not None:
+        return f"{source}:p{page}:citation-{index}"
+    return f"{source}:citation-{index}"
 
 
 def _make_snippet(content: str, limit: int = 240) -> str:

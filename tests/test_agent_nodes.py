@@ -863,6 +863,140 @@ def test_generate_answer_node_falls_back_without_relevant_documents():
     assert update["fallback_reason"] == "No relevant documents available for answer generation."
 
 
+def test_extract_claims_node_writes_structured_claims():
+    llm = FakeLLM(
+        [
+            (
+                '{"claims": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG uses retrieval grading.", '
+                '"cited_chunk_ids": ["chunk-1"]}'
+                '], "reason": "one claim"}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("What does Agentic RAG use?")
+    state["draft_answer"] = "Agentic RAG uses retrieval grading [1]."
+    state["cited_documents"] = [
+        {
+            "content": "Agentic RAG uses retrieval grading.",
+            "source": "paper.pdf",
+            "chunk_id": "chunk-1",
+        }
+    ]
+
+    update = nodes.extract_claims_node(state)
+
+    assert update["claims"] == [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval grading.",
+            "cited_chunk_ids": ["chunk-1"],
+        }
+    ]
+    assert update["claim_verification_reason"] == "one claim"
+    assert update["route"] == "verify_citations"
+    assert "claim_id" in llm.prompts[0]
+    assert "Agentic RAG uses retrieval grading [1]." in llm.prompts[0]
+
+
+def test_verify_citations_node_passes_supported_claims():
+    llm = FakeLLM(
+        [
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG uses retrieval grading.", '
+                '"cited_chunk_ids": ["chunk-1"], "verification_label": "supported", '
+                '"confidence": 0.91, "reason": "Directly supported."}'
+                '], "reason": "All claims supported."}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("What does Agentic RAG use?")
+    state["draft_answer"] = "Agentic RAG uses retrieval grading [1]."
+    state["claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval grading.",
+            "cited_chunk_ids": ["chunk-1"],
+        }
+    ]
+    state["cited_documents"] = [
+        {
+            "content": "Agentic RAG uses retrieval grading.",
+            "source": "paper.pdf",
+            "chunk_id": "chunk-1",
+        }
+    ]
+
+    update = nodes.verify_citations_node(state)
+
+    assert update["claim_verification_results"] == [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval grading.",
+            "cited_chunk_ids": ["chunk-1"],
+            "verification_label": "supported",
+            "confidence": 0.91,
+            "reason": "Directly supported.",
+        }
+    ]
+    assert update["unsupported_claims"] == []
+    assert update["claim_verification"]["verified"] is True
+    assert update["claim_verification_reason"] == "All claims supported."
+    assert update["citation_verification_passed"] is True
+    assert update["route"] == "finalize_answer"
+
+
+def test_verify_citations_node_collects_unsupported_claims():
+    llm = FakeLLM(
+        [
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG eliminates hallucination.", '
+                '"cited_chunk_ids": ["chunk-1"], "verification_label": "unsupported", '
+                '"confidence": 0.2, "reason": "The chunk only says reduce risk."}'
+                '], "reason": "Unsupported claim found."}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("What does Agentic RAG guarantee?")
+    state["draft_answer"] = "Agentic RAG eliminates hallucination [1]."
+    state["claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG eliminates hallucination.",
+            "cited_chunk_ids": ["chunk-1"],
+        }
+    ]
+    state["cited_documents"] = [
+        {
+            "content": "Citation checks can reduce hallucination risk.",
+            "source": "paper.pdf",
+            "chunk_id": "chunk-1",
+        }
+    ]
+
+    update = nodes.verify_citations_node(state)
+
+    assert update["citation_verification_passed"] is False
+    assert update["unsupported_claims"] == [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG eliminates hallucination.",
+            "cited_chunk_ids": ["chunk-1"],
+            "verification_label": "unsupported",
+            "confidence": 0.2,
+            "reason": "The chunk only says reduce risk.",
+        }
+    ]
+    assert update["claim_verification"]["verified"] is False
+    assert update["claim_verification_reason"] == "Unsupported claim found."
+    assert update["route"] == "revise_answer"
+
+
 def test_fallback_node_returns_clear_message():
     nodes = AgentNodes(llm=FakeLLM([]), retriever_fn=lambda query: [])
 
