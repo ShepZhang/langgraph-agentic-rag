@@ -48,15 +48,18 @@ RETRIEVAL_GRADING_PROMPT = """You are grading whether retrieved chunks can answe
 Do not mark chunks relevant just because they share keywords.
 Mark them relevant only if they contain enough factual information to answer the original user question.
 Return JSON only in this shape:
-{{"relevant": true, "relevant_indices": [1, 3], "reason": "short reason"}}
+{{"grades": [{{"document_index": 1, "relevance": "relevant", "confidence": 0.91, "reason": "short reason"}}], "reason": "short overall reason"}}
 
 Rules:
 - The retrieval query is only used to explain how the chunks were searched.
 - You must grade the retrieved chunks against the original user question.
 - Do not grade the chunks as relevant only because they match the retrieval query.
-- relevant_indices must use 1-based indexes matching the retrieved chunk numbers.
-- If no chunks are relevant, return:
-  {{"relevant": false, "relevant_indices": [], "reason": "short reason"}}
+- document_index must use 1-based indexes matching the retrieved chunk numbers.
+- relevance must be exactly one of: relevant, partially_relevant, irrelevant.
+- Use relevant only when the chunk directly contains enough evidence to answer the original question.
+- Use partially_relevant when the chunk is related but does not contain enough evidence to answer.
+- Use irrelevant when the chunk does not help answer the original question.
+- confidence must be a number between 0 and 1.
 - Return JSON only. No markdown fences.
 
 Original user question:

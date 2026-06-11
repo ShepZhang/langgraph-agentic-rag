@@ -114,7 +114,9 @@ def test_prompts_contain_required_guardrails():
     assert "Retrieval query" in RETRIEVAL_GRADING_PROMPT
     assert "original user question" in RETRIEVAL_GRADING_PROMPT
     assert "json" in RETRIEVAL_GRADING_PROMPT.lower()
-    assert "relevant_indices" in RETRIEVAL_GRADING_PROMPT
+    assert "document_index" in RETRIEVAL_GRADING_PROMPT
+    assert "partially_relevant" in RETRIEVAL_GRADING_PROMPT
+    assert "confidence" in RETRIEVAL_GRADING_PROMPT
     assert "keyword" in RETRIEVAL_GRADING_PROMPT.lower()
     assert "claim-level citation verifier" in CLAIM_VERIFICATION_PROMPT.lower()
     assert "Original user question" in CLAIM_VERIFICATION_PROMPT
