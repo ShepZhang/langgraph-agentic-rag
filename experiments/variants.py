@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import Any, Callable, Literal
 
 from agent.features import AgentFeatureFlags
+from agent.state import ChatMessage
 from config import Settings
 
 
 RunnerKind = Literal["naive", "agentic"]
+VariantRunner = Callable[[str, list[ChatMessage]], dict[str, Any]]
 _BOOLEAN_KEYS = {
     "query_transformation_enabled",
     "retrieval_grading_enabled",
@@ -120,6 +122,63 @@ def validate_cumulative_variants(variants: list[AblationVariant]) -> None:
             )
         if previous.runner == "agentic" and current.runner != "agentic":
             raise ValueError("Ablation runner cannot revert from agentic to naive")
+
+
+def create_variant_runner(
+    variant: AblationVariant,
+    base_settings: Settings,
+    retriever_factory: Callable[[Settings], Any] | None = None,
+    agent_runner: Callable[..., dict[str, Any]] | None = None,
+    naive_runner: Callable[..., dict[str, Any]] | None = None,
+) -> VariantRunner:
+    """Build a history-aware runner with variant-specific retrieval settings."""
+
+    if retriever_factory is None:
+        from rag.retriever import Retriever
+
+        retriever_factory = lambda settings: Retriever(settings=settings).retrieve
+    if agent_runner is None:
+        from agent.graph import run_agent
+
+        agent_runner = run_agent
+    if naive_runner is None:
+        from baseline.naive_rag import run_naive_rag
+
+        naive_runner = run_naive_rag
+
+    resolved_settings = variant.apply_settings(base_settings)
+    retriever = retriever_factory(resolved_settings)
+    retriever_fn = retriever.retrieve if hasattr(retriever, "retrieve") else retriever
+    if not callable(retriever_fn):
+        raise TypeError("retriever_factory must return a callable or Retriever")
+
+    if variant.runner == "naive":
+        def run_naive(
+            question: str,
+            chat_history: list[ChatMessage],
+        ) -> dict[str, Any]:
+            return naive_runner(
+                question,
+                chat_history=chat_history,
+                settings=resolved_settings,
+                retriever_fn=retriever_fn,
+            )
+
+        return run_naive
+
+    def run_agentic(
+        question: str,
+        chat_history: list[ChatMessage],
+    ) -> dict[str, Any]:
+        return agent_runner(
+            question,
+            chat_history,
+            settings=resolved_settings,
+            features=variant.features,
+            retriever_fn=retriever_fn,
+        )
+
+    return run_agentic
 
 
 def _parse_variant(path: Path) -> AblationVariant:

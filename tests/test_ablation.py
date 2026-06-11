@@ -7,13 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from experiments.run_ablation import load_ablation_configs, main
+from experiments.run_ablation import format_ablation_report, main, select_questions
 from experiments.variants import (
     AblationVariant,
+    create_variant_runner,
     load_ablation_variants,
     validate_cumulative_variants,
 )
 from agent.features import AgentFeatureFlags
+from config import get_settings
 from evaluation.runtime_config import build_runtime_config_snapshot
 
 
@@ -92,47 +94,59 @@ def test_runtime_config_snapshot_includes_agent_feature_flags():
     assert snapshot["agent_features"] == features.to_dict()
 
 
-def test_load_ablation_configs_reads_simple_yaml(tmp_path):
-    config_dir = tmp_path / "configs"
-    config_dir.mkdir()
-    (config_dir / "v0_naive.yaml").write_text(
-        "\n".join(
-            [
-                "# baseline config",
-                "method: Naive RAG",
-                "runner: naive",
-                "status: supported",
-            ]
-        ),
-        encoding="utf-8",
+def test_create_variant_runner_injects_variant_settings_and_features():
+    variant = load_ablation_variants(CONFIG_DIR)[4]
+    captured = {}
+
+    def retriever_factory(settings):
+        captured["retriever_settings"] = settings
+        return lambda query: []
+
+    def agent_runner(
+        question,
+        chat_history,
+        *,
+        settings,
+        features,
+        retriever_fn,
+    ):
+        captured.update(
+            settings=settings,
+            features=features,
+            retriever_fn=retriever_fn,
+            history=chat_history,
+        )
+        return {"answer": ""}
+
+    runner = create_variant_runner(
+        variant,
+        base_settings=get_settings(),
+        retriever_factory=retriever_factory,
+        agent_runner=agent_runner,
     )
+    history = [{"role": "user", "content": "Context"}]
 
-    configs = load_ablation_configs(config_dir)
+    runner("Question?", history)
 
-    assert configs == [
-        {
-            "id": "v0_naive",
-            "method": "Naive RAG",
-            "runner": "naive",
-            "status": "supported",
-        }
-    ]
+    assert captured["settings"].hybrid_retrieval_enabled is True
+    assert captured["settings"].reranker_enabled is False
+    assert captured["features"] == variant.features
+    assert captured["retriever_settings"] == captured["settings"]
+    assert captured["history"] == history
 
 
-def test_ablation_main_writes_result_json_and_report(tmp_path, monkeypatch):
+def test_ablation_main_checkpoints_variants_and_derives_comparison_without_reruns(
+    tmp_path,
+    monkeypatch,
+):
     questions_path = tmp_path / "questions.json"
     output_dir = tmp_path / "artifacts"
-    config_dir = tmp_path / "configs"
-    config_dir.mkdir()
     monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
-    monkeypatch.setenv("HYBRID_RETRIEVAL_ENABLED", "true")
-    monkeypatch.setenv("RERANKER_ENABLED", "true")
-    monkeypatch.setenv("RERANKER_TOP_N", "4")
-    monkeypatch.setenv("RERANKER_CANDIDATE_TOP_K", "8")
     questions_path.write_text(
         json.dumps(
             [
                 {
+                    "id": "q001",
                     "question": "What is Agentic RAG?",
                     "expected_keywords": ["retrieval"],
                     "expected_sources": ["notes.md"],
@@ -141,98 +155,139 @@ def test_ablation_main_writes_result_json_and_report(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    (config_dir / "v0_naive.yaml").write_text(
-        "\n".join(
-            [
-                "method: Naive RAG",
-                "runner: naive",
-                "status: supported",
-                "runner_scope: baseline",
-                "independent_ablation: true",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (config_dir / "v1_agentic.yaml").write_text(
-        "\n".join(
-            [
-                "method: Agentic RAG",
-                "runner: agentic",
-                "status: supported",
-                "runner_scope: current_agentic_workflow",
-                "independent_ablation: false",
-                "notes: Uses the current full agentic workflow, not an independent toggle.",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    (config_dir / "v9_future.yaml").write_text(
-        "\n".join(
-            [
-                "method: Future Method",
-                "runner: pending",
-                "status: pending",
-                "runner_scope: pending",
-                "independent_ablation: false",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    calls = []
 
-    def fake_naive(question):
-        return {
-            "answer": f"Naive answer with retrieval for {question}",
-            "citations": [{"source": "notes.md"}],
-            "retrieved_documents": [{"source": "notes.md"}],
-            "relevant_documents": [{"source": "notes.md"}],
-        }
+    def runner_factory(variant, base_settings):
+        def run(question, chat_history):
+            calls.append(variant.id)
+            if variant.id == "v1_query_rewrite":
+                raise RuntimeError("synthetic variant error")
+            verification_enabled = variant.features.citation_verification_enabled
+            return {
+                "answer": f"{variant.id} retrieval answer [1].",
+                "citations": [{"source": "notes.md"}],
+                "retrieved_documents": [{"source": "notes.md"}],
+                "relevant_documents": [{"source": "notes.md"}],
+                "claims": [{"claim_id": "c1"}] if verification_enabled else [],
+                "claim_verification_results": (
+                    [{"claim_id": "c1", "verification_label": "supported"}]
+                    if verification_enabled
+                    else []
+                ),
+                "citation_verification_enabled": verification_enabled,
+                "citation_verification_passed": verification_enabled,
+                "is_verified": verification_enabled,
+            }
 
-    def fake_agentic(question):
-        return {
-            "answer": f"Agentic answer with retrieval for {question}",
-            "citations": [{"source": "notes.md"}],
-            "retrieved_documents": [{"source": "notes.md"}],
-            "relevant_documents": [{"source": "notes.md"}],
-            "claims": [{"text": "retrieval helps", "supported": True}],
-            "is_verified": True,
-        }
+        return run
 
     exit_code = main(
         [
             "--questions",
             str(questions_path),
             "--config-dir",
-            str(config_dir),
+            str(CONFIG_DIR),
             "--output-dir",
             str(output_dir),
         ],
-        run_naive_fn=fake_naive,
-        run_agent_fn=fake_agentic,
+        variant_runner_factory=runner_factory,
     )
 
     result_path = output_dir / "ablation_result.json"
     report_path = output_dir / "ablation_report.md"
+    baseline_path = output_dir / "baseline_result.json"
+    agentic_path = output_dir / "agentic_result.json"
+    comparison_path = output_dir / "comparison_result.json"
     payload = json.loads(result_path.read_text(encoding="utf-8"))
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    agentic = json.loads(agentic_path.read_text(encoding="utf-8"))
+    comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
     report = report_path.read_text(encoding="utf-8")
 
     assert exit_code == 0
     assert result_path.exists()
     assert report_path.exists()
-    assert payload["runtime_config"]["retriever"]["hybrid_retrieval_enabled"] is True
-    assert payload["runtime_config"]["reranker"]["top_n"] == 4
+    assert baseline_path.exists()
+    assert agentic_path.exists()
+    assert comparison_path.exists()
     assert "secret-key" not in json.dumps(payload, ensure_ascii=False)
     assert [run["id"] for run in payload["runs"]] == [
-        "v0_naive",
-        "v1_agentic",
-        "v9_future",
+        variant.id for variant in load_ablation_variants(CONFIG_DIR)
     ]
     assert payload["runs"][0]["status"] == "completed"
-    assert payload["runs"][1]["status"] == "completed"
-    assert payload["runs"][2]["status"] == "pending"
-    assert payload["runs"][1]["runner_scope"] == "current_agentic_workflow"
-    assert payload["runs"][1]["independent_ablation"] == "false"
+    assert payload["runs"][1]["status"] == "completed_with_errors"
+    assert payload["runs"][-1]["status"] == "completed"
+    assert len(calls) == 7
+    assert calls.count("v0_naive") == 1
+    assert calls.count("v6_citation_verification") == 1
+    assert baseline["results"] == payload["runs"][0]["results"]
+    assert agentic["results"] == payload["runs"][-1]["results"]
+    assert comparison["summary"]["mode"] == "comparison"
+    assert comparison["results"][0]["question_id"] == "q001"
+    for variant in load_ablation_variants(CONFIG_DIR):
+        assert (output_dir / "variants" / f"{variant.id}.json").exists()
     assert "Naive RAG" in report
-    assert "Agentic RAG" in report
-    assert "Future Method" in report
-    assert "current_agentic_workflow" in report
-    assert "not an independent toggle" in report
+    assert "Claim-level Citation Verification" in report
+
+
+def test_select_questions_preserves_dataset_order_and_rejects_unknown_ids():
+    questions = [
+        {"id": "q001", "question": "one"},
+        {"id": "q002", "question": "two"},
+        {"id": "q003", "question": "three"},
+    ]
+
+    selected = select_questions(questions, "q003,q001")
+
+    assert [question["id"] for question in selected] == ["q001", "q003"]
+    with pytest.raises(ValueError, match="q999"):
+        select_questions(questions, "q999")
+
+
+def test_format_ablation_report_uses_observed_metrics_and_explicit_limitations():
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "summary": {
+                    "correctness_score": 0.5,
+                    "context_relevance_score": 0.5,
+                    "citation_hit_rate": 0.5,
+                    "fallback_accuracy": 0.5,
+                    "unsupported_claim_count": None,
+                    "supported_claim_ratio": None,
+                    "average_retry_count": 0.0,
+                    "average_latency": 1.0,
+                    "error_count": 0,
+                },
+            },
+            {
+                "id": "v6_citation_verification",
+                "method": "+ Claim-level Citation Verification",
+                "status": "completed",
+                "summary": {
+                    "correctness_score": 0.75,
+                    "context_relevance_score": 0.75,
+                    "citation_hit_rate": 0.75,
+                    "fallback_accuracy": 0.75,
+                    "unsupported_claim_count": 1,
+                    "supported_claim_ratio": 0.8,
+                    "average_retry_count": 0.5,
+                    "average_latency": 2.0,
+                    "error_count": 0,
+                },
+            },
+        ]
+    }
+
+    report = format_ablation_report(payload)
+
+    assert "| V0 Naive RAG |" in report
+    assert "| V6 + Claim-level Citation Verification |" in report
+    assert "## Observed Trade-offs" in report
+    assert "correctness" in report.lower()
+    assert "latency" in report.lower()
+    assert "## Limitations" in report
+    assert "N/A" in report
