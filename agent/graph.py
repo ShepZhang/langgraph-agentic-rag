@@ -98,6 +98,10 @@ def run_agent(
         "retrieval_attempt": final_state["retrieval_attempt"],
         "is_relevant": final_state["is_relevant"],
         "grading_reason": final_state["grading_reason"],
+        "document_grades": final_state["document_grades"],
+        "relevant_document_count": final_state["relevant_document_count"],
+        "partial_document_count": final_state["partial_document_count"],
+        "max_relevance_confidence": final_state["max_relevance_confidence"],
         "fallback_reason": final_state["fallback_reason"],
         "route": final_state["route"],
     }
