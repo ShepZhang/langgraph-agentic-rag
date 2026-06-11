@@ -9,6 +9,7 @@ from typing import Any
 
 from langchain_core.messages import BaseMessage
 
+from agent.features import AgentFeatureFlags
 from agent.multi_query import build_retrieval_queries, merge_retrieved_documents
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
@@ -46,8 +47,14 @@ logger = logging.getLogger(__name__)
 class AgentNodes:
     """State transition nodes for the Agentic RAG graph."""
 
-    def __init__(self, llm: Any, retriever_fn: Any | None = None) -> None:
+    def __init__(
+        self,
+        llm: Any,
+        retriever_fn: Any | None = None,
+        features: AgentFeatureFlags | None = None,
+    ) -> None:
         self.llm = llm
+        self.features = features or AgentFeatureFlags()
         self.retriever_tool = create_retriever_tool(retriever_fn)
 
     def rewrite_query_node(self, state: AgentState) -> dict[str, Any]:
@@ -154,6 +161,27 @@ class AgentNodes:
             "multi_query_used": multi_query_used,
             "multi_query_result_count": len(documents),
             "retrieval_attempt": retrieval_attempt,
+        }
+
+    def accept_retrieved_documents_node(self, state: AgentState) -> dict[str, Any]:
+        """Use retrieved documents directly when retrieval grading is disabled."""
+
+        documents = state.get("documents", [])
+        if not documents:
+            return _fallback_update(
+                "No documents retrieved while retrieval grading was disabled."
+            )
+
+        return {
+            "is_relevant": True,
+            "relevant_documents": documents,
+            "document_grades": [],
+            "relevant_document_count": len(documents),
+            "partial_document_count": 0,
+            "max_relevance_confidence": 0.0,
+            "partial_relevance_recovery": _inactive_partial_relevance_recovery(),
+            "grading_reason": "Retrieval grading disabled.",
+            "route": "generate_answer",
         }
 
     def grade_documents_node(self, state: AgentState) -> dict[str, Any]:
@@ -290,6 +318,29 @@ class AgentNodes:
             len(citations),
             parsed_answer["used_citation_indices"],
         )
+        if not self.features.citation_verification_enabled:
+            reason = "Citation verification disabled by workflow configuration."
+            return {
+                "answer": "",
+                "draft_answer": answer,
+                "citations": citations,
+                "used_citation_indices": parsed_answer["used_citation_indices"],
+                "cited_documents": cited_documents,
+                "claims": [],
+                "claim_verification": {
+                    "verified": False,
+                    "results": [],
+                    "reason": reason,
+                    "unsupported_claims": [],
+                },
+                "claim_verification_results": [],
+                "unsupported_claims": [],
+                "claim_verification_reason": reason,
+                "citation_verification_passed": False,
+                "citation_verification_skipped": True,
+                "is_verified": False,
+                "route": "finalize_answer",
+            }
 
         return {
             "answer": "",

@@ -21,6 +21,26 @@ class FakeMessage:
         self.content = content
 
 
+def test_accept_retrieved_documents_node_prepares_generation_context():
+    nodes = AgentNodes(llm=FakeLLM([]), retriever_fn=lambda query: [])
+    state = create_initial_state("What is RAG?")
+    state["documents"] = [
+        {
+            "content": "RAG retrieves evidence.",
+            "source": "notes.md",
+            "chunk_id": "c1",
+        }
+    ]
+
+    update = nodes.accept_retrieved_documents_node(state)
+
+    assert update["relevant_documents"] == state["documents"]
+    assert update["relevant_document_count"] == 1
+    assert update["is_relevant"] is True
+    assert update["grading_reason"] == "Retrieval grading disabled."
+    assert update["route"] == "generate_answer"
+
+
 def test_initial_rewrite_normalizes_query_without_incrementing_retry_count():
     llm = FakeLLM(["What is Agentic RAG?"])
     nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])

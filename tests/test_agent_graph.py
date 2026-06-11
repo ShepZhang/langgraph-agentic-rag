@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import pytest
 
+from agent.features import AgentFeatureFlags
 from config import get_settings
 
 
@@ -17,6 +18,81 @@ class FakeLLM:
     def invoke(self, prompt):
         self.prompts.append(prompt)
         return self.responses.pop(0)
+
+
+def test_run_agent_skips_query_transformation_and_grading_when_disabled():
+    from agent.graph import run_agent
+
+    flags = AgentFeatureFlags(
+        query_transformation_enabled=False,
+        retrieval_grading_enabled=False,
+        conditional_retry_enabled=False,
+        citation_verification_enabled=False,
+    )
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "RAG retrieves evidence [1].", '
+                '"used_citation_indices": [1]}'
+            )
+        ]
+    )
+    queries = []
+
+    def fake_retriever(query):
+        queries.append(query)
+        return [
+            {
+                "content": "RAG retrieves evidence.",
+                "source": "notes.md",
+                "chunk_id": "c1",
+            }
+        ]
+
+    result = run_agent(
+        "What is RAG?",
+        llm=llm,
+        retriever_fn=fake_retriever,
+        settings=get_settings(),
+        features=flags,
+    )
+
+    assert queries == ["What is RAG?"]
+    assert len(llm.prompts) == 1
+    assert result["answer"] == "RAG retrieves evidence [1]."
+    assert result["query_transform"] == {}
+    assert result["document_grades"] == []
+    assert result["citation_verification_enabled"] is False
+    assert result["feature_flags"] == flags.to_dict()
+
+
+def test_run_agent_grades_but_does_not_retry_when_retry_feature_is_disabled():
+    from agent.graph import run_agent
+
+    flags = AgentFeatureFlags(
+        conditional_retry_enabled=False,
+        citation_verification_enabled=False,
+    )
+    llm = FakeLLM(
+        [
+            "standalone query",
+            '{"relevant": false, "relevant_indices": [], "reason": "no evidence"}',
+        ]
+    )
+
+    result = run_agent(
+        "Question?",
+        llm=llm,
+        retriever_fn=lambda query: [
+            {"content": "Unrelated", "source": "x.md", "chunk_id": "x1"}
+        ],
+        settings=get_settings(),
+        features=flags,
+    )
+
+    assert result["retry_count"] == 0
+    assert result["fallback_reason"]
+    assert len(llm.prompts) == 2
 
 
 def test_run_agent_generates_answer_when_retrieval_is_relevant():
