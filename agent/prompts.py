@@ -106,6 +106,90 @@ Retrieved chunks:
 JSON:"""
 
 
+CLAIM_EXTRACTION_PROMPT = """You extract atomic factual claims from a draft answer.
+
+Return JSON only in this shape:
+{{"claims": [{{"claim_id": "c001", "claim": "short factual claim", "cited_chunk_ids": ["chunk_id"]}}], "reason": "short reason"}}
+
+Rules:
+- Extract only factual claims that need citation support.
+- Do not create claims for connective text, hedging, or citation markers by themselves.
+- claim_id values must be stable IDs like c001, c002, c003.
+- cited_chunk_ids must come only from the selected citation chunks below.
+- If the answer contains no factual claims, return an empty claims list.
+- Return JSON only. No markdown fences.
+
+Original user question:
+{question}
+
+Draft answer:
+{answer}
+
+Selected citation chunks:
+{documents}
+
+JSON:"""
+
+
+CITATION_VERIFICATION_PROMPT = """You verify each extracted claim against its cited chunks.
+
+Return JSON only in this shape:
+{{"results": [{{"claim_id": "c001", "claim": "short factual claim", "cited_chunk_ids": ["chunk_id"], "verification_label": "supported", "confidence": 0.91, "reason": "short reason"}}], "reason": "short overall reason"}}
+
+Rules:
+- verification_label must be exactly one of: supported, partially_supported, unsupported.
+- Use supported only when the cited chunks directly support the claim.
+- Use partially_supported when the cited chunks support part of the claim but the claim is too broad or too strong.
+- Use unsupported when the cited chunks do not support the claim.
+- Do not give credit for vague keyword overlap.
+- confidence must be a number between 0 and 1.
+- Return JSON only. No markdown fences.
+
+Original user question:
+{question}
+
+Draft answer:
+{answer}
+
+Extracted claims:
+{claims}
+
+Selected citation chunks:
+{documents}
+
+JSON:"""
+
+
+ANSWER_REVISION_PROMPT = """You revise an answer after claim-level citation verification found unsupported content.
+
+Return JSON only in this shape:
+{{"answer": "Revised answer with citation markers like [1].", "used_citation_indices": [1]}}
+
+Rules:
+- Remove unsupported claims.
+- Narrow partially supported claims to exactly what the cited chunks support.
+- Preserve valid citation markers like [1] that refer to selected citation chunks.
+- Do not introduce new facts or new citations.
+- If no supported answer remains, say you cannot answer from the current documents and return an empty used_citation_indices list.
+- used_citation_indices must contain only the 1-based chunk numbers actually used as evidence.
+- The citation markers in answer must exactly match used_citation_indices.
+- Return JSON only. No markdown fences.
+
+Original user question:
+{question}
+
+Current draft answer:
+{answer}
+
+Unsupported or partially supported claims:
+{unsupported_claims}
+
+Selected citation chunks:
+{documents}
+
+JSON:"""
+
+
 CLAIM_VERIFICATION_PROMPT = """You are a claim-level citation verifier for private document QA.
 
 Verify whether the answer is fully supported by the selected citation chunks.

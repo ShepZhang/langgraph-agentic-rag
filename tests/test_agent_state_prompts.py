@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
+    ANSWER_REVISION_PROMPT,
     CLAIM_VERIFICATION_PROMPT,
+    CITATION_VERIFICATION_PROMPT,
+    CLAIM_EXTRACTION_PROMPT,
     QUERY_REWRITE_PROMPT,
     RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
@@ -46,9 +49,18 @@ def test_create_initial_state_sets_defaults():
     assert state["grading_reason"] == ""
     assert state["answer"] == ""
     assert state["citations"] == []
+    assert state["draft_answer"] == ""
+    assert state["used_citation_indices"] == []
+    assert state["cited_documents"] == []
     assert state["claims"] == []
     assert state["claim_verification"] == {}
+    assert state["claim_verification_results"] == []
+    assert state["unsupported_claims"] == []
     assert state["claim_verification_reason"] == ""
+    assert state["citation_verification_passed"] is False
+    assert state["citation_revision_count"] == 0
+    assert state["max_citation_revision_count"] == 1
+    assert state["citation_verification_skipped"] is False
     assert state["is_verified"] is False
     assert state["rewrite_count"] == 0
     assert state["retry_count"] == 0
@@ -117,6 +129,12 @@ def test_prompts_contain_required_guardrails():
     assert "citation markers in answer must exactly match" in ANSWER_GENERATION_PROMPT
     assert "weak retrieval evidence" in ANSWER_GENERATION_PROMPT
     assert "citation safety fallback" in ANSWER_GENERATION_PROMPT
+    assert "claim_id" in CLAIM_EXTRACTION_PROMPT
+    assert "cited_chunk_ids" in CLAIM_EXTRACTION_PROMPT
+    assert "verification_label" in CITATION_VERIFICATION_PROMPT
+    assert "partially_supported" in CITATION_VERIFICATION_PROMPT
+    assert "unsupported" in ANSWER_REVISION_PROMPT.lower()
+    assert "used_citation_indices" in ANSWER_REVISION_PROMPT
     assert "Original user question" in RETRIEVAL_GRADING_PROMPT
     assert "Retrieval query" in RETRIEVAL_GRADING_PROMPT
     assert "original user question" in RETRIEVAL_GRADING_PROMPT

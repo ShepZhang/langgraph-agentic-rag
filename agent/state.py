@@ -91,9 +91,18 @@ class AgentState(TypedDict):
     grading_reason: str
     answer: str
     citations: list[Citation]
+    draft_answer: str
+    used_citation_indices: list[int]
+    cited_documents: list[RetrievedDocument]
     claims: list[dict[str, object]]
     claim_verification: ClaimVerification
+    claim_verification_results: list[dict[str, object]]
+    unsupported_claims: list[dict[str, object]]
     claim_verification_reason: str
+    citation_verification_passed: bool
+    citation_revision_count: int
+    max_citation_revision_count: int
+    citation_verification_skipped: bool
     is_verified: bool
     rewrite_count: int
     retry_count: int
@@ -141,9 +150,18 @@ def create_initial_state(
         "grading_reason": "",
         "answer": "",
         "citations": [],
+        "draft_answer": "",
+        "used_citation_indices": [],
+        "cited_documents": [],
         "claims": [],
         "claim_verification": {},
+        "claim_verification_results": [],
+        "unsupported_claims": [],
         "claim_verification_reason": "",
+        "citation_verification_passed": False,
+        "citation_revision_count": 0,
+        "max_citation_revision_count": 1,
+        "citation_verification_skipped": False,
         "is_verified": False,
         "rewrite_count": 0,
         "retry_count": 0,
