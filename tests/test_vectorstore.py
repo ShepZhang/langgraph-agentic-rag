@@ -260,3 +260,21 @@ def test_add_documents_skips_existing_deterministic_ids(tmp_path, monkeypatch):
     assert result == [build_document_id(new_doc)]
     assert manager.store.documents == [new_doc]
     assert manager.store.added_ids == [build_document_id(new_doc)]
+
+
+def test_delete_documents_deletes_vector_ids_from_loaded_store(tmp_path):
+    class DeletableStore:
+        def __init__(self):
+            self.deleted_ids = []
+
+        def delete(self, ids=None):
+            self.deleted_ids.extend(ids or [])
+
+    settings = replace(get_settings(), chroma_persist_dir=tmp_path / "chroma")
+    manager = VectorStoreManager(settings=settings, embedding_model=object())
+    manager.store = DeletableStore()
+
+    deleted_count = manager.delete_documents(["id-1", "id-2"])
+
+    assert deleted_count == 2
+    assert manager.store.deleted_ids == ["id-1", "id-2"]

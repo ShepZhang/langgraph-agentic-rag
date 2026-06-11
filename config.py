@@ -47,6 +47,11 @@ class Settings:
     chroma_collection_name: str
     gradio_server_name: str
     gradio_server_port: int
+    trace_logging_enabled: bool
+    trace_log_dir: Path
+    api_upload_dir: Path
+    api_document_registry_path: Path
+    evaluation_run_dir: Path
 
     def __post_init__(self) -> None:
         """Validate settings early so runtime failures are explicit."""
@@ -91,6 +96,14 @@ class Settings:
             raise ValueError("CHROMA_PERSIST_DIR must not be empty")
         if not self.chroma_collection_name:
             raise ValueError("CHROMA_COLLECTION_NAME must not be empty")
+        if not str(self.trace_log_dir).strip():
+            raise ValueError("TRACE_LOG_DIR must not be empty")
+        if not str(self.api_upload_dir).strip():
+            raise ValueError("API_UPLOAD_DIR must not be empty")
+        if not str(self.api_document_registry_path).strip():
+            raise ValueError("API_DOCUMENT_REGISTRY_PATH must not be empty")
+        if not str(self.evaluation_run_dir).strip():
+            raise ValueError("EVALUATION_RUN_DIR must not be empty")
 
     @property
     def max_rewrite_attempts(self) -> int:
@@ -247,4 +260,16 @@ def get_settings() -> Settings:
         ).strip(),
         gradio_server_name=os.getenv("GRADIO_SERVER_NAME", "127.0.0.1").strip(),
         gradio_server_port=_get_int("GRADIO_SERVER_PORT", 7860),
+        trace_logging_enabled=_get_bool("TRACE_LOGGING_ENABLED", False),
+        trace_log_dir=Path(os.getenv("TRACE_LOG_DIR", "./data/traces")),
+        api_upload_dir=Path(os.getenv("API_UPLOAD_DIR", "./uploads/api")),
+        api_document_registry_path=Path(
+            os.getenv(
+                "API_DOCUMENT_REGISTRY_PATH",
+                "./data/api_documents/registry.json",
+            )
+        ),
+        evaluation_run_dir=Path(
+            os.getenv("EVALUATION_RUN_DIR", "./data/evaluation_runs")
+        ),
     )

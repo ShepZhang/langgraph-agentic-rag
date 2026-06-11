@@ -52,10 +52,14 @@ class AgentNodes:
         llm: Any,
         retriever_fn: Any | None = None,
         features: AgentFeatureFlags | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         self.llm = llm
         self.features = features or AgentFeatureFlags()
-        self.retriever_tool = create_retriever_tool(retriever_fn)
+        self.retriever_tool = create_retriever_tool(
+            retriever_fn,
+            workspace_id=workspace_id,
+        )
 
     def rewrite_query_node(self, state: AgentState) -> dict[str, Any]:
         """Normalize the first query or rewrite after failed retrieval."""

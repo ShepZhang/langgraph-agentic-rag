@@ -8,4 +8,4 @@
 
 4. 实现 claim-level citation verification：对 draft answer 抽取原子 claims，逐条验证 claim 是否被 cited chunks 支持；对 unsupported 或 partially supported claims 触发一次 answer revision，修订后仍失败则 fallback，降低 unsupported answer 和 wrong citation 风险。
 
-5. 新增 ablation-study 框架，用可复现 JSON artifacts 和 Markdown report 跟踪 query transformation、structured retrieval grading、partial-relevance recovery、reranking、citation verification 和 fallback 等模块贡献；evaluation artifacts 记录脱敏 runtime config，便于复现实验配置和对比 latency/cost trade-off。
+5. 新增可执行的 V0-V6 cumulative ablation-study 框架、本地 JSONL trace logging、FastAPI 服务层和 workspace-aware retrieval isolation，用可复现 JSON artifacts、Markdown report、节点级运行轨迹和 HTTP API 跟踪 query transformation、structured retrieval grading、conditional retry/fallback、hybrid retrieval、reranking 和 citation verification 的增量贡献；evaluation artifacts 记录脱敏 runtime config，便于复现实验配置和对比 latency/cost trade-off。

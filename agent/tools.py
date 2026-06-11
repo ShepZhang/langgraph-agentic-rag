@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 
 from langchain_core.tools import StructuredTool
@@ -10,18 +9,21 @@ from langchain_core.tools import StructuredTool
 from rag.retriever import retrieve
 
 
-RetrieverFn = Callable[[str], list[dict[str, Any]]]
+RetrieverFn = Any
 
 
-def create_retriever_tool(retriever_fn: RetrieverFn | None = None) -> StructuredTool:
+def create_retriever_tool(
+    retriever_fn: RetrieverFn | None = None,
+    workspace_id: str | None = None,
+) -> StructuredTool:
     """Create a retriever tool for Agent use."""
-
-    resolved_retriever = retriever_fn or retrieve
 
     def _retrieve_context(query: str) -> list[dict[str, Any]]:
         """Retrieve relevant document chunks from the indexed private knowledge base."""
 
-        return resolved_retriever(query)
+        if retriever_fn is not None:
+            return retriever_fn(query)
+        return retrieve(query, workspace_id=workspace_id)
 
     return StructuredTool.from_function(
         func=_retrieve_context,

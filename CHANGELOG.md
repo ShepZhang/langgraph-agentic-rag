@@ -1,5 +1,79 @@
 # Changelog
 
+## v0.3.2-p3c - Workspace-aware Retrieval Isolation
+
+Date: 2026-06-11
+
+### Added
+
+- Added workspace-aware dense retrieval through Chroma metadata filters.
+- Added workspace-filtered BM25 corpus loading for hybrid retrieval.
+- Added `workspace_id` propagation through hybrid retrieval, project-level
+  retriever normalization, Agent retriever tools, and `run_agent()`.
+- Retriever outputs now preserve `workspace_id` and `document_id` metadata when
+  present.
+- Added workspace isolation tests covering dense, sparse, hybrid, retriever, and
+  Agent default retrieval paths.
+
+### Notes
+
+- P3c uses one shared Chroma collection with metadata filters. Per-workspace
+  collections and tenant authorization remain future hardening work.
+
+## v0.3.1-p3b - FastAPI Service Layer
+
+Date: 2026-06-11
+
+### Added
+
+- Added modular `api` package with FastAPI app factory, schemas,
+  dependencies, route modules, and service modules.
+- Added `POST /chat` and `GET /chat/{session_id}/trace`.
+- Added API-managed document upload, indexing, listing, and deletion routes.
+- Added synchronous evaluation run and retrieval routes.
+- Added explicit FastAPI runtime dependencies to `requirements.txt`.
+- Added FastAPI route tests using dependency overrides.
+
+### Notes
+
+- P3b is an integration-oriented backend layer, not a production API. Auth,
+  async jobs, durable task state, and tenant authorization remain future work.
+
+## v0.3.0-p3a - Local Trace Logging
+
+Date: 2026-06-11
+
+### Added
+
+- Added `observability` package with trace record construction and JSONL trace
+  storage.
+- Added configurable trace logging through `TRACE_LOGGING_ENABLED` and
+  `TRACE_LOG_DIR`.
+- Instrumented LangGraph nodes and conditional edges through graph wrappers so
+  trace logging stays outside Agent node business logic.
+- `run_agent()` now returns `trace_id`, `trace_path`, and `latency_ms` when trace
+  logging is enabled.
+- Added trace tests covering JSONL persistence and Agent workflow trace output.
+
+### Notes
+
+- P3a stores local JSONL traces only. API trace lookup and a visual trace
+  dashboard remain future milestones.
+
+## v0.2.1-p0c - Documentation Consistency Pass
+
+Date: 2026-06-11
+
+### Changed
+
+- Updated README positioning so P0b ablation is described as completed real
+  V0-V6 evaluation rather than proxy or pending scaffolding.
+- Split the roadmap into completed work and next milestones.
+- Kept the Approach B evaluator upgrade and interactive Evaluation Dashboard as
+  explicit future tasks.
+- Updated resume bullets to describe the executable cumulative ablation
+  framework.
+
 ## v0.2.0-p0b - Reliability-oriented Agentic RAG Upgrade
 
 Date: 2026-06-11

@@ -19,6 +19,8 @@ class RetrievedChunk(TypedDict, total=False):
     source: str | None
     page: int | None
     chunk_id: str | None
+    document_id: str | None
+    workspace_id: str | None
     score: float | None
     rerank_score: float | None
 
@@ -49,7 +51,12 @@ class Retriever:
         else:
             self.reranker = None
 
-    def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
+    def retrieve(
+        self,
+        query: str,
+        top_k: int | None = None,
+        workspace_id: str | None = None,
+    ) -> list[RetrievedChunk]:
         """Retrieve and normalize relevant chunks."""
 
         if top_k is not None:
@@ -65,12 +72,29 @@ class Retriever:
         if self.hybrid_retriever:
             if self.reranker:
                 candidate_top_k = max(candidate_top_k, self.settings.fusion_top_k)
-            results = self.hybrid_retriever.retrieve(query, top_k=candidate_top_k)
+            if workspace_id:
+                results = self.hybrid_retriever.retrieve(
+                    query,
+                    top_k=candidate_top_k,
+                    workspace_id=workspace_id,
+                )
+            else:
+                results = self.hybrid_retriever.retrieve(
+                    query,
+                    top_k=candidate_top_k,
+                )
         else:
-            results = self.vectorstore_manager.similarity_search(
-                query,
-                top_k=candidate_top_k,
-            )
+            if workspace_id:
+                results = self.vectorstore_manager.similarity_search(
+                    query,
+                    top_k=candidate_top_k,
+                    workspace_id=workspace_id,
+                )
+            else:
+                results = self.vectorstore_manager.similarity_search(
+                    query,
+                    top_k=candidate_top_k,
+                )
         if not self.reranker:
             return [_normalize_result(document, score) for document, score in results]
 
@@ -81,10 +105,14 @@ class Retriever:
         ]
 
 
-def retrieve(query: str, top_k: int | None = None) -> list[RetrievedChunk]:
+def retrieve(
+    query: str,
+    top_k: int | None = None,
+    workspace_id: str | None = None,
+) -> list[RetrievedChunk]:
     """Retrieve chunks using the default vector store manager."""
 
-    return Retriever().retrieve(query, top_k=top_k)
+    return Retriever().retrieve(query, top_k=top_k, workspace_id=workspace_id)
 
 
 def _normalize_result(
@@ -100,6 +128,10 @@ def _normalize_result(
         "chunk_id": metadata.get("chunk_id"),
         "score": score,
     }
+    if metadata.get("document_id") is not None:
+        chunk["document_id"] = metadata.get("document_id")
+    if metadata.get("workspace_id") is not None:
+        chunk["workspace_id"] = metadata.get("workspace_id")
     if rerank_score is not None:
         chunk["rerank_score"] = rerank_score
     return chunk

@@ -2,7 +2,7 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, answer revision, evaluation artifacts, and ablation scaffolding to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, answer revision, baseline comparison, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
 
 The project is production-oriented as an architecture and evaluation exercise, but it is not described as production-ready. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
@@ -134,6 +134,9 @@ Key state fields:
 - Reliability evaluation runner comparing naive RAG and Agentic RAG on shared documents and a shared structured question set.
 - JSON evaluation artifacts for baseline, agentic, comparison, and ablation runs.
 - Real cumulative V0-V6 ablation using independent graph feature flags and per-variant retrieval settings.
+- Local JSONL trace logging for Agent node events, route decisions, final answers, citations, latency, retry counts, and errors.
+- FastAPI service layer for chat, trace lookup, document upload/index/delete, and evaluation run retrieval.
+- Workspace-aware retrieval isolation using Chroma metadata filters for dense retrieval and workspace-filtered BM25 corpora.
 
 ## Tech Stack
 
@@ -145,6 +148,8 @@ Key state fields:
 - OpenAI-compatible chat LLM
 - Ollama local LLM via OpenAI-compatible endpoint
 - Gradio
+- FastAPI
+- Uvicorn
 - python-dotenv
 - pytest
 
@@ -209,6 +214,14 @@ source .venv/bin/activate
 python app.py
 ```
 
+Start the FastAPI backend:
+
+```bash
+.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000
+```
+
+Open the interactive API docs at `http://127.0.0.1:8000/docs`.
+
 ## Usage
 
 1. Open the Gradio URL printed by `app.py`.
@@ -251,6 +264,87 @@ FUSION_TOP_K=20
 Dense retrieval is useful for semantic similarity. BM25 improves recall for exact terms such as filenames, abbreviations, identifiers, and domain-specific keywords. RRF deduplicates overlapping chunks by `chunk_id` and combines rank signals without requiring dense and sparse scores to be on the same scale.
 
 The current BM25 implementation is dependency-free and intentionally lightweight. It uses token-level exact matching without stemming or learned sparse expansion.
+
+## Trace Logging
+
+P3a adds local trace logging for Agentic RAG runs. Enable it with:
+
+```bash
+TRACE_LOGGING_ENABLED=true
+TRACE_LOG_DIR=./data/traces
+```
+
+When enabled, `run_agent()` returns `trace_id`, `trace_path`, and `latency_ms`.
+Each trace record is appended to `traces.jsonl` and includes node events,
+conditional route decisions, retrieved and relevant document summaries,
+document grades, final answer, citations, claim verification results, retry
+count, latency, and error metadata.
+
+Trace records intentionally store compact document snippets and metadata rather
+than full document bodies or local source paths. Database-backed trace retention
+and a Gradio trace dashboard remain later milestones.
+
+## FastAPI Backend
+
+P3b adds a synchronous FastAPI service layer for integration-oriented use:
+
+```text
+POST /documents/upload
+POST /documents/index
+GET  /documents
+DELETE /documents/{document_id}
+POST /chat
+GET  /chat/{session_id}/trace
+POST /evaluation/run
+GET  /evaluation/{run_id}
+```
+
+Example chat request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workspace_id": "default",
+    "session_id": "demo-session",
+    "question": "How does retrieval grading improve RAG reliability?"
+  }'
+```
+
+Example chat response:
+
+```json
+{
+  "answer": "...",
+  "citations": [],
+  "trace_id": "trace_...",
+  "retry_count": 0,
+  "latency_ms": 2812.4,
+  "fallback_triggered": false
+}
+```
+
+The API layer reuses the same local vector store and Agent workflow as the
+Gradio demo. Document deletion is scoped to documents registered through the
+API registry; it does not retroactively manage documents indexed through manual
+CLI or Gradio rebuilds.
+
+## Workspace Isolation
+
+P3c makes `workspace_id` a real retrieval boundary for API and programmatic
+Agent calls. Documents indexed through the FastAPI document service receive
+`workspace_id` and `document_id` metadata. When `run_agent()` receives a
+`workspace_id`, the default retriever applies the same metadata filter to:
+
+- dense Chroma retrieval
+- BM25 sparse corpus loading
+- hybrid dense + BM25 retrieval
+- reranker candidate pools after retrieval
+
+The Gradio demo and evaluation runner do not pass a workspace id by default, so
+they preserve the previous global knowledge-base behavior. This milestone uses
+one Chroma collection with metadata filters; per-workspace collections and
+authorization checks remain future hardening work.
 
 ## Tests
 
@@ -374,7 +468,9 @@ Example answer payload:
   "current_query": "What is Agentic RAG?",
   "retry_count": 0,
   "retrieval_attempt": 1,
-  "is_relevant": true
+  "is_relevant": true,
+  "trace_id": "trace_...",
+  "latency_ms": 2812.4
 }
 ```
 
@@ -421,6 +517,11 @@ Comparison Summary
 - `CHROMA_COLLECTION_NAME`: Chroma collection name.
 - `GRADIO_SERVER_NAME`: Gradio host.
 - `GRADIO_SERVER_PORT`: Gradio port.
+- `TRACE_LOGGING_ENABLED`: Enable local JSONL trace logging. Default is `false` when unset.
+- `TRACE_LOG_DIR`: Directory for local trace JSONL files. Default is `./data/traces`.
+- `API_UPLOAD_DIR`: Directory for FastAPI-uploaded files. Default is `./uploads/api`.
+- `API_DOCUMENT_REGISTRY_PATH`: JSON registry for API-managed documents. Default is `./data/api_documents/registry.json`.
+- `EVALUATION_RUN_DIR`: Directory for FastAPI-triggered evaluation run artifacts. Default is `./data/evaluation_runs`.
 
 ## Project Structure
 
@@ -451,6 +552,12 @@ agentic-rag-document-qa/
 │   ├── query_transform.py
 │   ├── tools.py
 │   └── prompts.py
+├── api/
+│   ├── main.py
+│   ├── schemas.py
+│   ├── dependencies.py
+│   ├── routes/
+│   └── services/
 ├── baseline/
 │   ├── naive_rag.py
 │   └── run_baseline.py
@@ -463,6 +570,10 @@ agentic-rag-document-qa/
 │   ├── run_ablation.py
 │   ├── configs/
 │   └── report.md
+├── observability/
+│   ├── trace.py
+│   ├── storage.py
+│   └── logger.py
 ├── docs/
 │   ├── design.md
 │   └── resume_bullets.md
@@ -487,8 +598,11 @@ agentic-rag-document-qa/
 - Added a standalone naive RAG baseline and comparison runner so Agentic RAG can be evaluated against retrieve-once RAG on the same documents and same questions.
 - Designed a reliability evaluation foundation covering correctness, context relevance, source hit rate, citation hit rate, fallback accuracy, unsupported claims, retry count, latency, token usage, and cost fields.
 - Expanded the default evaluation dataset to 36 structured questions across single-doc, multi-chunk, ambiguous, unanswerable, distractor, comparison, follow-up, citation-sensitive, cross-file, and false-premise cases.
-- Added ablation-study scaffolding with explicit proxy/pending labels, preventing current full-workflow runs from being misrepresented as independently toggled module results.
-- Preserved a modular roadmap toward real reranker ablation, dynamic retrieval adjustment, trace logging, FastAPI service APIs, workspace isolation, and an interactive evaluation dashboard.
+- Added executable V0-V6 cumulative ablation artifacts with distinct Agent feature flags or retrieval settings, preventing repeated full-workflow runs from being misrepresented as module-level evidence.
+- Added local JSONL trace logging so each Agent run can expose node events, route decisions, compact evidence summaries, final answer metadata, latency, and errors.
+- Added a FastAPI backend for chat, trace lookup, document upload/index/delete, and evaluation run retrieval.
+- Added workspace-aware retrieval isolation for dense, BM25, hybrid, retriever, and Agent default retrieval paths.
+- Preserved a modular roadmap toward the Approach B typed evaluator, dynamic retrieval adjustment, per-workspace collection hardening, tool registry, prompt versioning, failed-case analysis, and an interactive evaluation dashboard.
 
 ## Current Limitations
 
@@ -497,19 +611,25 @@ agentic-rag-document-qa/
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
 - `partially_relevant` grading triggers query-refinement recovery and still refuses to answer without directly relevant evidence; it does not yet dynamically increase top-k or rerun reranking with adjusted thresholds.
 - Query transformation executes `expanded_queries` for `multi_query` strategy, but decomposition `sub_questions` are still recorded as metadata rather than executed as separate retrieval hops.
-- Hybrid BM25 retrieval is lightweight exact-token matching. It does not currently include stemming, learned sparse expansion, or per-workspace corpus filtering.
+- Hybrid BM25 retrieval is lightweight exact-token matching. It supports workspace-filtered corpora, but it does not currently include stemming or learned sparse expansion.
 - Evaluation uses a local 36-question reliability dataset. It is useful for reproducible project-level comparison, but it is not a benchmark-grade public dataset.
-- P0a ablation configs are framework-ready. Some current rows are proxy runs over the full Agentic RAG workflow because independent module toggles will be added later.
+- P0b ablation variants are executable and distinct, but they are cumulative. They show incremental system trade-offs, not fully isolated causal effects for every module interaction.
+- Trace logging currently writes local JSONL records. It does not yet provide database-backed retention, API lookup endpoints, or a visual trace explorer.
+- FastAPI endpoints are integration-oriented but not production-ready. They do not yet include authentication, authorization, async job queues, rate limiting, or tenant-level access control.
+- Workspace isolation currently uses metadata filtering inside a shared Chroma collection. It does not yet create separate collections per workspace or migrate historical unscoped chunks.
 - Token usage and estimated cost are recorded only when the active model client exposes usage metadata.
 - The Gradio `Build Index` workflow intentionally rebuilds the active collection for a clean uploaded knowledge base. The lower-level vectorstore API also supports incremental `add_documents` with deterministic IDs.
-- The project is not production-ready without authentication, authorization, deployment hardening, persistent trace storage, and operational monitoring.
+- The project is not production-ready without authentication, authorization, deployment hardening, durable trace storage, and operational monitoring.
 
 ## Roadmap
+
+### Completed Work
 
 - RAG core implemented: loading, chunking, embeddings, Chroma indexing, and retrieval.
 - LangGraph agent workflow implemented: query transformation, retriever tool, retrieval grading, retry routing, answer generation, and fallback.
 - Gradio upload and QA flow implemented: document indexing, Agentic QA, citations, retrieved chunks, and retry diagnostics.
 - P0a evaluation infrastructure implemented: naive baseline, richer schema, 36-question dataset, reliability metrics, JSON artifacts, and ablation scaffolding.
+- P0b real V0-V6 ablation matrix implemented and run with observed DeepSeek metrics and documented trade-offs.
 - P2 claim-level citation verification implemented: draft answers are split into claims, verified against cited chunks, revised once when unsupported, and otherwise routed to fallback.
 - Deterministic citation marker consistency implemented: answer markers must match selected citation indices.
 - Deterministic vectorstore IDs implemented: chunk identity is derived from source metadata and content for incremental add de-duplication.
@@ -521,15 +641,19 @@ agentic-rag-document-qa/
 - P1e structured retrieval grading implemented: chunk-level relevance labels, confidence scores, reasons, and result payload diagnostics.
 - P1f partial-relevance recovery implemented: related-but-insufficient chunks trigger query-refinement retry context while preserving fallback safety.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
-- P0b: run the completed real V0-V6 ablation matrix and publish observed DeepSeek metrics and trade-offs.
-- Upgrade the lightweight evaluator to Approach B: a modular, strongly typed evaluation package with pluggable runners, metrics, storage, and optional judges.
-- Upgrade evaluation to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records and prompt/model config snapshots.
-- Add independently toggleable reranker and citation-verification ablations.
+- P3a local trace logging implemented: node events, route decisions, final answers, citations, compact evidence summaries, latency, retry counts, and errors can be saved to JSONL.
+- P3b FastAPI service layer implemented: chat, trace lookup, API-managed document upload/index/delete, and evaluation run retrieval.
+- P3c workspace-aware retrieval implemented: API-indexed documents carry workspace metadata, and Agent retrieval can filter dense, BM25, and hybrid candidates by workspace.
+
+### Next Milestones
+
+- Upgrade the current Approach A evaluator to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records, pluggable runners, optional judges, storage backends, and prompt/model config snapshots.
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
 - Add decomposition sub-question retrieval for multi-hop workflows.
-- Add FastAPI API layer.
-- Add trace logging for node state changes, route decisions, final answers, citations, latency, token usage, and errors.
-- Add workspace and multi-knowledge-base isolation using workspace IDs and collection or metadata filtering.
+- Harden workspace isolation with optional per-workspace Chroma collections and authorization checks.
+- Add a tool registry for retriever, citation verifier, document summary, and calculator tools without claiming autonomous tool planning.
+- Add failed-case analysis for retrieval, reranking, query rewrite, generation, citation, fallback, and tool failures.
+- Add prompt versioning under `prompts/` and record prompt versions in evaluation artifacts.
 - Add an interactive Evaluation Dashboard in Gradio for running evaluations, comparing baseline vs agentic results, inspecting failed cases, and later linking rows to trace IDs.
 - Add model-specific prompt tuning and cost/latency evaluation for local and remote models.
 - Add human-reviewed claim labels for stricter citation validation.

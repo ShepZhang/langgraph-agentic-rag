@@ -11,4 +11,7 @@ pypdf>=5.1.0
 python-dotenv>=1.0.1
 pydantic>=2.10.4
 gradio>=5.9.1
+fastapi>=0.115.0
+uvicorn>=0.32.0
+python-multipart>=0.0.12
 pytest>=8.3.4

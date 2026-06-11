@@ -101,10 +101,22 @@ class VectorStoreManager:
         )
         return store.add_documents(docs_to_add, ids=ids_to_add)
 
+    def delete_documents(self, ids: list[str]) -> int:
+        """Delete documents by deterministic vector-store IDs."""
+
+        if not ids:
+            return 0
+        store = self.load_vectorstore()
+        if not hasattr(store, "delete"):
+            return 0
+        store.delete(ids=ids)
+        return len(ids)
+
     def similarity_search(
         self,
         query: str,
         top_k: int | None = None,
+        workspace_id: str | None = None,
     ) -> list[tuple[Document, float | None]]:
         """Run similarity search and return documents with optional scores."""
 
@@ -113,23 +125,46 @@ class VectorStoreManager:
         if k <= 0:
             raise ValueError("top_k must be a positive integer.")
 
+        metadata_filter = _workspace_filter(workspace_id)
         if hasattr(store, "similarity_search_with_score"):
+            if metadata_filter:
+                return store.similarity_search_with_score(
+                    query,
+                    k=k,
+                    filter=metadata_filter,
+                )
             return store.similarity_search_with_score(query, k=k)
 
         if hasattr(store, "similarity_search_with_relevance_scores"):
+            if metadata_filter:
+                return store.similarity_search_with_relevance_scores(
+                    query,
+                    k=k,
+                    filter=metadata_filter,
+                )
             return store.similarity_search_with_relevance_scores(query, k=k)
 
-        docs = store.similarity_search(query, k=k)
+        if metadata_filter:
+            docs = store.similarity_search(query, k=k, filter=metadata_filter)
+        else:
+            docs = store.similarity_search(query, k=k)
         return [(doc, None) for doc in docs]
 
-    def get_all_documents(self) -> list[Document]:
+    def get_all_documents(self, workspace_id: str | None = None) -> list[Document]:
         """Return all stored chunks for sparse retrieval."""
 
         store = self.load_vectorstore()
         if not hasattr(store, "get"):
             return []
 
-        payload = store.get(include=["documents", "metadatas"])
+        metadata_filter = _workspace_filter(workspace_id)
+        if metadata_filter:
+            payload = store.get(
+                include=["documents", "metadatas"],
+                where=metadata_filter,
+            )
+        else:
+            payload = store.get(include=["documents", "metadatas"])
         page_contents = payload.get("documents") or []
         metadatas = payload.get("metadatas") or []
         documents: list[Document] = []
@@ -197,13 +232,24 @@ def add_documents(docs: list[Document]) -> Any:
     return get_vectorstore_manager().add_documents(docs)
 
 
+def delete_documents(ids: list[str]) -> int:
+    """Delete documents from the default vector store by ID."""
+
+    return get_vectorstore_manager().delete_documents(ids)
+
+
 def similarity_search(
     query: str,
     top_k: int | None = None,
+    workspace_id: str | None = None,
 ) -> list[tuple[Document, float | None]]:
     """Search the default vector store."""
 
-    return get_vectorstore_manager().similarity_search(query, top_k=top_k)
+    return get_vectorstore_manager().similarity_search(
+        query,
+        top_k=top_k,
+        workspace_id=workspace_id,
+    )
 
 
 def _load_chroma_class() -> type[Any]:
@@ -212,6 +258,12 @@ def _load_chroma_class() -> type[Any]:
     from langchain_chroma import Chroma
 
     return Chroma
+
+
+def _workspace_filter(workspace_id: str | None) -> dict[str, str] | None:
+    if not workspace_id:
+        return None
+    return {"workspace_id": workspace_id}
 
 
 def build_document_ids(docs: list[Document]) -> list[str]:

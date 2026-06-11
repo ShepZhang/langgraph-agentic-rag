@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -18,6 +19,8 @@ from agent.llm import create_chat_model
 from agent.nodes import AgentNodes
 from agent.state import AgentState, ChatMessage, create_initial_state
 from config import Settings, get_settings
+from observability.logger import create_trace_store
+from observability.trace import TraceRecorder
 
 
 def build_graph(
@@ -25,6 +28,8 @@ def build_graph(
     retriever_fn: Any | None = None,
     settings: Settings | None = None,
     features: AgentFeatureFlags | None = None,
+    trace_recorder: TraceRecorder | None = None,
+    workspace_id: str | None = None,
 ) -> Any:
     """Build and compile the Agentic RAG LangGraph workflow."""
 
@@ -35,19 +40,48 @@ def build_graph(
         llm=resolved_llm,
         retriever_fn=retriever_fn,
         features=resolved_features,
+        workspace_id=workspace_id,
     )
 
     workflow = StateGraph(AgentState)
-    workflow.add_node("rewrite_query", nodes.rewrite_query_node)
-    workflow.add_node("retrieve", nodes.retrieve_node)
-    workflow.add_node("accept_documents", nodes.accept_retrieved_documents_node)
-    workflow.add_node("grade_documents", nodes.grade_documents_node)
-    workflow.add_node("generate_answer", nodes.generate_answer_node)
-    workflow.add_node("extract_claims", nodes.extract_claims_node)
-    workflow.add_node("verify_citations", nodes.verify_citations_node)
-    workflow.add_node("revise_answer", nodes.revise_answer_node)
-    workflow.add_node("finalize_answer", nodes.finalize_answer_node)
-    workflow.add_node("fallback", nodes.fallback_node)
+    workflow.add_node(
+        "rewrite_query",
+        _trace_node("rewrite_query", nodes.rewrite_query_node, trace_recorder),
+    )
+    workflow.add_node("retrieve", _trace_node("retrieve", nodes.retrieve_node, trace_recorder))
+    workflow.add_node(
+        "accept_documents",
+        _trace_node(
+            "accept_documents",
+            nodes.accept_retrieved_documents_node,
+            trace_recorder,
+        ),
+    )
+    workflow.add_node(
+        "grade_documents",
+        _trace_node("grade_documents", nodes.grade_documents_node, trace_recorder),
+    )
+    workflow.add_node(
+        "generate_answer",
+        _trace_node("generate_answer", nodes.generate_answer_node, trace_recorder),
+    )
+    workflow.add_node(
+        "extract_claims",
+        _trace_node("extract_claims", nodes.extract_claims_node, trace_recorder),
+    )
+    workflow.add_node(
+        "verify_citations",
+        _trace_node("verify_citations", nodes.verify_citations_node, trace_recorder),
+    )
+    workflow.add_node(
+        "revise_answer",
+        _trace_node("revise_answer", nodes.revise_answer_node, trace_recorder),
+    )
+    workflow.add_node(
+        "finalize_answer",
+        _trace_node("finalize_answer", nodes.finalize_answer_node, trace_recorder),
+    )
+    workflow.add_node("fallback", _trace_node("fallback", nodes.fallback_node, trace_recorder))
 
     if resolved_features.query_transformation_enabled:
         workflow.add_edge(START, "rewrite_query")
@@ -59,10 +93,14 @@ def build_graph(
         workflow.add_edge("retrieve", "grade_documents")
         workflow.add_conditional_edges(
             "grade_documents",
-            lambda state: route_after_grading(
-                state,
-                settings=resolved_settings,
-                features=resolved_features,
+            _trace_route(
+                "grade_documents",
+                lambda state: route_after_grading(
+                    state,
+                    settings=resolved_settings,
+                    features=resolved_features,
+                ),
+                trace_recorder,
             ),
             {
                 "generate_answer": "generate_answer",
@@ -74,10 +112,14 @@ def build_graph(
         workflow.add_edge("retrieve", "accept_documents")
         workflow.add_conditional_edges(
             "accept_documents",
-            lambda state: (
-                "generate_answer"
-                if state.get("relevant_documents")
-                else "fallback"
+            _trace_route(
+                "accept_documents",
+                lambda state: (
+                    "generate_answer"
+                    if state.get("relevant_documents")
+                    else "fallback"
+                ),
+                trace_recorder,
             ),
             {
                 "generate_answer": "generate_answer",
@@ -86,7 +128,11 @@ def build_graph(
         )
     workflow.add_conditional_edges(
         "generate_answer",
-        route_after_answer_generation,
+        _trace_route(
+            "generate_answer",
+            route_after_answer_generation,
+            trace_recorder,
+        ),
         {
             "extract_claims": "extract_claims",
             "finalize_answer": "finalize_answer",
@@ -95,7 +141,11 @@ def build_graph(
     )
     workflow.add_conditional_edges(
         "extract_claims",
-        route_after_claim_extraction,
+        _trace_route(
+            "extract_claims",
+            route_after_claim_extraction,
+            trace_recorder,
+        ),
         {
             "verify_citations": "verify_citations",
             "finalize_answer": "finalize_answer",
@@ -104,7 +154,11 @@ def build_graph(
     )
     workflow.add_conditional_edges(
         "verify_citations",
-        route_after_citation_verification,
+        _trace_route(
+            "verify_citations",
+            route_after_citation_verification,
+            trace_recorder,
+        ),
         {
             "finalize_answer": "finalize_answer",
             "revise_answer": "revise_answer",
@@ -113,7 +167,11 @@ def build_graph(
     )
     workflow.add_conditional_edges(
         "revise_answer",
-        route_after_answer_revision,
+        _trace_route(
+            "revise_answer",
+            route_after_answer_revision,
+            trace_recorder,
+        ),
         {
             "extract_claims": "extract_claims",
             "finalize_answer": "finalize_answer",
@@ -129,22 +187,44 @@ def build_graph(
 def run_agent(
     question: str,
     chat_history: list[ChatMessage] | None = None,
+    session_id: str | None = None,
+    workspace_id: str | None = None,
     graph: Any | None = None,
     llm: Any | None = None,
     retriever_fn: Any | None = None,
     settings: Settings | None = None,
     features: AgentFeatureFlags | None = None,
+    trace_store: Any | None = None,
 ) -> dict[str, Any]:
     """Run the Agentic RAG workflow and return the public result payload."""
 
+    resolved_settings = settings or get_settings()
     resolved_features = features or AgentFeatureFlags()
+    trace_enabled = resolved_settings.trace_logging_enabled
+    trace_recorder = (
+        TraceRecorder(
+            original_question=question,
+            session_id=session_id,
+            workspace_id=workspace_id,
+        )
+        if trace_enabled
+        else None
+    )
+    resolved_trace_store = (
+        trace_store
+        if trace_store is not None
+        else create_trace_store(resolved_settings)
+        if trace_enabled
+        else None
+    )
     compiled_graph = graph or build_graph(
         llm=llm,
         retriever_fn=retriever_fn,
-        settings=settings,
+        settings=resolved_settings,
         features=resolved_features,
+        trace_recorder=trace_recorder,
+        workspace_id=workspace_id,
     )
-    resolved_settings = settings or get_settings()
     initial_state = create_initial_state(
         question,
         chat_history,
@@ -155,9 +235,36 @@ def run_agent(
         initial_state["rewritten_question"] = question
         initial_state["standalone_question"] = question
         initial_state["previous_queries"] = [question]
-    final_state = compiled_graph.invoke(initial_state)
+
+    started_at = time.perf_counter()
+    final_state: dict[str, Any] = {}
+    try:
+        final_state = compiled_graph.invoke(initial_state)
+    except Exception as exc:
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        if trace_recorder and resolved_trace_store:
+            resolved_trace_store.save(
+                trace_recorder.build_record(
+                    final_state,
+                    latency_ms=latency_ms,
+                    error=str(exc),
+                )
+            )
+        raise
+
+    latency_ms = (time.perf_counter() - started_at) * 1000
+    trace_path = None
+    if trace_recorder and resolved_trace_store:
+        resolved_trace_store.save(
+            trace_recorder.build_record(final_state, latency_ms=latency_ms)
+        )
+        store_path = getattr(resolved_trace_store, "path", None)
+        trace_path = str(store_path) if store_path is not None else None
 
     return {
+        "trace_id": trace_recorder.trace_id if trace_recorder else None,
+        "trace_path": trace_path,
+        "latency_ms": round(max(latency_ms, 0.0), 4),
         "feature_flags": resolved_features.to_dict(),
         "citation_verification_enabled": (
             resolved_features.citation_verification_enabled
@@ -204,3 +311,57 @@ def run_agent(
         "fallback_reason": final_state["fallback_reason"],
         "route": final_state["route"],
     }
+
+
+def _trace_node(
+    node_name: str,
+    node_fn: Any,
+    trace_recorder: TraceRecorder | None,
+) -> Any:
+    """Wrap a graph node so observability stays outside node logic."""
+
+    if trace_recorder is None:
+        return node_fn
+
+    def wrapped(state: AgentState) -> dict[str, Any]:
+        started_at = time.perf_counter()
+        try:
+            update = node_fn(state)
+        except Exception as exc:
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            trace_recorder.record_node(
+                node_name,
+                state,
+                {},
+                elapsed_ms=elapsed_ms,
+                error=str(exc),
+            )
+            raise
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        trace_recorder.record_node(
+            node_name,
+            state,
+            update,
+            elapsed_ms=elapsed_ms,
+        )
+        return update
+
+    return wrapped
+
+
+def _trace_route(
+    from_node: str,
+    route_fn: Any,
+    trace_recorder: TraceRecorder | None,
+) -> Any:
+    """Wrap a conditional edge route function."""
+
+    if trace_recorder is None:
+        return route_fn
+
+    def wrapped(state: AgentState) -> str:
+        route = route_fn(state)
+        trace_recorder.record_route(from_node, route, state)
+        return route
+
+    return wrapped

@@ -25,18 +25,25 @@ class HybridRetriever:
         self.vectorstore_manager = vectorstore_manager
         self.settings = settings or get_settings()
 
-    def retrieve(self, query: str, top_k: int | None = None) -> list[ScoredDocument]:
+    def retrieve(
+        self,
+        query: str,
+        top_k: int | None = None,
+        workspace_id: str | None = None,
+    ) -> list[ScoredDocument]:
         """Return fused dense + BM25 candidates for a query."""
 
         fusion_top_k = top_k if top_k is not None else self.settings.fusion_top_k
         if fusion_top_k <= 0:
             return []
 
-        dense_results = self.vectorstore_manager.similarity_search(
+        dense_results = _similarity_search(
+            self.vectorstore_manager,
             query,
             top_k=self.settings.dense_top_k,
+            workspace_id=workspace_id,
         )
-        bm25_results = self._retrieve_bm25(query)
+        bm25_results = self._retrieve_bm25(query, workspace_id=workspace_id)
         return reciprocal_rank_fusion(
             [
                 ("dense", dense_results),
@@ -45,8 +52,32 @@ class HybridRetriever:
             top_k=fusion_top_k,
         )
 
-    def _retrieve_bm25(self, query: str) -> list[ScoredDocument]:
-        corpus = self.vectorstore_manager.get_all_documents()
+    def _retrieve_bm25(
+        self,
+        query: str,
+        workspace_id: str | None = None,
+    ) -> list[ScoredDocument]:
+        if workspace_id:
+            corpus = self.vectorstore_manager.get_all_documents(
+                workspace_id=workspace_id,
+            )
+        else:
+            corpus = self.vectorstore_manager.get_all_documents()
         if not corpus:
             return []
         return BM25Retriever(corpus).retrieve(query, top_k=self.settings.bm25_top_k)
+
+
+def _similarity_search(
+    vectorstore_manager: Any,
+    query: str,
+    top_k: int,
+    workspace_id: str | None,
+) -> list[ScoredDocument]:
+    if workspace_id:
+        return vectorstore_manager.similarity_search(
+            query,
+            top_k=top_k,
+            workspace_id=workspace_id,
+        )
+    return vectorstore_manager.similarity_search(query, top_k=top_k)
