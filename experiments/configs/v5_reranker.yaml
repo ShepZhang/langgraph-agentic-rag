@@ -1,9 +1,9 @@
-id: v3_retry_fallback
-method: + Conditional Retry / Fallback
+id: v5_reranker
+method: + Reranker
 runner: agentic
 query_transformation_enabled: true
 retrieval_grading_enabled: true
 conditional_retry_enabled: true
-hybrid_retrieval_enabled: false
-reranker_enabled: false
+hybrid_retrieval_enabled: true
+reranker_enabled: true
 citation_verification_enabled: false

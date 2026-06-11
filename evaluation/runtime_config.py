@@ -4,16 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent.features import AgentFeatureFlags
 from config import Settings, get_settings
 
 
 def build_runtime_config_snapshot(
     settings: Settings | None = None,
+    features: AgentFeatureFlags | None = None,
 ) -> dict[str, Any]:
     """Return reproducibility metadata without secrets or local paths."""
 
     resolved = settings or get_settings()
+    resolved_features = features or AgentFeatureFlags()
     return {
+        "agent_features": resolved_features.to_dict(),
         "llm": {
             "provider": resolved.llm_provider,
             "model": resolved.effective_llm_model,

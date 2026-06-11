@@ -1,9 +1,9 @@
-id: v2_retrieval_grading
-method: + Retrieval Grading
+id: v4_hybrid_retrieval
+method: + Hybrid Retrieval
 runner: agentic
 query_transformation_enabled: true
 retrieval_grading_enabled: true
-conditional_retry_enabled: false
-hybrid_retrieval_enabled: false
+conditional_retry_enabled: true
+hybrid_retrieval_enabled: true
 reranker_enabled: false
 citation_verification_enabled: false

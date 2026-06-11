@@ -1,6 +1,9 @@
-method: Agentic RAG + Query Rewrite
+id: v1_query_rewrite
+method: + Query Transformation
 runner: agentic
-status: supported
-runner_scope: current_agentic_workflow
-independent_ablation: false
-notes: Uses the current agentic workflow label; P0a does not independently toggle query rewrite.
+query_transformation_enabled: true
+retrieval_grading_enabled: false
+conditional_retry_enabled: false
+hybrid_retrieval_enabled: false
+reranker_enabled: false
+citation_verification_enabled: false

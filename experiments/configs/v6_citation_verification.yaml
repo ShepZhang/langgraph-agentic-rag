@@ -1,0 +1,9 @@
+id: v6_citation_verification
+method: + Claim-level Citation Verification
+runner: agentic
+query_transformation_enabled: true
+retrieval_grading_enabled: true
+conditional_retry_enabled: true
+hybrid_retrieval_enabled: true
+reranker_enabled: true
+citation_verification_enabled: true

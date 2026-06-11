@@ -1,6 +1,9 @@
+id: v0_naive
 method: Naive RAG
 runner: naive
-status: supported
-runner_scope: baseline
-independent_ablation: true
-notes: Baseline naive retrieval-augmented generation runner.
+query_transformation_enabled: false
+retrieval_grading_enabled: false
+conditional_retry_enabled: false
+hybrid_retrieval_enabled: false
+reranker_enabled: false
+citation_verification_enabled: false

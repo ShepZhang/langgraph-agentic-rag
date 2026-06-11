@@ -3,8 +3,93 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+import pytest
 
 from experiments.run_ablation import load_ablation_configs, main
+from experiments.variants import (
+    AblationVariant,
+    load_ablation_variants,
+    validate_cumulative_variants,
+)
+from agent.features import AgentFeatureFlags
+from evaluation.runtime_config import build_runtime_config_snapshot
+
+
+CONFIG_DIR = Path("experiments/configs")
+
+
+def test_repository_ablation_configs_define_distinct_cumulative_variants():
+    variants = load_ablation_variants(CONFIG_DIR)
+
+    assert [variant.id for variant in variants] == [
+        "v0_naive",
+        "v1_query_rewrite",
+        "v2_retrieval_grading",
+        "v3_retry_fallback",
+        "v4_hybrid_retrieval",
+        "v5_reranker",
+        "v6_citation_verification",
+    ]
+    assert variants[0].runner == "naive"
+    assert variants[3].features.conditional_retry_enabled is True
+    assert variants[4].settings_overrides == {
+        "hybrid_retrieval_enabled": True,
+        "reranker_enabled": False,
+    }
+    assert variants[5].settings_overrides == {
+        "hybrid_retrieval_enabled": True,
+        "reranker_enabled": True,
+    }
+    assert variants[6].features.citation_verification_enabled is True
+
+    validate_cumulative_variants(variants)
+
+
+def test_validate_cumulative_variants_rejects_duplicate_effective_configs():
+    duplicate = AblationVariant(
+        id="v2_duplicate",
+        method="duplicate",
+        runner="agentic",
+        features=AgentFeatureFlags(
+            query_transformation_enabled=True,
+            retrieval_grading_enabled=False,
+            conditional_retry_enabled=False,
+            citation_verification_enabled=False,
+        ),
+        settings_overrides={
+            "hybrid_retrieval_enabled": False,
+            "reranker_enabled": False,
+        },
+    )
+
+    with pytest.raises(ValueError, match="duplicate effective"):
+        validate_cumulative_variants(
+            [
+                AblationVariant(
+                    id="v1_query_rewrite",
+                    method="query rewrite",
+                    runner="agentic",
+                    features=duplicate.features,
+                    settings_overrides=duplicate.settings_overrides,
+                ),
+                duplicate,
+            ]
+        )
+
+
+def test_runtime_config_snapshot_includes_agent_feature_flags():
+    features = AgentFeatureFlags(
+        query_transformation_enabled=True,
+        retrieval_grading_enabled=False,
+        conditional_retry_enabled=False,
+        citation_verification_enabled=False,
+    )
+
+    snapshot = build_runtime_config_snapshot(features=features)
+
+    assert snapshot["agent_features"] == features.to_dict()
 
 
 def test_load_ablation_configs_reads_simple_yaml(tmp_path):

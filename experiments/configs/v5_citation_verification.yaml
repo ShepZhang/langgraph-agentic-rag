@@ -1,6 +1,0 @@
-method: + Claim-level Citation Verification
-runner: pending
-status: pending
-runner_scope: pending
-independent_ablation: false
-notes: Pending until claim-level citation verification can be independently toggled for ablation.
