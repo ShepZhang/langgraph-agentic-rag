@@ -129,6 +129,55 @@ def test_retry_rewrite_uses_failure_context_and_increments_retry_count():
     assert "RAG combines retrieval with generation" in llm.prompts[0]
 
 
+def test_retry_rewrite_includes_partial_relevance_recovery_context():
+    llm = FakeLLM(["agentic rag baseline comparison fallback"])
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("How is Agentic RAG better than naive RAG?")
+    state["current_query"] = "agentic rag reliability"
+    state["previous_queries"] = ["agentic rag reliability"]
+    state["retrieval_attempt"] = 1
+    state["retry_count"] = 0
+    state["grading_reason"] = "Only partial evidence found."
+    state["documents"] = [
+        {
+            "content": "Agentic RAG includes retrieval grading and fallback.",
+            "source": "agentic.md",
+            "chunk_id": "agentic:c1",
+        },
+        {
+            "content": "Naive RAG retrieves once and generates directly.",
+            "source": "baseline.md",
+            "chunk_id": "baseline:c1",
+        },
+    ]
+    state["document_grades"] = [
+        {
+            "document_index": 1,
+            "relevance": "partially_relevant",
+            "confidence": 0.73,
+            "reason": "Related but missing the requested comparison.",
+        }
+    ]
+    state["partial_relevance_recovery"] = {
+        "triggered": True,
+        "action": "query_refinement",
+        "reason": (
+            "Only partially relevant chunks were found; "
+            "refine query to target missing evidence."
+        ),
+        "partial_document_indices": [1],
+    }
+
+    update = nodes.rewrite_query_node(state)
+
+    assert update["current_query"] == "agentic rag baseline comparison fallback"
+    assert "Partial relevance recovery" in llm.prompts[0]
+    assert "Only partially relevant chunks were found" in llm.prompts[0]
+    assert "Partially related context" in llm.prompts[0]
+    assert "Related but missing the requested comparison" in llm.prompts[0]
+    assert "Agentic RAG includes retrieval grading and fallback." in llm.prompts[0]
+
+
 def test_retrieve_node_uses_current_query_and_increments_retrieval_attempt():
     calls = []
 

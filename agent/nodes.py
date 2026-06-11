@@ -54,6 +54,7 @@ class AgentNodes:
                     state.get("previous_queries", [])
                 ),
                 grading_reason=state.get("grading_reason") or "No grading reason.",
+                partial_relevance_context=_format_partial_relevance_context(state),
                 documents=format_documents(state.get("documents", [])),
             )
             raw_result = _coerce_llm_text(self.llm.invoke(prompt))
@@ -684,6 +685,51 @@ def _format_previous_queries(previous_queries: list[str]) -> str:
     if not previous_queries:
         return "No previous queries."
     return "\n".join(f"- {query}" for query in previous_queries)
+
+
+def _format_partial_relevance_context(state: AgentState) -> str:
+    """Format partial-relevance recovery evidence for retry rewriting."""
+
+    recovery = state.get("partial_relevance_recovery", {})
+    if not recovery.get("triggered"):
+        return "No partial relevance recovery was triggered."
+
+    documents = state.get("documents", [])
+    grades_by_index = {
+        grade.get("document_index"): grade for grade in state.get("document_grades", [])
+    }
+    raw_indices = recovery.get("partial_document_indices", [])
+    partial_indices = [
+        index
+        for index in raw_indices
+        if isinstance(index, int) and 1 <= index <= len(documents)
+    ]
+    lines = [
+        f"Recovery action: {recovery.get('action', 'query_refinement')}",
+        f"Recovery reason: {recovery.get('reason') or PARTIAL_RELEVANCE_RECOVERY_REASON}",
+        (
+            "Use these related-but-insufficient chunks to target missing facts, "
+            "entities, comparisons, or constraints without broadening off-topic."
+        ),
+        "Partially related context:",
+    ]
+    if not partial_indices:
+        lines.append("- No valid partially related chunks were available.")
+        return "\n".join(lines)
+
+    for index in partial_indices:
+        document = documents[index - 1]
+        grade = grades_by_index.get(index, {})
+        reason = grade.get("reason") or "No partial relevance reason provided."
+        confidence = grade.get("confidence", 0.0)
+        source = document.get("source") or "unknown source"
+        chunk_id = document.get("chunk_id") or "unknown chunk"
+        snippet = _make_snippet(document.get("content", ""))
+        lines.append(
+            f"- [{index}] source={source} chunk_id={chunk_id} "
+            f"confidence={confidence} reason={reason}\n  {snippet}"
+        )
+    return "\n".join(lines)
 
 
 def _make_snippet(content: str, limit: int = 240) -> str:

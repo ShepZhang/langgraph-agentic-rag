@@ -37,6 +37,9 @@ Previous queries:
 Previous grading reason:
 {grading_reason}
 
+Partial relevance recovery:
+{partial_relevance_context}
+
 Previously retrieved chunks:
 {documents}
 

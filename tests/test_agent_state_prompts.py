@@ -108,6 +108,7 @@ def test_prompts_contain_required_guardrails():
     assert "standalone" in QUERY_REWRITE_PROMPT.lower()
     assert "previous retrieval query" in RETRY_QUERY_REWRITE_PROMPT.lower()
     assert "avoid repeating" in RETRY_QUERY_REWRITE_PROMPT.lower()
+    assert "Partial relevance recovery" in RETRY_QUERY_REWRITE_PROMPT
     assert "retrieved chunks" in ANSWER_GENERATION_PROMPT.lower()
     assert "Original user question" in ANSWER_GENERATION_PROMPT
     assert "Retrieval query" in ANSWER_GENERATION_PROMPT
