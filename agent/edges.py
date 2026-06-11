@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
+from agent.features import AgentFeatureFlags
 from config import Settings, get_settings
 from agent.state import AgentState
 
@@ -19,12 +20,18 @@ logger = logging.getLogger(__name__)
 def route_after_grading(
     state: AgentState,
     settings: Settings | None = None,
+    features: AgentFeatureFlags | None = None,
 ) -> AgentRoute:
     """Route after retrieval grading."""
 
     if state.get("relevant_documents"):
         logger.info("Route decision: generate_answer")
         return "generate_answer"
+
+    resolved_features = features or AgentFeatureFlags()
+    if not resolved_features.conditional_retry_enabled:
+        logger.info("Route decision: fallback conditional retry disabled")
+        return "fallback"
 
     resolved_settings = settings or get_settings()
     max_retry_count = state.get("max_retry_count", resolved_settings.max_retry_count)
