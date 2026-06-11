@@ -243,52 +243,61 @@ class AgentNodes:
             documents,
             used_citation_indices=parsed_answer["used_citation_indices"],
         )
+        cited_documents = _select_documents_by_indices(
+            documents,
+            parsed_answer["used_citation_indices"],
+        )
         if not citations and not is_unable_to_answer(answer):
             logger.warning("Answer generation returned a normal answer without citations.")
             return _fallback_update(
                 "Answer generation did not return valid supporting citations."
             )
-        if citations:
-            selected_documents = _select_documents_by_indices(
-                documents,
-                parsed_answer["used_citation_indices"],
-            )
-            verification = self._verify_answer_claims(
-                question=state["question"],
-                answer=answer,
-                documents=selected_documents,
-            )
-            if verification is None:
-                logger.warning("Claim verification returned invalid JSON.")
-                return _fallback_update("Claim verification returned invalid JSON.")
-            if not verification["verified"]:
-                logger.warning(
-                    "Claim verification failed: %s",
-                    verification["reason"],
-                )
-                return _fallback_update(
-                    f"Claim verification failed: {verification['reason']}"
-                )
-        else:
-            verification = {
-                "verified": False,
+        if is_unable_to_answer(answer) and not citations:
+            logger.info("Generated unable-to-answer draft; verification skipped.")
+            return {
+                "answer": "",
+                "draft_answer": answer,
+                "citations": [],
+                "used_citation_indices": [],
+                "cited_documents": [],
                 "claims": [],
-                "reason": "Unable-to-answer response; claim verification skipped.",
+                "claim_verification": {
+                    "verified": False,
+                    "results": [],
+                    "reason": "Unable-to-answer response; claim verification skipped.",
+                    "unsupported_claims": [],
+                },
+                "claim_verification_results": [],
+                "unsupported_claims": [],
+                "claim_verification_reason": (
+                    "Unable-to-answer response; claim verification skipped."
+                ),
+                "citation_verification_passed": False,
+                "citation_verification_skipped": True,
+                "is_verified": False,
+                "route": "finalize_answer",
             }
         logger.info(
-            "Generated answer citation_count=%s used_indices=%s",
+            "Generated draft answer citation_count=%s used_indices=%s",
             len(citations),
             parsed_answer["used_citation_indices"],
         )
 
         return {
-            "answer": answer,
+            "answer": "",
+            "draft_answer": answer,
             "citations": citations,
-            "claims": verification["claims"],
-            "claim_verification": verification,
-            "claim_verification_reason": verification["reason"],
-            "is_verified": verification["verified"],
-            "route": "end",
+            "used_citation_indices": parsed_answer["used_citation_indices"],
+            "cited_documents": cited_documents,
+            "claims": [],
+            "claim_verification": {},
+            "claim_verification_results": [],
+            "unsupported_claims": [],
+            "claim_verification_reason": "",
+            "citation_verification_passed": False,
+            "citation_verification_skipped": False,
+            "is_verified": False,
+            "route": "extract_claims",
         }
 
     def fallback_node(self, state: AgentState) -> dict[str, Any]:

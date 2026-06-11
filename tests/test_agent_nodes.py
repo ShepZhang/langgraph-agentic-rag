@@ -521,11 +521,6 @@ def test_generate_answer_node_uses_relevant_documents_and_selected_citations_onl
             (
                 '{"answer": "Grounded answer with [2].", '
                 '"used_citation_indices": [2]}'
-            ),
-            (
-                '{"verified": true, "claims": ['
-                '{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}'
-                '], "reason": "Supported by selected evidence."}'
             )
         ]
     )
@@ -560,7 +555,10 @@ def test_generate_answer_node_uses_relevant_documents_and_selected_citations_onl
 
     update = nodes.generate_answer_node(state)
 
-    assert update["answer"] == "Grounded answer with [2]."
+    assert update["draft_answer"] == "Grounded answer with [2]."
+    assert update["answer"] == ""
+    assert update["used_citation_indices"] == [2]
+    assert update["cited_documents"] == [state["relevant_documents"][1]]
     assert update["citations"] == [
         {
             "source": "paper.pdf",
@@ -578,18 +576,8 @@ def test_generate_answer_node_uses_relevant_documents_and_selected_citations_onl
     )
     assert "Retrieval query:\nagentic rag retrieval grading fallback" in llm.prompts[0]
     assert "answer the original user question" in llm.prompts[0]
-    assert "claim-level citation verifier" in llm.prompts[1].lower()
-    assert "Answer to verify:\nGrounded answer with [2]." in llm.prompts[1]
-    assert "Selected citation chunks" in llm.prompts[1]
-    assert update["is_verified"] is True
-    assert update["claims"] == [
-        {
-            "claim": "Grounded answer",
-            "supported": True,
-            "citation_indices": [1],
-        }
-    ]
-    assert update["claim_verification_reason"] == "Supported by selected evidence."
+    assert len(llm.prompts) == 1
+    assert update["route"] == "extract_claims"
 
 
 def test_generate_answer_node_extracts_text_from_content_blocks():
@@ -607,7 +595,6 @@ def test_generate_answer_node_extracts_text_from_content_blocks():
                         },
                 ]
             ),
-            '{"verified": true, "claims": [{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}], "reason": "supported"}',
         ]
     )
     nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
@@ -616,7 +603,8 @@ def test_generate_answer_node_extracts_text_from_content_blocks():
 
     update = nodes.generate_answer_node(state)
 
-    assert update["answer"] == "Grounded answer [1]."
+    assert update["draft_answer"] == "Grounded answer [1]."
+    assert update["route"] == "extract_claims"
 
 
 def test_generate_answer_node_deduplicates_selected_citations():
@@ -625,11 +613,6 @@ def test_generate_answer_node_deduplicates_selected_citations():
             (
                 '{"answer": "Grounded answer [1] [2].", '
                 '"used_citation_indices": [1, 2]}'
-            ),
-            (
-                '{"verified": true, "claims": ['
-                '{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}'
-                '], "reason": "supported"}'
             )
         ]
     )
@@ -663,6 +646,7 @@ def test_generate_answer_node_deduplicates_selected_citations():
             "snippet": "context",
         }
     ]
+    assert update["route"] == "extract_claims"
 
 
 def test_generate_answer_node_keeps_valid_citation_and_ignores_invalid_indices():
@@ -671,11 +655,6 @@ def test_generate_answer_node_keeps_valid_citation_and_ignores_invalid_indices()
             (
                 '{"answer": "Grounded answer [1].", '
                 '"used_citation_indices": [1, 3]}'
-            ),
-            (
-                '{"verified": true, "claims": ['
-                '{"claim": "Grounded answer", "supported": true, "citation_indices": [1]}'
-                '], "reason": "supported"}'
             )
         ]
     )
@@ -685,7 +664,7 @@ def test_generate_answer_node_keeps_valid_citation_and_ignores_invalid_indices()
 
     update = nodes.generate_answer_node(state)
 
-    assert update["answer"] == "Grounded answer [1]."
+    assert update["draft_answer"] == "Grounded answer [1]."
     assert update["citations"] == [
         {
             "source": "paper.pdf",
@@ -695,10 +674,10 @@ def test_generate_answer_node_keeps_valid_citation_and_ignores_invalid_indices()
             "snippet": "context",
         }
     ]
-    assert update["is_verified"] is True
+    assert update["route"] == "extract_claims"
 
 
-def test_generate_answer_node_falls_back_when_claim_verification_fails():
+def test_generate_answer_node_defers_unsupported_claims_to_verification_nodes():
     llm = FakeLLM(
         [
             (
@@ -721,13 +700,14 @@ def test_generate_answer_node_falls_back_when_claim_verification_fails():
 
     update = nodes.generate_answer_node(state)
 
-    assert "无法可靠回答" in update["answer"]
-    assert update["citations"] == []
-    assert update["is_verified"] is False
-    assert "claim verification failed" in update["fallback_reason"].lower()
+    assert update["draft_answer"] == "Agentic RAG eliminates hallucination [1]."
+    assert update["citations"] != []
+    assert "fallback_reason" not in update
+    assert len(llm.prompts) == 1
+    assert update["route"] == "extract_claims"
 
 
-def test_generate_answer_node_falls_back_for_invalid_claim_verification_json():
+def test_generate_answer_node_does_not_call_legacy_claim_verifier():
     llm = FakeLLM(
         [
             (
@@ -745,10 +725,11 @@ def test_generate_answer_node_falls_back_for_invalid_claim_verification_json():
 
     update = nodes.generate_answer_node(state)
 
-    assert "无法可靠回答" in update["answer"]
-    assert update["citations"] == []
-    assert update["is_verified"] is False
-    assert "claim verification" in update["fallback_reason"].lower()
+    assert update["draft_answer"] == "Agentic RAG uses retrieval grading [1]."
+    assert update["citations"] != []
+    assert "fallback_reason" not in update
+    assert len(llm.prompts) == 1
+    assert update["route"] == "extract_claims"
 
 
 def test_generate_answer_node_falls_back_for_normal_answer_without_citations():
@@ -851,8 +832,11 @@ def test_generate_answer_node_allows_unable_to_answer_without_citations():
 
     update = nodes.generate_answer_node(state)
 
-    assert update["answer"] == "I cannot answer from the current documents."
+    assert update["draft_answer"] == "I cannot answer from the current documents."
     assert update["citations"] == []
+    assert update["citation_verification_skipped"] is True
+    assert update["citation_verification_passed"] is False
+    assert update["route"] == "finalize_answer"
     assert "fallback_reason" not in update
 
 
