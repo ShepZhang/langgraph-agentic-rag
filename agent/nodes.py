@@ -520,7 +520,12 @@ class AgentNodes:
     def fallback_node(self, state: AgentState) -> dict[str, Any]:
         """Return a safe fallback answer when retrieval is insufficient."""
 
-        reason = state.get("grading_reason") or "No reliable supporting evidence found."
+        reason = (
+            state.get("fallback_reason")
+            or state.get("claim_verification_reason")
+            or state.get("grading_reason")
+            or "No reliable supporting evidence found."
+        )
         logger.info("Fallback answer returned: %s", reason)
         return _fallback_update(reason)
 

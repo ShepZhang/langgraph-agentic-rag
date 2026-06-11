@@ -31,9 +31,19 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
                 '"used_citation_indices": [1]}'
             ),
             (
-                '{"verified": true, "claims": ['
-                '{"claim": "Agentic RAG uses retrieval and agent control flow", '
-                '"supported": true, "citation_indices": [1]}'
+                '{"claims": ['
+                '{"claim_id": "c001", '
+                '"claim": "Agentic RAG uses retrieval and agent control flow", '
+                '"cited_chunk_ids": ["agentic-rag.md:p3:c1"]}'
+                '], "reason": "Extracted one claim."}'
+            ),
+            (
+                '{"results": ['
+                '{"claim_id": "c001", '
+                '"claim": "Agentic RAG uses retrieval and agent control flow", '
+                '"cited_chunk_ids": ["agentic-rag.md:p3:c1"], '
+                '"verification_label": "supported", "confidence": 0.94, '
+                '"reason": "Supported by chunk 1."}'
                 '], "reason": "Supported by chunk 1."}'
             ),
         ]
@@ -90,12 +100,30 @@ def test_run_agent_generates_answer_when_retrieval_is_relevant():
         "partial_document_indices": [],
     }
     assert result["is_verified"] is True
+    assert result["draft_answer"] == (
+        "Agentic RAG uses retrieval and agent control flow [1]."
+    )
+    assert result["used_citation_indices"] == [1]
+    assert result["citation_verification_passed"] is True
+    assert result["citation_revision_count"] == 0
+    assert result["citation_verification_skipped"] is False
+    assert result["unsupported_claims"] == []
     assert result["claim_verification_reason"] == "Supported by chunk 1."
     assert result["claims"] == [
         {
+            "claim_id": "c001",
             "claim": "Agentic RAG uses retrieval and agent control flow",
-            "supported": True,
-            "citation_indices": [1],
+            "cited_chunk_ids": ["agentic-rag.md:p3:c1"],
+        }
+    ]
+    assert result["claim_verification_results"] == [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval and agent control flow",
+            "cited_chunk_ids": ["agentic-rag.md:p3:c1"],
+            "verification_label": "supported",
+            "confidence": 0.94,
+            "reason": "Supported by chunk 1.",
         }
     ]
     assert result["citations"] == [
@@ -133,9 +161,16 @@ def test_run_agent_executes_multi_query_retrieval_and_exposes_diagnostics():
                 '"used_citation_indices": [1]}'
             ),
             (
-                '{"verified": true, "claims": ['
-                '{"claim": "Agentic RAG uses retrieval grading", '
-                '"supported": true, "citation_indices": [1]}'
+                '{"claims": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG uses retrieval grading", '
+                '"cited_chunk_ids": ["notes:c1"]}'
+                '], "reason": "Extracted."}'
+            ),
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG uses retrieval grading", '
+                '"cited_chunk_ids": ["notes:c1"], "verification_label": "supported", '
+                '"confidence": 0.9, "reason": "Supported."}'
                 '], "reason": "Supported."}'
             ),
         ]
@@ -176,6 +211,137 @@ def test_run_agent_executes_multi_query_retrieval_and_exposes_diagnostics():
     assert result["multi_query_used"] is True
     assert result["multi_query_result_count"] == 1
     assert result["retrieved_documents"][0]["matched_queries"] == retriever_queries
+    assert result["citation_verification_passed"] is True
+
+
+def test_run_agent_revises_unsupported_claim_then_finalizes():
+    from agent.graph import run_agent
+
+    llm = FakeLLM(
+        [
+            "rewritten query",
+            '{"relevant": true, "relevant_indices": [1], "reason": "matches"}',
+            (
+                '{"answer": "Agentic RAG eliminates hallucination [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"claims": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG eliminates hallucination", '
+                '"cited_chunk_ids": ["chunk-1"]}'
+                '], "reason": "claim"}'
+            ),
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG eliminates hallucination", '
+                '"cited_chunk_ids": ["chunk-1"], "verification_label": "unsupported", '
+                '"confidence": 0.2, "reason": "too strong"}'
+                '], "reason": "unsupported"}'
+            ),
+            (
+                '{"answer": "Agentic RAG can reduce hallucination risk [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"claims": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG can reduce hallucination risk", '
+                '"cited_chunk_ids": ["chunk-1"]}'
+                '], "reason": "claim"}'
+            ),
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG can reduce hallucination risk", '
+                '"cited_chunk_ids": ["chunk-1"], "verification_label": "supported", '
+                '"confidence": 0.9, "reason": "supported"}'
+                '], "reason": "supported"}'
+            ),
+        ]
+    )
+    documents = [
+        {
+            "content": "Citation checks can reduce hallucination risk.",
+            "source": "notes.md",
+            "chunk_id": "chunk-1",
+        }
+    ]
+
+    result = run_agent(
+        "What does Agentic RAG guarantee?",
+        llm=llm,
+        retriever_fn=lambda query: documents,
+        settings=get_settings(),
+    )
+
+    assert result["answer"] == "Agentic RAG can reduce hallucination risk [1]."
+    assert result["citation_revision_count"] == 1
+    assert result["citation_verification_passed"] is True
+    assert result["unsupported_claims"] == []
+    assert result["is_verified"] is True
+
+
+def test_run_agent_falls_back_when_revision_does_not_fix_unsupported_claims():
+    from agent.graph import run_agent
+
+    llm = FakeLLM(
+        [
+            "rewritten query",
+            '{"relevant": true, "relevant_indices": [1], "reason": "matches"}',
+            (
+                '{"answer": "Agentic RAG eliminates hallucination [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"claims": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG eliminates hallucination", '
+                '"cited_chunk_ids": ["chunk-1"]}'
+                '], "reason": "claim"}'
+            ),
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG eliminates hallucination", '
+                '"cited_chunk_ids": ["chunk-1"], "verification_label": "unsupported", '
+                '"confidence": 0.2, "reason": "too strong"}'
+                '], "reason": "unsupported"}'
+            ),
+            (
+                '{"answer": "Agentic RAG eliminates hallucination [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"claims": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG eliminates hallucination", '
+                '"cited_chunk_ids": ["chunk-1"]}'
+                '], "reason": "claim"}'
+            ),
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "Agentic RAG eliminates hallucination", '
+                '"cited_chunk_ids": ["chunk-1"], "verification_label": "unsupported", '
+                '"confidence": 0.2, "reason": "still too strong"}'
+                '], "reason": "still unsupported"}'
+            ),
+        ]
+    )
+    documents = [
+        {
+            "content": "Citation checks can reduce hallucination risk.",
+            "source": "notes.md",
+            "chunk_id": "chunk-1",
+        }
+    ]
+
+    result = run_agent(
+        "What does Agentic RAG guarantee?",
+        llm=llm,
+        retriever_fn=lambda query: documents,
+        settings=get_settings(),
+    )
+
+    assert "无法可靠回答" in result["answer"]
+    assert result["citation_revision_count"] == 1
+    assert result["citation_verification_passed"] is False
+    assert result["unsupported_claims"][0]["verification_label"] == "unsupported"
+    assert result["fallback_reason"] == "still unsupported"
 
 
 def test_run_agent_retries_then_falls_back_when_documents_are_irrelevant():
