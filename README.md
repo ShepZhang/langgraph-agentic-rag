@@ -133,7 +133,7 @@ Key state fields:
 - Naive RAG baseline package and CLI for retrieve-once comparison.
 - Reliability evaluation runner comparing naive RAG and Agentic RAG on shared documents and a shared structured question set.
 - JSON evaluation artifacts for baseline, agentic, comparison, and ablation runs.
-- Ablation framework with explicit proxy/pending labels for modules that do not yet have independent toggles.
+- Real cumulative V0-V6 ablation using independent graph feature flags and per-variant retrieval settings.
 
 ## Tech Stack
 
@@ -264,7 +264,7 @@ Tests use fake LLMs and mocked vector stores, so they do not require real OpenAI
 
 ## Evaluation
 
-P0a builds the evaluation infrastructure first. The current runner compares naive RAG and Agentic RAG on the same 36-question structured dataset and can write reproducible JSON artifacts.
+P0b evaluates naive RAG and six cumulative Agentic RAG variants on the same 36-question structured dataset and the same indexed documents. Each row resolves to a distinct graph or retriever configuration; the runner rejects duplicate effective configurations.
 
 Run comparison evaluation:
 
@@ -282,21 +282,41 @@ Run the naive baseline only:
   --output experiments/results/baseline_result.json
 ```
 
-Run the ablation framework:
+Run a representative five-question smoke matrix:
 
 ```bash
 .venv/bin/python -m experiments.run_ablation \
   --questions evaluation/eval_questions.json \
-  --output-dir experiments/results
+  --config-dir experiments/configs \
+  --output-dir experiments/results/smoke \
+  --question-ids q001,q016,q027,q030,q033
 ```
 
-Evaluation compares:
+Run the complete matrix:
 
-- `Naive RAG`: question -> retrieve -> generate.
-- `Agentic RAG`: question -> rewrite -> retrieve -> grade -> retry or answer.
+```bash
+.venv/bin/python -m experiments.run_ablation \
+  --questions evaluation/eval_questions.json \
+  --config-dir experiments/configs \
+  --output-dir experiments/results \
+  --report experiments/results/ablation_report.md
+```
+
+The cumulative matrix is:
+
+| Version | Added capability |
+|---|---|
+| V0 | Naive dense retrieve-generate RAG |
+| V1 | Query transformation |
+| V2 | Structured retrieval grading |
+| V3 | Conditional retry and fallback |
+| V4 | BM25 + dense retrieval + RRF fusion |
+| V5 | Reranking |
+| V6 | Claim-level citation verification and answer revision |
 
 Generated artifacts:
 
+- `experiments/results/variants/v0_naive.json` through `v6_citation_verification.json`
 - `experiments/results/baseline_result.json`
 - `experiments/results/agentic_result.json`
 - `experiments/results/comparison_result.json`
@@ -304,7 +324,9 @@ Generated artifacts:
 - `experiments/results/ablation_report.md`
 - `experiments/report.md`
 
-Evaluation artifacts include a sanitized `runtime_config` snapshot covering model name, temperature, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name. API keys, base URLs, local persistence paths, and other secrets are intentionally excluded.
+Every variant is checkpointed before execution and finalized as `completed`, `completed_with_errors`, or `incomplete`. V0 and V6 canonical comparison artifacts are derived from those completed runs without repeating model calls.
+
+Evaluation artifacts include a sanitized `runtime_config` snapshot covering Agent feature flags, model name, temperature, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name. API keys, base URLs, local persistence paths, and other secrets are intentionally excluded.
 
 Metric fields include:
 
@@ -323,9 +345,7 @@ Metric fields include:
 - `estimated_cost`
 - `error_count`
 
-If the LLM config or vector index is missing, evaluation records errors per question and still prints a report.
-
-The P0a report is an infrastructure checkpoint. Final results should be regenerated in P0b after the P1/P2 retrieval and verification upgrades. Current ablation rows that use `current_agentic_workflow` are proxy runs, not proof that each module has already been independently toggled.
+If an individual question fails, evaluation records the exception and marks the variant `completed_with_errors`. Configuration, index, or runner-construction failures leave an `incomplete` checkpoint instead of publishing misleading aggregate results.
 
 ## Example Output
 
@@ -493,7 +513,8 @@ agentic-rag-document-qa/
 - P1e structured retrieval grading implemented: chunk-level relevance labels, confidence scores, reasons, and result payload diagnostics.
 - P1f partial-relevance recovery implemented: related-but-insufficient chunks trigger query-refinement retry context while preserving fallback safety.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
-- P0b: regenerate baseline, agentic, and ablation artifacts after P1/P2 algorithm upgrades, then update `experiments/report.md` with observed trade-offs.
+- P0b: run the completed real V0-V6 ablation matrix and publish observed DeepSeek metrics and trade-offs.
+- Upgrade the lightweight evaluator to Approach B: a modular, strongly typed evaluation package with pluggable runners, metrics, storage, and optional judges.
 - Upgrade evaluation to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records and prompt/model config snapshots.
 - Add independently toggleable reranker and citation-verification ablations.
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.

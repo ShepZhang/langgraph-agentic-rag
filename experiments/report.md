@@ -1,6 +1,6 @@
 # Evaluation And Ablation Report
 
-P0a establishes the evaluation infrastructure for the Reliability-oriented Agentic RAG Document QA System. Final metrics should be regenerated after P1/P2 algorithm upgrades and recorded as P0b results.
+P0b replaces the earlier proxy table with executable cumulative V0-V6 variants. Every row resolves to distinct LangGraph feature flags or retrieval settings, and duplicate effective configurations are rejected before model calls.
 
 ## Dataset
 
@@ -8,63 +8,59 @@ The evaluation dataset uses structured question records with IDs, question types
 
 The default dataset currently contains 36 questions covering single-document QA, multi-chunk synthesis, ambiguous questions, unanswerable questions, distractor handling, comparisons, follow-up questions, citation-sensitive questions, cross-file reasoning, and false-premise correction.
 
-## Baseline Vs Agentic
+## Reproduction
 
-Run:
+Run a representative smoke matrix first:
 
 ```bash
-.venv/bin/python -m evaluation.evaluate \
+.venv/bin/python -m experiments.run_ablation \
   --questions evaluation/eval_questions.json \
-  --output-dir experiments/results
+  --config-dir experiments/configs \
+  --output-dir experiments/results/smoke \
+  --question-ids q001,q016,q027,q030,q033
 ```
 
-The generated JSON artifacts in `experiments/results/` are the reproducible source of truth:
+Run all 36 questions:
 
-- `baseline_result.json`
-- `agentic_result.json`
-- `comparison_result.json`
+```bash
+.venv/bin/python -m experiments.run_ablation \
+  --questions evaluation/eval_questions.json \
+  --config-dir experiments/configs \
+  --output-dir experiments/results \
+  --report experiments/results/ablation_report.md
+```
 
-Each artifact includes a sanitized `runtime_config` snapshot for reproducibility. It records LLM model/temperature, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name without API keys, base URLs, or local persistence paths.
+The per-variant JSON files are the source of truth. V0 produces `baseline_result.json`; V6 produces `agentic_result.json`; `comparison_result.json` is derived from those existing results without rerunning either system.
 
-## Ablation Table
+## Ablation Matrix
 
-| Method | Correctness | Context Relevance | Citation Accuracy | Fallback Accuracy | Unsupported Claims | Avg Latency | Status |
-|---|---:|---:|---:|---:|---:|---:|---|
-| Naive RAG | pending | pending | pending | pending | pending | pending | infrastructure-ready |
-| + Query Transformation / Multi-query Retrieval | pending | pending | pending | pending | pending | pending | implemented in P1c/P1d, pending P0b eval |
-| + Structured Retrieval Grading | pending | pending | pending | pending | pending | pending | implemented in P1e, pending P0b eval |
-| + Partial-Relevance Recovery | pending | pending | pending | pending | pending | pending | implemented in P1f, pending P0b eval |
-| + Retry / Fallback | pending | pending | pending | pending | pending | pending | proxy until independent toggle |
-| + Hybrid Retrieval | pending | pending | pending | pending | pending | pending | implemented in P1a, pending P0b eval |
-| + Reranker | pending | pending | pending | pending | pending | pending | pending P1/P2 final run |
-| + Claim-Level Citation Verification | pending | pending | pending | pending | pending | pending | implemented in P2, pending P0b eval |
+| Version | Added capability | Independent control |
+|---|---|---|
+| V0 | Naive dense retrieve-generate RAG | baseline runner |
+| V1 | Query transformation | graph feature flag |
+| V2 | Structured retrieval grading | graph feature flag |
+| V3 | Conditional retry and fallback | graph feature flag |
+| V4 | BM25 + dense retrieval + RRF fusion | retriever settings |
+| V5 | Reranking | retriever settings |
+| V6 | Claim-level citation verification and revision | graph feature flag |
+
+Measured metrics are generated in `experiments/results/ablation_report.md`. This file is refreshed with the final DeepSeek run after smoke validation succeeds.
 
 ## Metric Notes
 
-- Correctness is heuristic in P0a and uses expected keywords plus gold-answer overlap.
+- Correctness is deterministic and uses expected keywords plus gold-answer overlap.
 - Context relevance and source hit metrics use expected source matches from retrieved, relevant, or cited documents depending on the metric.
 - Citation hit rate measures citation source matches, not merely retrieval success.
 - Token usage and cost are recorded only when the active model client exposes usage metadata.
-- Unsupported claims are counted from claim-verification payloads when present.
+- Unsupported and supported claim metrics are computed from `claim_verification_results`, not extracted claims.
+- Citation-verification metrics are `N/A` for V0-V5 because that capability is disabled.
+- Follow-up cases pass chat history to Agentic variants; the naive baseline accepts but intentionally ignores it.
 
 ## Limitations
 
-- P0a is an infrastructure checkpoint, not the final algorithm comparison.
-- Current v1-v3 ablation rows use the current full Agentic RAG workflow as a proxy because independent toggles are not implemented yet.
-- Hybrid retrieval is implemented after P0a and should be evaluated in the next P0b run with `HYBRID_RETRIEVAL_ENABLED=true`.
-- P1b reranker evaluation readiness is implemented after P0a. Future P0b runs should record `RERANKER_TOP_N`, `RERANKER_CANDIDATE_TOP_K`, and reranker model in each artifact.
-- P1c/P1d structured query transformation and multi-query retrieval are implemented after P0a. Multi-query strategy executes expanded queries and merges deduplicated chunks; decomposition sub-question retrieval remains future work.
-- P1e/P1f structured retrieval grading and partial-relevance recovery are implemented after P0a. Future P0b runs should record `relevant_document_count`, `partial_document_count`, `max_relevance_confidence`, `partial_relevance_recovery`, and chunk-level grading labels in failure analysis; dynamic top-k and reranker adjustment remain future work.
-- P2 claim-level citation verification is implemented after P0a. Future P0b runs should record `claim_verification_results`, `unsupported_claims`, `citation_revision_count`, `citation_verification_passed`, and fallback cases caused by unsupported claims.
-- Reranker and independent citation-verification ablations should be regenerated after P1/P2 algorithm upgrades.
-- The interactive evaluation dashboard is deferred until CLI and JSON artifacts are stable.
-
-## P0b Plan
-
-After P1/P2 upgrades:
-
-1. Rebuild or refresh the sample document index.
-2. Run naive vs agentic evaluation on the same 36-question dataset.
-3. Run ablation with real module toggles where available.
-4. Refresh JSON artifacts and this report with observed metrics.
-5. Document trade-offs such as reranker latency, fallback answer-rate impact, and citation-verification cost.
+- Results are single runs and do not include confidence intervals.
+- Correctness is not an LLM-as-judge or human evaluation score.
+- The local 36-question dataset is project-specific rather than a public benchmark.
+- Token usage and cost remain unavailable when the model client does not expose reliable metadata.
+- The Approach B modular typed evaluator remains a later architecture upgrade.
+- The interactive Gradio Evaluation Dashboard remains on the roadmap after CLI artifacts stabilize.
