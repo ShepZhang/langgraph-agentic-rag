@@ -63,6 +63,36 @@ def test_standalone_naive_rag_payload_matches_evaluator_contract():
     assert result["estimated_cost"] is None
 
 
+def test_naive_rag_accepts_but_ignores_chat_history():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Naive RAG retrieves once [1].", '
+                '"used_citation_indices": [1]}'
+            )
+        ]
+    )
+    docs = [
+        {
+            "content": "Naive RAG retrieves once.",
+            "source": "notes.md",
+            "chunk_id": "c1",
+        }
+    ]
+    history = [{"role": "user", "content": "We were discussing a different topic."}]
+
+    result = run_naive_rag(
+        "What is naive RAG?",
+        chat_history=history,
+        retriever_fn=lambda query: docs,
+        llm=llm,
+    )
+
+    assert "We were discussing a different topic." not in llm.prompts[0]
+    assert result["chat_history_used"] is False
+    assert result["citation_verification_enabled"] is False
+
+
 def test_baseline_cli_writes_output_json(tmp_path):
     questions_path = tmp_path / "questions.json"
     output_path = tmp_path / "nested" / "results" / "baseline_result.json"

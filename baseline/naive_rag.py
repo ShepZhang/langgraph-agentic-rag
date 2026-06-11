@@ -13,6 +13,7 @@ from agent.nodes import (
     is_unable_to_answer,
 )
 from agent.prompts import ANSWER_GENERATION_PROMPT, format_documents
+from agent.state import ChatMessage
 from config import Settings, get_settings
 from rag.retriever import retrieve
 
@@ -22,6 +23,7 @@ RetrieverFn = Callable[[str], list[dict[str, Any]]]
 
 def run_naive_rag(
     question: str,
+    chat_history: list[ChatMessage] | None = None,
     retriever_fn: RetrieverFn | None = None,
     llm: Any | None = None,
     settings: Settings | None = None,
@@ -85,6 +87,8 @@ def run_naive_rag(
         "relevant_documents": documents,
         "retry_count": 0,
         "fallback_reason": "",
+        "chat_history_used": False,
+        "citation_verification_enabled": False,
         "token_usage": None,
         "estimated_cost": None,
     }
@@ -109,6 +113,8 @@ def _fallback_payload(
         "relevant_documents": [],
         "retry_count": 0,
         "fallback_reason": reason,
+        "chat_history_used": False,
+        "citation_verification_enabled": False,
         "token_usage": None,
         "estimated_cost": None,
     }

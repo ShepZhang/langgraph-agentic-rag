@@ -7,10 +7,15 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from agent.state import ChatMessage
+
+
+EvaluationRunner = Callable[[str, list[ChatMessage]], dict[str, Any]]
+
 
 def main(
     argv: list[str] | None = None,
-    run_naive_fn: Callable[[str], dict[str, Any]] | None = None,
+    run_naive_fn: EvaluationRunner | None = None,
 ) -> int:
     """Run baseline evaluation and write a JSON artifact."""
 
@@ -51,14 +56,14 @@ def main(
     return 0
 
 
-def _load_naive_rag_runner() -> Callable[[str], dict[str, Any]]:
+def _load_naive_rag_runner() -> EvaluationRunner:
     from baseline.naive_rag import run_naive_rag
 
     return run_naive_rag
 
 
 def _load_evaluation_tools() -> tuple[
-    Callable[[list[dict[str, Any]], Callable[[str], dict[str, Any]]], dict[str, Any]],
+    Callable[[list[dict[str, Any]], EvaluationRunner], dict[str, Any]],
     Callable[[str | Path], list[dict[str, Any]]],
 ]:
     from evaluation.evaluate import evaluate_questions, load_eval_questions

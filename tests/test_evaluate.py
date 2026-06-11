@@ -284,6 +284,87 @@ def test_default_eval_dataset_has_required_coverage():
     assert "retrieval_pipeline_notes.md" in by_id["q036"]["expected_sources"]
 
 
+def test_evaluate_questions_passes_chat_history_to_runner():
+    calls = []
+    history = [{"role": "user", "content": "Discuss grading."}]
+
+    def runner(question, chat_history):
+        calls.append((question, chat_history))
+        return {
+            "answer": "Grounded answer [1].",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+        }
+
+    report = evaluate_questions(
+        [
+            {
+                "id": "q-follow-up",
+                "question": "How does it help?",
+                "question_type": "follow_up",
+                "chat_history": history,
+                "expected_sources": ["notes.md"],
+            }
+        ],
+        run_agent_fn=runner,
+    )
+
+    assert calls == [("How does it help?", history)]
+    assert report["results"][0]["question_id"] == "q-follow-up"
+    assert report["results"][0]["question_type"] == "follow_up"
+    assert report["results"][0]["chat_history_supplied"] is True
+
+
+def test_evaluation_counts_labels_from_verification_results():
+    def runner(question, chat_history):
+        return {
+            "answer": "Two claims [1].",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+            "claims": [{"claim_id": "c1"}, {"claim_id": "c2"}],
+            "claim_verification_results": [
+                {"claim_id": "c1", "verification_label": "supported"},
+                {"claim_id": "c2", "verification_label": "unsupported"},
+            ],
+            "citation_verification_enabled": True,
+            "citation_verification_passed": False,
+        }
+
+    report = evaluate_questions(
+        [{"question": "Q?", "expected_sources": ["notes.md"]}],
+        run_agent_fn=runner,
+    )
+
+    assert report["summary"]["unsupported_claim_count"] == 1
+    assert report["summary"]["supported_claim_ratio"] == 0.5
+    assert report["summary"]["citation_verification_pass_rate"] == 0.0
+
+
+def test_evaluation_marks_verification_metrics_unavailable_when_disabled():
+    def runner(question, chat_history):
+        return {
+            "answer": "Grounded answer [1].",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+            "claims": [],
+            "claim_verification_results": [],
+            "citation_verification_enabled": False,
+            "citation_verification_passed": False,
+        }
+
+    report = evaluate_questions(
+        [{"question": "Q?", "expected_sources": ["notes.md"]}],
+        run_agent_fn=runner,
+    )
+
+    assert report["summary"]["unsupported_claim_count"] is None
+    assert report["summary"]["supported_claim_ratio"] is None
+    assert report["summary"]["citation_verification_pass_rate"] is None
+
+
 def test_evaluate_questions_computes_agentic_summary_metrics():
     questions = [
         {

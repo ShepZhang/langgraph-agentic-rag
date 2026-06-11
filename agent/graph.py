@@ -162,6 +162,7 @@ def run_agent(
         "citation_verification_enabled": (
             resolved_features.citation_verification_enabled
         ),
+        "chat_history_used": bool(chat_history),
         "answer": final_state["answer"],
         "citations": final_state["citations"],
         "draft_answer": final_state["draft_answer"],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import math
 import re
@@ -11,11 +12,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent.graph import run_agent
+from agent.state import ChatMessage
 from evaluation.baselines import run_naive_rag
 from evaluation.runtime_config import build_runtime_config_snapshot
 
 
 DEFAULT_EVAL_PATH = Path(__file__).with_name("eval_questions.json")
+EvaluationRunner = Callable[[str, list[ChatMessage]], dict[str, Any]]
 
 
 def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, Any]]:
@@ -228,7 +231,7 @@ def _evaluate_comparison(
 
 def _evaluate_single_system(
     item: dict[str, Any],
-    runner: Callable[[str], dict[str, Any]],
+    runner: Callable[..., dict[str, Any]],
     timer: Callable[[], float],
 ) -> dict[str, Any]:
     """Evaluate one system for one question and record errors as data."""
@@ -236,7 +239,11 @@ def _evaluate_single_system(
     question = item["question"]
     started_at = timer()
     try:
-        system_result = runner(question)
+        system_result = _invoke_evaluation_runner(
+            runner,
+            question,
+            item.get("chat_history", []),
+        )
         result = _build_success_result(item, system_result)
         error = None
     except Exception as exc:  # noqa: BLE001 - evaluation records system failures.
@@ -247,6 +254,36 @@ def _evaluate_single_system(
     result["latency"] = latency
     result["error"] = error
     return result
+
+
+def _invoke_evaluation_runner(
+    runner: Callable[..., dict[str, Any]],
+    question: str,
+    chat_history: list[ChatMessage],
+) -> dict[str, Any]:
+    """Invoke the history-aware runner while preserving injected legacy runners."""
+
+    try:
+        parameters = inspect.signature(runner).parameters.values()
+    except (TypeError, ValueError):
+        return runner(question, chat_history)
+
+    positional_parameters = [
+        parameter
+        for parameter in parameters
+        if parameter.kind
+        in {
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        }
+    ]
+    accepts_varargs = any(
+        parameter.kind is inspect.Parameter.VAR_POSITIONAL
+        for parameter in parameters
+    )
+    if accepts_varargs or len(positional_parameters) >= 2:
+        return runner(question, chat_history)
+    return runner(question)
 
 
 def _build_success_result(
@@ -262,6 +299,10 @@ def _build_success_result(
 
     citations = _safe_list(agent_result.get("citations", []), "citations")
     claims = _safe_list(agent_result.get("claims", []), "claims")
+    claim_verification_results = _safe_list(
+        agent_result.get("claim_verification_results", []),
+        "claim_verification_results",
+    )
     retrieved_documents = _safe_list(
         agent_result.get("retrieved_documents", []),
         "retrieved_documents",
@@ -285,14 +326,38 @@ def _build_success_result(
     answer_returned = bool(answer.strip()) and not fallback_triggered
     expected_keywords = item.get("expected_keywords", [])
     expected_sources = item.get("expected_sources", [])
-    unsupported_claim_count = _count_unsupported_claims(claims)
-    supported_claim_count = _count_supported_claims(claims)
-    total_claim_count = len(claims)
+    citation_verification_applicable = bool(
+        agent_result.get("citation_verification_enabled", True)
+    )
+    legacy_claim_labels = (
+        "citation_verification_enabled" not in agent_result
+        and not claim_verification_results
+    )
+    verification_records = (
+        claims if legacy_claim_labels else claim_verification_results
+    )
+    unsupported_claim_count = (
+        _count_unsupported_claims(verification_records)
+        if citation_verification_applicable
+        else None
+    )
+    supported_claim_count = (
+        _count_supported_claims(verification_records)
+        if citation_verification_applicable
+        else None
+    )
+    total_claim_count = (
+        len(verification_records) if citation_verification_applicable else None
+    )
     token_usage = agent_result.get("token_usage")
     estimated_cost = _safe_cost(agent_result.get("estimated_cost"))
 
     return {
+        "question_id": item["id"],
+        "question_type": item["question_type"],
         "question": item["question"],
+        "chat_history_supplied": bool(item.get("chat_history", [])),
+        "chat_history_used": bool(agent_result.get("chat_history_used", False)),
         "answer_returned": answer_returned,
         "fallback_triggered": fallback_triggered,
         "fallback_correct": fallback_triggered is (not should_answer),
@@ -311,6 +376,7 @@ def _build_success_result(
         "citation_hit": _has_expected_source(expected_sources, citations, []),
         "citation_returned": bool(citations),
         "is_verified": bool(agent_result.get("is_verified", False)),
+        "citation_verification_applicable": citation_verification_applicable,
         "claim_count": len(claims),
         "unsupported_claim_count": unsupported_claim_count,
         "supported_claim_count": supported_claim_count,
@@ -320,7 +386,12 @@ def _build_success_result(
         "keyword_hit": (
             answer_returned and _has_expected_keywords(answer, expected_keywords)
         ),
-        "citation_verification_passed": bool(agent_result.get("is_verified", False)),
+        "citation_verification_passed": bool(
+            agent_result.get(
+                "citation_verification_passed",
+                agent_result.get("is_verified", False),
+            )
+        ),
         "rewrite_triggered": retry_count > 0,
         "retry_count": retry_count,
         "retrieved_doc_count": len(retrieved_documents),
@@ -332,6 +403,7 @@ def _build_success_result(
         "answer": answer,
         "citations": citations,
         "claims": claims,
+        "claim_verification_results": claim_verification_results,
         "retrieved_documents": retrieved_documents,
         "relevant_documents": relevant_documents,
     }
@@ -339,7 +411,11 @@ def _build_success_result(
 
 def _build_error_result(item: dict[str, Any]) -> dict[str, Any]:
     return {
+        "question_id": item["id"],
+        "question_type": item["question_type"],
         "question": item["question"],
+        "chat_history_supplied": bool(item.get("chat_history", [])),
+        "chat_history_used": False,
         "answer_returned": False,
         "fallback_triggered": False,
         "fallback_correct": False,
@@ -348,10 +424,11 @@ def _build_error_result(item: dict[str, Any]) -> dict[str, Any]:
         "citation_hit": False,
         "citation_returned": False,
         "is_verified": False,
+        "citation_verification_applicable": False,
         "claim_count": 0,
-        "unsupported_claim_count": 0,
-        "supported_claim_count": 0,
-        "total_claim_count": 0,
+        "unsupported_claim_count": None,
+        "supported_claim_count": None,
+        "total_claim_count": None,
         "source_hit": False,
         "keyword_hit": False,
         "citation_verification_passed": False,
@@ -366,6 +443,7 @@ def _build_error_result(item: dict[str, Any]) -> dict[str, Any]:
         "answer": "",
         "citations": [],
         "claims": [],
+        "claim_verification_results": [],
         "retrieved_documents": [],
         "relevant_documents": [],
     }
@@ -391,9 +469,9 @@ def _summarize(
             "context_relevance_score": 0,
             "citation_hit_rate": 0,
             "fallback_accuracy": 0,
-            "unsupported_claim_count": 0,
-            "supported_claim_ratio": 0,
-            "citation_verification_pass_rate": 0,
+            "unsupported_claim_count": None,
+            "supported_claim_ratio": None,
+            "citation_verification_pass_rate": None,
             "average_token_usage": 0,
             "estimated_cost": 0,
             "average_retry_count": 0,
@@ -415,14 +493,41 @@ def _summarize(
     correct_count = sum(1 for result in results if result["correct"])
     context_relevant_count = sum(1 for result in results if result["context_relevant"])
     citation_hit_count = sum(1 for result in results if result["citation_hit"])
-    unsupported_claim_count = sum(
-        result["unsupported_claim_count"] for result in results
-    )
-    supported_claim_count = sum(result["supported_claim_count"] for result in results)
-    total_claim_count = sum(result["total_claim_count"] for result in results)
-    verification_pass_count = sum(
-        1 for result in results if result["citation_verification_passed"]
-    )
+    applicable_verification_results = [
+        result
+        for result in results
+        if result.get("citation_verification_applicable")
+    ]
+    if applicable_verification_results:
+        unsupported_claim_count: int | None = sum(
+            int(result.get("unsupported_claim_count") or 0)
+            for result in applicable_verification_results
+        )
+        supported_claim_count = sum(
+            int(result.get("supported_claim_count") or 0)
+            for result in applicable_verification_results
+        )
+        total_claim_count = sum(
+            int(result.get("total_claim_count") or 0)
+            for result in applicable_verification_results
+        )
+        verification_pass_count = sum(
+            1
+            for result in applicable_verification_results
+            if result["citation_verification_passed"]
+        )
+        supported_claim_ratio: float | None = _rate(
+            supported_claim_count,
+            total_claim_count,
+        )
+        citation_verification_pass_rate: float | None = _rate(
+            verification_pass_count,
+            len(applicable_verification_results),
+        )
+    else:
+        unsupported_claim_count = None
+        supported_claim_ratio = None
+        citation_verification_pass_rate = None
     source_expected_count = sum(
         1 for item in questions if item.get("expected_sources", [])
     )
@@ -456,11 +561,8 @@ def _summarize(
         "citation_hit_rate": _rate(citation_hit_count, source_expected_count),
         "fallback_accuracy": _rate(fallback_correct_count, total_questions),
         "unsupported_claim_count": unsupported_claim_count,
-        "supported_claim_ratio": _rate(supported_claim_count, total_claim_count),
-        "citation_verification_pass_rate": _rate(
-            verification_pass_count,
-            total_questions,
-        ),
+        "supported_claim_ratio": supported_claim_ratio,
+        "citation_verification_pass_rate": citation_verification_pass_rate,
         "average_token_usage": _average(token_values),
         "estimated_cost": round(estimated_cost, 6),
         "source_hit_rate": _rate(source_hit_count, source_expected_count),
