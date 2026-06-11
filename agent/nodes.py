@@ -12,6 +12,7 @@ from langchain_core.messages import BaseMessage
 from agent.multi_query import build_retrieval_queries, merge_retrieved_documents
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
+    ANSWER_REVISION_PROMPT,
     CITATION_VERIFICATION_PROMPT,
     CLAIM_EXTRACTION_PROMPT,
     CLAIM_VERIFICATION_PROMPT,
@@ -399,6 +400,121 @@ class AgentNodes:
             "citation_verification_passed": passed,
             "is_verified": passed,
             "route": route,
+        }
+
+    def revise_answer_node(self, state: AgentState) -> dict[str, Any]:
+        """Revise unsupported draft-answer claims using verifier feedback."""
+
+        cited_documents = state.get("cited_documents", [])
+        prompt = ANSWER_REVISION_PROMPT.format(
+            question=state["question"],
+            answer=state.get("draft_answer", ""),
+            unsupported_claims=json.dumps(
+                state.get("unsupported_claims", []),
+                ensure_ascii=False,
+            ),
+            documents=format_documents(cited_documents),
+        )
+        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
+        parsed_answer = _parse_answer_result(
+            raw_result,
+            document_count=len(cited_documents),
+        )
+        if parsed_answer is None:
+            logger.warning("Answer revision returned invalid JSON.")
+            return _fallback_update("Answer revision returned invalid JSON.")
+
+        answer = parsed_answer["answer"].strip()
+        if not answer:
+            return _fallback_update("Answer revision returned an empty answer.")
+
+        marker_error = _validate_answer_citation_markers(
+            answer=answer,
+            used_citation_indices=parsed_answer["used_citation_indices"],
+            document_count=len(cited_documents),
+        )
+        if marker_error:
+            logger.warning(
+                "Answer revision citation marker validation failed: %s",
+                marker_error,
+            )
+            return _fallback_update(marker_error)
+
+        citations = build_citations(
+            cited_documents,
+            used_citation_indices=parsed_answer["used_citation_indices"],
+        )
+        selected_documents = _select_documents_by_indices(
+            cited_documents,
+            parsed_answer["used_citation_indices"],
+        )
+        revision_count = state.get("citation_revision_count", 0) + 1
+        if is_unable_to_answer(answer) and not citations:
+            return {
+                "answer": "",
+                "draft_answer": answer,
+                "citations": [],
+                "used_citation_indices": [],
+                "cited_documents": [],
+                "claims": [],
+                "claim_verification_results": [],
+                "unsupported_claims": [],
+                "citation_revision_count": revision_count,
+                "citation_verification_passed": False,
+                "citation_verification_skipped": True,
+                "is_verified": False,
+                "route": "finalize_answer",
+            }
+        if not citations:
+            return _fallback_update(
+                "Answer revision did not return valid supporting citations."
+            )
+
+        return {
+            "answer": "",
+            "draft_answer": answer,
+            "citations": citations,
+            "used_citation_indices": parsed_answer["used_citation_indices"],
+            "cited_documents": selected_documents,
+            "claims": [],
+            "claim_verification": {},
+            "claim_verification_results": [],
+            "unsupported_claims": [],
+            "claim_verification_reason": "",
+            "citation_revision_count": revision_count,
+            "citation_verification_passed": False,
+            "citation_verification_skipped": False,
+            "is_verified": False,
+            "route": "extract_claims",
+        }
+
+    def finalize_answer_node(self, state: AgentState) -> dict[str, Any]:
+        """Promote a verified or safely skipped draft answer to final answer."""
+
+        draft_answer = state.get("draft_answer", "").strip()
+        if not draft_answer:
+            return _fallback_update("Finalization skipped because draft answer is empty.")
+        if not state.get("citation_verification_passed") and not state.get(
+            "citation_verification_skipped"
+        ):
+            return _fallback_update("Citation verification did not pass.")
+
+        verified = state.get("citation_verification_passed", False)
+        return {
+            "answer": draft_answer,
+            "citations": state.get("citations", []),
+            "claims": state.get("claims", []),
+            "claim_verification": state.get("claim_verification", {}),
+            "claim_verification_results": state.get("claim_verification_results", []),
+            "unsupported_claims": state.get("unsupported_claims", []),
+            "claim_verification_reason": state.get("claim_verification_reason", ""),
+            "citation_verification_passed": verified,
+            "citation_verification_skipped": state.get(
+                "citation_verification_skipped",
+                False,
+            ),
+            "is_verified": verified,
+            "route": "end",
         }
 
     def fallback_node(self, state: AgentState) -> dict[str, Any]:

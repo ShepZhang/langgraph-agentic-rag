@@ -997,6 +997,99 @@ def test_verify_citations_node_collects_unsupported_claims():
     assert update["route"] == "revise_answer"
 
 
+def test_revise_answer_node_updates_draft_and_increments_revision_count():
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Agentic RAG can reduce hallucination risk [1].", '
+                '"used_citation_indices": [1]}'
+            )
+        ]
+    )
+    nodes = AgentNodes(llm=llm, retriever_fn=lambda query: [])
+    state = create_initial_state("What does Agentic RAG guarantee?")
+    state["draft_answer"] = "Agentic RAG eliminates hallucination [1]."
+    state["citation_revision_count"] = 0
+    state["cited_documents"] = [
+        {
+            "content": "Citation checks can reduce hallucination risk.",
+            "source": "paper.pdf",
+            "chunk_id": "chunk-1",
+        }
+    ]
+    state["unsupported_claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG eliminates hallucination.",
+            "cited_chunk_ids": ["chunk-1"],
+            "verification_label": "unsupported",
+            "confidence": 0.2,
+            "reason": "The chunk only says reduce risk.",
+        }
+    ]
+
+    update = nodes.revise_answer_node(state)
+
+    assert update["draft_answer"] == "Agentic RAG can reduce hallucination risk [1]."
+    assert update["used_citation_indices"] == [1]
+    assert update["citation_revision_count"] == 1
+    assert update["citations"] == [
+        {
+            "source": "paper.pdf",
+            "page": None,
+            "chunk_id": "chunk-1",
+            "score": None,
+            "snippet": "Citation checks can reduce hallucination risk.",
+        }
+    ]
+    assert update["route"] == "extract_claims"
+    assert "unsupported" in llm.prompts[0].lower()
+
+
+def test_finalize_answer_node_promotes_verified_draft_answer():
+    nodes = AgentNodes(llm=FakeLLM([]), retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["draft_answer"] = "Verified answer [1]."
+    state["citation_verification_passed"] = True
+    state["citations"] = [{"source": "paper.pdf", "snippet": "support"}]
+    state["claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Verified answer.",
+            "cited_chunk_ids": ["chunk-1"],
+        }
+    ]
+    state["claim_verification"] = {
+        "verified": True,
+        "results": [],
+        "reason": "All claims supported.",
+    }
+
+    update = nodes.finalize_answer_node(state)
+
+    assert update["answer"] == "Verified answer [1]."
+    assert update["citations"] == state["citations"]
+    assert update["claims"] == state["claims"]
+    assert update["claim_verification"] == state["claim_verification"]
+    assert update["is_verified"] is True
+    assert update["route"] == "end"
+
+
+def test_finalize_answer_node_allows_verification_skipped_refusal():
+    nodes = AgentNodes(llm=FakeLLM([]), retriever_fn=lambda query: [])
+    state = create_initial_state("question")
+    state["draft_answer"] = "I cannot answer from the current documents."
+    state["citation_verification_skipped"] = True
+    state["citation_verification_passed"] = False
+
+    update = nodes.finalize_answer_node(state)
+
+    assert update["answer"] == "I cannot answer from the current documents."
+    assert update["is_verified"] is False
+    assert update["citation_verification_skipped"] is True
+    assert update["route"] == "end"
+
+
 def test_fallback_node_returns_clear_message():
     nodes = AgentNodes(llm=FakeLLM([]), retriever_fn=lambda query: [])
 
