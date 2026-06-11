@@ -2,7 +2,7 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, conditional retry, fallback handling, citation-aware answer generation, lightweight claim verification, evaluation artifacts, and ablation scaffolding to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, lightweight claim verification, evaluation artifacts, and ablation scaffolding to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
 
 The project is production-oriented as an architecture and evaluation exercise, but it is not described as production-ready. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
@@ -89,6 +89,7 @@ Key state fields:
 - `relevant_document_count`: number of chunks graded `relevant`.
 - `partial_document_count`: number of chunks graded `partially_relevant`.
 - `max_relevance_confidence`: highest confidence score across graded chunks.
+- `partial_relevance_recovery`: query-refinement recovery decision when chunks are related but insufficient.
 - `grading_reason`: LLM reason for accepting or rejecting retrieved evidence.
 - `citations`: final answer evidence chunks selected by `used_citation_indices`.
 - `claims`: claim-level verification records extracted from the final answer.
@@ -106,6 +107,7 @@ Key state fields:
 - Reranker diagnostics: the reranker can emit structured records with document id, chunk id, original score, rerank score, rank, content, and metadata.
 - Structured query transformation with direct rewrite, multi-query retrieval execution, and decomposition metadata.
 - Structured chunk-level retrieval grading with `relevant`, `partially_relevant`, and `irrelevant` labels, confidence scores, reasons, and conservative handling for invalid grading output.
+- Partial-relevance recovery: when no chunk is directly relevant but some chunks are related, retry rewriting receives partial evidence and targets missing facts instead of blindly rephrasing.
 - Conditional retry with configurable max retry count.
 - Citation-aware grounded answer generation using only selected evidence chunks.
 - Citation safety: normal answers without valid supporting citation indices or matching answer citation markers fall back instead of returning unsupported answers.
@@ -434,21 +436,21 @@ agentic-rag-document-qa/
 
 ## Resume Highlights
 
-- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with structured query transformation, multi-query retrieval, hybrid retrieval, reranking, structured retrieval grading, conditional retry, citation-aware generation, lightweight verification, and fallback.
+- Built a LangGraph-based Agentic RAG workflow that upgrades naive retrieve-generate RAG into a state-machine pipeline with structured query transformation, multi-query retrieval, hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, citation-aware generation, lightweight verification, and fallback.
 - Implemented a configurable dense retrieval + BM25 sparse retrieval + RRF fusion pipeline so the system can combine semantic recall with exact keyword, filename, and identifier matching.
 - Added reranker evaluation readiness with explicit candidate top-k vs final top-n settings, structured reranker records, and sanitized runtime config snapshots in evaluation artifacts.
 - Added a standalone naive RAG baseline and comparison runner so Agentic RAG can be evaluated against retrieve-once RAG on the same documents and same questions.
 - Designed a reliability evaluation foundation covering correctness, context relevance, source hit rate, citation hit rate, fallback accuracy, unsupported claims, retry count, latency, token usage, and cost fields.
 - Expanded the default evaluation dataset to 36 structured questions across single-doc, multi-chunk, ambiguous, unanswerable, distractor, comparison, follow-up, citation-sensitive, cross-file, and false-premise cases.
 - Added ablation-study scaffolding with explicit proxy/pending labels, preventing current full-workflow runs from being misrepresented as independently toggled module results.
-- Preserved a modular roadmap toward real reranker ablation, partial-relevance recovery, claim-level citation verification, trace logging, FastAPI service APIs, workspace isolation, and an interactive evaluation dashboard.
+- Preserved a modular roadmap toward real reranker ablation, dynamic retrieval adjustment, claim-level citation verification, trace logging, FastAPI service APIs, workspace isolation, and an interactive evaluation dashboard.
 
 ## Current Limitations
 
 - Claim-level citation verification is lightweight and LLM-based. It checks claims against selected evidence chunks, but it is not a formal proof system.
 - Citation marker consistency is deterministic, but it only checks marker/index alignment. It does not prove that every cited claim is true.
 - Retrieval grading depends on LLM JSON output. The parser is defensive, but malformed grading output is treated conservatively.
-- `partially_relevant` grading currently records diagnostics and still routes to retry/fallback when no chunk is `relevant`; it does not yet trigger expanded retrieval or reranker adjustments.
+- `partially_relevant` grading triggers query-refinement recovery and still refuses to answer without directly relevant evidence; it does not yet dynamically increase top-k or rerun reranking with adjusted thresholds.
 - Query transformation executes `expanded_queries` for `multi_query` strategy, but decomposition `sub_questions` are still recorded as metadata rather than executed as separate retrieval hops.
 - Hybrid BM25 retrieval is lightweight exact-token matching. It does not currently include stemming, learned sparse expansion, or per-workspace corpus filtering.
 - Evaluation uses a local 36-question reliability dataset. It is useful for reproducible project-level comparison, but it is not a benchmark-grade public dataset.
@@ -472,12 +474,13 @@ agentic-rag-document-qa/
 - P1c structured query transformation implemented: direct rewrite, multi-query expansion metadata, decomposition metadata, and result payload fields.
 - P1d multi-query retrieval execution implemented: `expanded_queries` are retrieved, de-duplicated, and merged with matched-query diagnostics before grading.
 - P1e structured retrieval grading implemented: chunk-level relevance labels, confidence scores, reasons, and result payload diagnostics.
+- P1f partial-relevance recovery implemented: related-but-insufficient chunks trigger query-refinement retry context while preserving fallback safety.
 - Ollama local LLM support implemented through `LLM_PROVIDER=ollama`.
 - P0b: regenerate baseline, agentic, and ablation artifacts after P1/P2 algorithm upgrades, then update `experiments/report.md` with observed trade-offs.
 - Upgrade evaluation to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records and prompt/model config snapshots.
 - Add independently toggleable reranker and citation-verification ablations.
 - Upgrade lightweight verification into full claim-level citation verification with extraction, verification, revision, and fallback loops.
-- Add partial-relevance recovery, such as increasing top-k, reranking again, or query refinement when chunks are only partially relevant.
+- Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
 - Add decomposition sub-question retrieval for multi-hop workflows.
 - Add FastAPI API layer.
 - Add trace logging for node state changes, route decisions, final answers, citations, latency, token usage, and errors.

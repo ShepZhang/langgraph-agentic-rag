@@ -33,6 +33,7 @@ Each artifact includes a sanitized `runtime_config` snapshot for reproducibility
 | Naive RAG | pending | pending | pending | pending | pending | pending | infrastructure-ready |
 | + Query Transformation / Multi-query Retrieval | pending | pending | pending | pending | pending | pending | implemented in P1c/P1d, pending P0b eval |
 | + Structured Retrieval Grading | pending | pending | pending | pending | pending | pending | implemented in P1e, pending P0b eval |
+| + Partial-Relevance Recovery | pending | pending | pending | pending | pending | pending | implemented in P1f, pending P0b eval |
 | + Retry / Fallback | pending | pending | pending | pending | pending | pending | proxy until independent toggle |
 | + Hybrid Retrieval | pending | pending | pending | pending | pending | pending | implemented in P1a, pending P0b eval |
 | + Reranker | pending | pending | pending | pending | pending | pending | pending P1/P2 final run |
@@ -53,7 +54,7 @@ Each artifact includes a sanitized `runtime_config` snapshot for reproducibility
 - Hybrid retrieval is implemented after P0a and should be evaluated in the next P0b run with `HYBRID_RETRIEVAL_ENABLED=true`.
 - P1b reranker evaluation readiness is implemented after P0a. Future P0b runs should record `RERANKER_TOP_N`, `RERANKER_CANDIDATE_TOP_K`, and reranker model in each artifact.
 - P1c/P1d structured query transformation and multi-query retrieval are implemented after P0a. Multi-query strategy executes expanded queries and merges deduplicated chunks; decomposition sub-question retrieval remains future work.
-- P1e structured retrieval grading is implemented after P0a. Future P0b runs should record `relevant_document_count`, `partial_document_count`, `max_relevance_confidence`, and chunk-level grading labels in failure analysis; partial-relevance recovery remains future work.
+- P1e/P1f structured retrieval grading and partial-relevance recovery are implemented after P0a. Future P0b runs should record `relevant_document_count`, `partial_document_count`, `max_relevance_confidence`, `partial_relevance_recovery`, and chunk-level grading labels in failure analysis; dynamic top-k and reranker adjustment remain future work.
 - Reranker and full claim-level citation-verification ablations should be regenerated after P1/P2 algorithm upgrades.
 - The interactive evaluation dashboard is deferred until CLI and JSON artifacts are stable.
 
