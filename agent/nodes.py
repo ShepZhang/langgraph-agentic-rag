@@ -28,6 +28,10 @@ from agent.tools import create_retriever_tool
 
 
 FALLBACK_ANSWER = "根据当前已索引文档，无法可靠回答这个问题。请补充相关文档，或换一种更具体的问法。"
+PARTIAL_RELEVANCE_RECOVERY_REASON = (
+    "Only partially relevant chunks were found; "
+    "refine query to target missing evidence."
+)
 logger = logging.getLogger(__name__)
 
 
@@ -157,6 +161,7 @@ class AgentNodes:
                 "relevant_document_count": 0,
                 "partial_document_count": 0,
                 "max_relevance_confidence": 0.0,
+                "partial_relevance_recovery": _inactive_partial_relevance_recovery(),
                 "grading_reason": reason,
                 "route": "rewrite_query",
             }
@@ -177,6 +182,10 @@ class AgentNodes:
         is_relevant = bool(relevant_documents)
         partial_document_count = len(grading["partially_relevant_indices"])
         max_relevance_confidence = _max_grade_confidence(grading["grades"])
+        partial_relevance_recovery = _build_partial_relevance_recovery(
+            is_relevant=is_relevant,
+            partial_document_indices=grading["partially_relevant_indices"],
+        )
         logger.info(
             "Retrieval grading relevant=%s relevant_count=%s partial_count=%s reason=%s",
             is_relevant,
@@ -191,6 +200,7 @@ class AgentNodes:
             "relevant_document_count": len(relevant_documents),
             "partial_document_count": partial_document_count,
             "max_relevance_confidence": max_relevance_confidence,
+            "partial_relevance_recovery": partial_relevance_recovery,
             "grading_reason": grading["reason"],
             "route": "generate_answer" if is_relevant else "rewrite_query",
         }
@@ -638,6 +648,34 @@ def _max_grade_confidence(grades: list[dict[str, Any]]) -> float:
     if not grades:
         return 0.0
     return max(float(grade.get("confidence", 0.0)) for grade in grades)
+
+
+def _build_partial_relevance_recovery(
+    *,
+    is_relevant: bool,
+    partial_document_indices: list[int],
+) -> dict[str, Any]:
+    """Build recovery metadata for partially relevant evidence."""
+
+    if is_relevant or not partial_document_indices:
+        return _inactive_partial_relevance_recovery()
+    return {
+        "triggered": True,
+        "action": "query_refinement",
+        "reason": PARTIAL_RELEVANCE_RECOVERY_REASON,
+        "partial_document_indices": list(partial_document_indices),
+    }
+
+
+def _inactive_partial_relevance_recovery() -> dict[str, Any]:
+    """Return inactive partial-relevance recovery metadata."""
+
+    return {
+        "triggered": False,
+        "action": "none",
+        "reason": "",
+        "partial_document_indices": [],
+    }
 
 
 def _format_previous_queries(previous_queries: list[str]) -> str:

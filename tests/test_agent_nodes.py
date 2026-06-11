@@ -226,6 +226,12 @@ def test_grade_documents_node_marks_empty_docs_irrelevant_without_llm_call():
     assert update["relevant_document_count"] == 0
     assert update["partial_document_count"] == 0
     assert update["max_relevance_confidence"] == 0.0
+    assert update["partial_relevance_recovery"] == {
+        "triggered": False,
+        "action": "none",
+        "reason": "",
+        "partial_document_indices": [],
+    }
     assert "No documents" in update["grading_reason"]
     assert update["route"] == "rewrite_query"
     assert llm.prompts == []
@@ -263,6 +269,12 @@ def test_grade_documents_node_parses_relevant_indices_and_filters_documents():
     assert update["relevant_document_count"] == 1
     assert update["partial_document_count"] == 0
     assert update["max_relevance_confidence"] == 1.0
+    assert update["partial_relevance_recovery"] == {
+        "triggered": False,
+        "action": "none",
+        "reason": "",
+        "partial_document_indices": [],
+    }
     assert update["grading_reason"] == "Chunk 2 directly answers the question."
     assert update["route"] == "generate_answer"
     assert "Original user question:\nquestion" in llm.prompts[0]
@@ -323,6 +335,12 @@ def test_grade_documents_node_records_structured_document_grades():
     assert update["relevant_document_count"] == 1
     assert update["partial_document_count"] == 1
     assert update["max_relevance_confidence"] == 0.87
+    assert update["partial_relevance_recovery"] == {
+        "triggered": False,
+        "action": "none",
+        "reason": "",
+        "partial_document_indices": [],
+    }
     assert update["route"] == "generate_answer"
 
 
@@ -348,6 +366,15 @@ def test_grade_documents_node_retries_when_only_partially_relevant():
     assert update["relevant_document_count"] == 0
     assert update["partial_document_count"] == 1
     assert update["max_relevance_confidence"] == 0.91
+    assert update["partial_relevance_recovery"] == {
+        "triggered": True,
+        "action": "query_refinement",
+        "reason": (
+            "Only partially relevant chunks were found; "
+            "refine query to target missing evidence."
+        ),
+        "partial_document_indices": [1],
+    }
     assert update["route"] == "rewrite_query"
 
 
