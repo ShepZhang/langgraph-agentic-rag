@@ -578,6 +578,78 @@ def test_build_graph_uses_supplied_falsy_tool_registry():
     assert result["is_verified"] is True
 
 
+def test_run_agent_uses_supplied_falsy_tool_registry():
+    from agent.graph import run_agent
+
+    llm = FakeLLM(
+        [
+            "rewritten agentic rag question",
+            '{"relevant": true, "relevant_indices": [1], "reason": "matches"}',
+            (
+                '{"answer": "Agentic RAG uses retrieval and agent control flow [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"claims": ['
+                '{"claim_id": "c001", '
+                '"claim": "Agentic RAG uses retrieval and agent control flow", '
+                '"cited_chunk_ids": ["agentic-rag.md:p3:c1"]}'
+                '], "reason": "Extracted one claim."}'
+            ),
+        ]
+    )
+    retriever_calls: list[str] = []
+    verifier_calls: list[dict[str, Any]] = []
+    registry = FalsyToolRegistry()
+    registry.register(
+        RecordingRetrieverTool(
+            ToolContext(),
+            calls=retriever_calls,
+            results_by_query={
+                "rewritten agentic rag question": [
+                    {
+                        "content": "Agentic RAG uses retrieval and agent control flow.",
+                        "source": "agentic-rag.md",
+                        "page": 3,
+                        "chunk_id": "agentic-rag.md:p3:c1",
+                        "score": 0.91,
+                    }
+                ]
+            },
+        )
+    )
+    registry.register(
+        RecordingVerifierTool(
+            ToolContext(),
+            calls=verifier_calls,
+            result={
+                "results": [
+                    {
+                        "claim_id": "c001",
+                        "claim": "Agentic RAG uses retrieval and agent control flow",
+                        "cited_chunk_ids": ["agentic-rag.md:p3:c1"],
+                        "verification_label": "supported",
+                        "confidence": 0.94,
+                        "reason": "Supported by chunk 1.",
+                    }
+                ],
+                "reason": "Supported by chunk 1.",
+            },
+        )
+    )
+
+    result = run_agent(
+        "How does it work?",
+        llm=llm,
+        tool_registry=registry,
+        settings=get_settings(),
+    )
+
+    assert retriever_calls == ["rewritten agentic rag question"]
+    assert len(verifier_calls) == 1
+    assert result["is_verified"] is True
+
+
 def test_run_agent_revises_unsupported_claim_then_finalizes():
     from agent.graph import run_agent
 

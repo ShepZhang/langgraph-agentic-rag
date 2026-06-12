@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from pydantic import BaseModel
@@ -468,6 +469,70 @@ def test_retrieve_node_falls_back_when_document_content_is_none():
             calls=calls,
             results_by_query={
                 "rewritten": [{"content": None, "source": "notes.md", "chunk_id": "c1"}]
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("original")
+    state["current_query"] = "rewritten"
+
+    update = nodes.retrieve_node(state)
+
+    assert calls == ["rewritten"]
+    assert update["documents"] == []
+    assert update["grading_reason"] == (
+        "Retriever tool failed: Retriever tool returned invalid data: expected list[dict]."
+    )
+
+
+def test_retrieve_node_falls_back_when_document_score_is_nan():
+    calls: list[str] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingRetrieverTool(
+            ToolContext(),
+            calls=calls,
+            results_by_query={
+                "rewritten": [
+                    {
+                        "content": "context",
+                        "source": "notes.md",
+                        "chunk_id": "c1",
+                        "score": math.nan,
+                    }
+                ]
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("original")
+    state["current_query"] = "rewritten"
+
+    update = nodes.retrieve_node(state)
+
+    assert calls == ["rewritten"]
+    assert update["documents"] == []
+    assert update["grading_reason"] == (
+        "Retriever tool failed: Retriever tool returned invalid data: expected list[dict]."
+    )
+
+
+def test_retrieve_node_falls_back_when_document_rerank_score_is_invalid():
+    calls: list[str] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingRetrieverTool(
+            ToolContext(),
+            calls=calls,
+            results_by_query={
+                "rewritten": [
+                    {
+                        "content": "context",
+                        "source": "notes.md",
+                        "chunk_id": "c1",
+                        "rerank_score": {"value": 0.5},
+                    }
+                ]
             },
         )
     )
@@ -1440,6 +1505,163 @@ def test_verify_citations_node_falls_back_when_results_do_not_cover_all_claims()
             "source": "paper.pdf",
             "chunk_id": "chunk-1",
         }
+    ]
+
+    update = nodes.verify_citations_node(state)
+
+    assert len(calls) == 1
+    assert update["route"] == "fallback"
+    assert update["fallback_reason"] == "Citation verification tool returned invalid data."
+
+
+def test_verify_citations_node_falls_back_when_input_claim_ids_repeat():
+    calls: list[dict[str, Any]] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingVerifierTool(
+            ToolContext(),
+            calls=calls,
+            result={
+                "results": [
+                    {
+                        "claim_id": "c001",
+                        "claim": "Agentic RAG uses retrieval grading.",
+                        "cited_chunk_ids": ["chunk-1"],
+                        "verification_label": "supported",
+                        "confidence": 0.9,
+                        "reason": "supported",
+                    }
+                ],
+                "reason": "duplicate input ids",
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("What does Agentic RAG use?")
+    state["draft_answer"] = "Agentic RAG uses retrieval grading [1]."
+    state["claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval grading.",
+            "cited_chunk_ids": ["chunk-1"],
+        },
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG has fallback.",
+            "cited_chunk_ids": ["chunk-2"],
+        },
+    ]
+    state["cited_documents"] = [
+        {"content": "A", "source": "paper.pdf", "chunk_id": "chunk-1"},
+        {"content": "B", "source": "paper.pdf", "chunk_id": "chunk-2"},
+    ]
+
+    update = nodes.verify_citations_node(state)
+
+    assert len(calls) == 1
+    assert update["route"] == "fallback"
+    assert update["fallback_reason"] == "Citation verification tool returned invalid data."
+
+
+def test_verify_citations_node_falls_back_when_result_claim_ids_repeat():
+    calls: list[dict[str, Any]] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingVerifierTool(
+            ToolContext(),
+            calls=calls,
+            result={
+                "results": [
+                    {
+                        "claim_id": "c001",
+                        "claim": "Agentic RAG uses retrieval grading.",
+                        "cited_chunk_ids": ["chunk-1"],
+                        "verification_label": "supported",
+                        "confidence": 0.9,
+                        "reason": "supported",
+                    },
+                    {
+                        "claim_id": "c001",
+                        "claim": "Agentic RAG uses retrieval grading.",
+                        "cited_chunk_ids": ["chunk-1"],
+                        "verification_label": "unsupported",
+                        "confidence": 0.2,
+                        "reason": "duplicate result id",
+                    },
+                ],
+                "reason": "duplicate result ids",
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("What does Agentic RAG use?")
+    state["draft_answer"] = "Agentic RAG uses retrieval grading [1]."
+    state["claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval grading.",
+            "cited_chunk_ids": ["chunk-1"],
+        }
+    ]
+    state["cited_documents"] = [
+        {"content": "A", "source": "paper.pdf", "chunk_id": "chunk-1"}
+    ]
+
+    update = nodes.verify_citations_node(state)
+
+    assert len(calls) == 1
+    assert update["route"] == "fallback"
+    assert update["fallback_reason"] == "Citation verification tool returned invalid data."
+
+
+def test_verify_citations_node_falls_back_when_results_swap_claim_chunks():
+    calls: list[dict[str, Any]] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingVerifierTool(
+            ToolContext(),
+            calls=calls,
+            result={
+                "results": [
+                    {
+                        "claim_id": "c001",
+                        "claim": "Agentic RAG uses retrieval grading.",
+                        "cited_chunk_ids": ["chunk-2"],
+                        "verification_label": "supported",
+                        "confidence": 0.9,
+                        "reason": "wrong chunk",
+                    },
+                    {
+                        "claim_id": "c002",
+                        "claim": "Agentic RAG has fallback.",
+                        "cited_chunk_ids": ["chunk-1"],
+                        "verification_label": "supported",
+                        "confidence": 0.9,
+                        "reason": "wrong chunk",
+                    },
+                ],
+                "reason": "swapped chunks",
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("What does Agentic RAG use?")
+    state["draft_answer"] = "Agentic RAG uses retrieval grading and fallback [1][2]."
+    state["claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval grading.",
+            "cited_chunk_ids": ["chunk-1"],
+        },
+        {
+            "claim_id": "c002",
+            "claim": "Agentic RAG has fallback.",
+            "cited_chunk_ids": ["chunk-2"],
+        },
+    ]
+    state["cited_documents"] = [
+        {"content": "A", "source": "paper.pdf", "chunk_id": "chunk-1"},
+        {"content": "B", "source": "paper.pdf", "chunk_id": "chunk-2"},
     ]
 
     update = nodes.verify_citations_node(state)

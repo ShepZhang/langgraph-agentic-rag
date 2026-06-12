@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -845,7 +846,28 @@ def _is_valid_retriever_tool_data(data: Any) -> bool:
         if isinstance(page, bool) or (page is not None and not isinstance(page, int)):
             return False
         score = document.get("score")
-        if isinstance(score, bool) or (score is not None and not isinstance(score, (int, float))):
+        if (
+            isinstance(score, bool)
+            or (
+                score is not None
+                and (
+                    not isinstance(score, (int, float))
+                    or not math.isfinite(float(score))
+                )
+            )
+        ):
+            return False
+        rerank_score = document.get("rerank_score")
+        if (
+            isinstance(rerank_score, bool)
+            or (
+                rerank_score is not None
+                and (
+                    not isinstance(rerank_score, (int, float))
+                    or not math.isfinite(float(rerank_score))
+                )
+            )
+        ):
             return False
         document_id = document.get("document_id")
         if document_id is not None and not isinstance(document_id, str):
@@ -890,7 +912,7 @@ def _is_valid_citation_verification_tool_data(
     if not isinstance(results, list):
         return False
 
-    expected_claims: dict[str, str] = {}
+    expected_claims: dict[str, dict[str, Any]] = {}
     for claim in claims:
         if not isinstance(claim, dict):
             return False
@@ -900,7 +922,19 @@ def _is_valid_citation_verification_tool_data(
             return False
         if not isinstance(claim_text, str) or not claim_text.strip():
             return False
-        expected_claims[claim_id] = claim_text
+        if claim_id in expected_claims:
+            return False
+        claim_chunk_ids = claim.get("cited_chunk_ids")
+        if not isinstance(claim_chunk_ids, list) or not all(
+            isinstance(chunk_id, str) and chunk_id for chunk_id in claim_chunk_ids
+        ):
+            return False
+        if len(set(claim_chunk_ids)) != len(claim_chunk_ids):
+            return False
+        expected_claims[claim_id] = {
+            "claim": claim_text,
+            "cited_chunk_ids": set(claim_chunk_ids),
+        }
 
     valid_chunk_ids = {
         document.get("chunk_id")
@@ -922,7 +956,7 @@ def _is_valid_citation_verification_tool_data(
         if (
             not isinstance(claim_text, str)
             or not claim_text.strip()
-            or claim_text != expected_claims[claim_id]
+            or claim_text != expected_claims[claim_id]["claim"]
         ):
             return False
         result_reason = result.get("reason")
@@ -937,6 +971,8 @@ def _is_valid_citation_verification_tool_data(
             return False
         if any(not chunk_id or chunk_id not in valid_chunk_ids for chunk_id in cited_chunk_ids):
             return False
+        if any(chunk_id not in expected_claims[claim_id]["cited_chunk_ids"] for chunk_id in cited_chunk_ids):
+            return False
         verification_label = result.get("verification_label")
         if verification_label not in allowed_labels:
             return False
@@ -946,6 +982,7 @@ def _is_valid_citation_verification_tool_data(
             or not isinstance(confidence, (int, float))
             or confidence < 0
             or confidence > 1
+            or not math.isfinite(float(confidence))
         ):
             return False
 
