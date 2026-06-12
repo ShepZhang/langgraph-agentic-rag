@@ -4,6 +4,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from tools.base import BaseTool, ToolContext, ToolErrorInfo, ToolInputError
+from tools.base import ToolExecutionError
 from tools.registry import ToolNotFoundError, ToolRegistrationError, ToolRegistry
 
 
@@ -135,5 +136,46 @@ def test_registry_redacts_secrets_and_ignores_observer_failure():
     assert result.error is not None
     assert len(result.error.message) <= 500
     assert "sk-secretvalue123" not in result.error.message
+    assert "Bearer" not in result.error.message
+    assert "[REDACTED]" in result.error.message
+
+
+def test_registry_forces_tool_input_error_code_even_when_exception_carries_custom_code():
+    class CustomCodeInputErrorTool(EchoTool):
+        name = "custom_input_error"
+
+        def run(self, arguments: EchoArgs) -> str:
+            raise ToolInputError(
+                ToolErrorInfo(code="custom", message="invalid sk-secretvalue123")
+            )
+
+    registry = ToolRegistry()
+    registry.register(CustomCodeInputErrorTool(ToolContext()))
+
+    result = registry.invoke("custom_input_error", {"text": "hello"})
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "tool_input_error"
+    assert result.error.message.endswith("[REDACTED]")
+
+
+def test_registry_forces_tool_execution_error_code_even_when_exception_carries_custom_code():
+    class CustomCodeExecutionErrorTool(EchoTool):
+        name = "custom_execution_error"
+
+        def run(self, arguments: EchoArgs) -> str:
+            raise ToolExecutionError(
+                ToolErrorInfo(code="custom", message="provider failed Bearer token x")
+            )
+
+    registry = ToolRegistry()
+    registry.register(CustomCodeExecutionErrorTool(ToolContext()))
+
+    result = registry.invoke("custom_execution_error", {"text": "hello"})
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "tool_execution_error"
     assert "Bearer" not in result.error.message
     assert "[REDACTED]" in result.error.message

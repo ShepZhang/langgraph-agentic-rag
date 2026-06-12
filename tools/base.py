@@ -147,9 +147,7 @@ def error_info_from_exception(
 ) -> ToolErrorInfo:
     if isinstance(exc, ToolError) and hasattr(exc, "info"):
         info = exc.info
-        code = info.code or default_code
         message = info.message
     else:
-        code = default_code
         message = str(exc)
-    return ToolErrorInfo(code=code, message=redact_tool_message(message))
+    return ToolErrorInfo(code=default_code, message=redact_tool_message(message))
