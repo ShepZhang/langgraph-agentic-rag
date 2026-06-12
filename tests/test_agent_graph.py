@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 from agent.features import AgentFeatureFlags
 from config import get_settings
+from tools import ToolContext, ToolRegistry
+from tools.base import BaseTool
 
 
 class FakeLLM:
@@ -18,6 +22,59 @@ class FakeLLM:
     def invoke(self, prompt):
         self.prompts.append(prompt)
         return self.responses.pop(0)
+
+
+class RetrieveArgs(BaseModel):
+    query: str
+
+
+class VerifyArgs(BaseModel):
+    question: str
+    answer: str
+    claims: list[dict[str, Any]]
+    documents: list[dict[str, Any]]
+
+
+class RecordingRetrieverTool(BaseTool[RetrieveArgs, list[dict[str, Any]]]):
+    name = "retrieve_context"
+    description = "Return retrieval results."
+    args_schema = RetrieveArgs
+
+    def __init__(
+        self,
+        context: ToolContext,
+        *,
+        calls: list[str],
+        results_by_query: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        super().__init__(context)
+        self.calls = calls
+        self.results_by_query = results_by_query
+
+    def run(self, arguments: RetrieveArgs) -> list[dict[str, Any]]:
+        self.calls.append(arguments.query)
+        return self.results_by_query.get(arguments.query, [])
+
+
+class RecordingVerifierTool(BaseTool[VerifyArgs, dict[str, Any]]):
+    name = "verify_citations"
+    description = "Return claim verification results."
+    args_schema = VerifyArgs
+
+    def __init__(
+        self,
+        context: ToolContext,
+        *,
+        calls: list[dict[str, Any]],
+        result: dict[str, Any],
+    ) -> None:
+        super().__init__(context)
+        self.calls = calls
+        self.result = result
+
+    def run(self, arguments: VerifyArgs) -> dict[str, Any]:
+        self.calls.append(arguments.model_dump())
+        return self.result
 
 
 def test_run_agent_skips_query_transformation_and_grading_when_disabled():
@@ -288,6 +345,100 @@ def test_run_agent_executes_multi_query_retrieval_and_exposes_diagnostics():
     assert result["multi_query_result_count"] == 1
     assert result["retrieved_documents"][0]["matched_queries"] == retriever_queries
     assert result["citation_verification_passed"] is True
+
+
+def test_run_agent_uses_supplied_tool_registry_for_retrieval_and_verification():
+    from agent.graph import run_agent
+
+    llm = FakeLLM(
+        [
+            "rewritten agentic rag question",
+            '{"relevant": true, "relevant_indices": [1], "reason": "matches"}',
+            (
+                '{"answer": "Agentic RAG uses retrieval and agent control flow [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"claims": ['
+                '{"claim_id": "c001", '
+                '"claim": "Agentic RAG uses retrieval and agent control flow", '
+                '"cited_chunk_ids": ["agentic-rag.md:p3:c1"]}'
+                '], "reason": "Extracted one claim."}'
+            ),
+        ]
+    )
+    retriever_calls: list[str] = []
+    verifier_calls: list[dict[str, Any]] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingRetrieverTool(
+            ToolContext(),
+            calls=retriever_calls,
+            results_by_query={
+                "rewritten agentic rag question": [
+                    {
+                        "content": "Agentic RAG uses retrieval and agent control flow.",
+                        "source": "agentic-rag.md",
+                        "page": 3,
+                        "chunk_id": "agentic-rag.md:p3:c1",
+                        "score": 0.91,
+                    }
+                ]
+            },
+        )
+    )
+    registry.register(
+        RecordingVerifierTool(
+            ToolContext(),
+            calls=verifier_calls,
+            result={
+                "results": [
+                    {
+                        "claim_id": "c001",
+                        "claim": "Agentic RAG uses retrieval and agent control flow",
+                        "cited_chunk_ids": ["agentic-rag.md:p3:c1"],
+                        "verification_label": "supported",
+                        "confidence": 0.94,
+                        "reason": "Supported by chunk 1.",
+                    }
+                ],
+                "reason": "Supported by chunk 1.",
+            },
+        )
+    )
+
+    result = run_agent(
+        "How does it work?",
+        chat_history=[{"role": "user", "content": "Tell me about Agentic RAG"}],
+        llm=llm,
+        retriever_fn=lambda query: [],
+        tool_registry=registry,
+        settings=get_settings(),
+    )
+
+    assert retriever_calls == ["rewritten agentic rag question"]
+    assert len(verifier_calls) == 1
+    assert verifier_calls[0]["question"] == "How does it work?"
+    assert verifier_calls[0]["answer"] == (
+        "Agentic RAG uses retrieval and agent control flow [1]."
+    )
+    assert verifier_calls[0]["claims"] == [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval and agent control flow",
+            "cited_chunk_ids": ["agentic-rag.md:p3:c1"],
+        }
+    ]
+    assert verifier_calls[0]["documents"][0]["content"] == (
+        "Agentic RAG uses retrieval and agent control flow."
+    )
+    assert verifier_calls[0]["documents"][0]["matched_queries"] == [
+        "rewritten agentic rag question"
+    ]
+    assert result["answer"] == "Agentic RAG uses retrieval and agent control flow [1]."
+    assert result["is_verified"] is True
+    assert result["citation_verification_passed"] is True
+    assert len(llm.prompts) == 4
 
 
 def test_run_agent_revises_unsupported_claim_then_finalizes():

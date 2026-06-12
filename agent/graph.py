@@ -7,6 +7,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+import agent.tools as legacy_agent_tools
 from agent.edges import (
     route_after_answer_generation,
     route_after_answer_revision,
@@ -21,6 +22,7 @@ from agent.state import AgentState, ChatMessage, create_initial_state
 from config import Settings, get_settings
 from observability.logger import create_trace_store
 from observability.trace import TraceRecorder
+from tools import ToolRegistry, create_default_tool_registry
 
 
 def build_graph(
@@ -30,17 +32,23 @@ def build_graph(
     features: AgentFeatureFlags | None = None,
     trace_recorder: TraceRecorder | None = None,
     workspace_id: str | None = None,
+    tool_registry: ToolRegistry | None = None,
 ) -> Any:
     """Build and compile the Agentic RAG LangGraph workflow."""
 
     resolved_settings = settings or get_settings()
     resolved_features = features or AgentFeatureFlags()
     resolved_llm = llm or create_chat_model(resolved_settings)
+    resolved_retriever_fn = retriever_fn or _build_workspace_retriever_fn(workspace_id)
+    resolved_tool_registry = tool_registry or create_default_tool_registry(
+        llm=resolved_llm,
+        retriever_fn=resolved_retriever_fn,
+        workspace_id=workspace_id,
+    )
     nodes = AgentNodes(
         llm=resolved_llm,
-        retriever_fn=retriever_fn,
         features=resolved_features,
-        workspace_id=workspace_id,
+        tool_registry=resolved_tool_registry,
     )
 
     workflow = StateGraph(AgentState)
@@ -195,6 +203,7 @@ def run_agent(
     settings: Settings | None = None,
     features: AgentFeatureFlags | None = None,
     trace_store: Any | None = None,
+    tool_registry: ToolRegistry | None = None,
 ) -> dict[str, Any]:
     """Run the Agentic RAG workflow and return the public result payload."""
 
@@ -224,6 +233,7 @@ def run_agent(
         features=resolved_features,
         trace_recorder=trace_recorder,
         workspace_id=workspace_id,
+        tool_registry=tool_registry,
     )
     initial_state = create_initial_state(
         question,
@@ -347,6 +357,15 @@ def _trace_node(
         return update
 
     return wrapped
+
+
+def _build_workspace_retriever_fn(
+    workspace_id: str | None,
+) -> Any:
+    def retrieve_with_workspace(query: str) -> list[dict[str, Any]]:
+        return legacy_agent_tools.retrieve(query, workspace_id=workspace_id)
+
+    return retrieve_with_workspace
 
 
 def _trace_route(

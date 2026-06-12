@@ -14,16 +14,13 @@ from agent.multi_query import build_retrieval_queries, merge_retrieved_documents
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
     ANSWER_REVISION_PROMPT,
-    CITATION_VERIFICATION_PROMPT,
     CLAIM_EXTRACTION_PROMPT,
-    CLAIM_VERIFICATION_PROMPT,
     RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
     format_documents,
 )
 from agent.citation_verification import (
     build_claim_verification_summary,
-    parse_citation_verification_response,
     parse_claim_extraction_response,
 )
 from agent.query_transform import (
@@ -33,7 +30,7 @@ from agent.query_transform import (
 )
 from agent.retrieval_grading import parse_retrieval_grading_response
 from agent.state import AgentState, Citation, RetrievedDocument
-from agent.tools import create_retriever_tool
+from tools import ToolRegistry, create_default_tool_registry
 
 
 FALLBACK_ANSWER = "根据当前已索引文档，无法可靠回答这个问题。请补充相关文档，或换一种更具体的问法。"
@@ -53,11 +50,13 @@ class AgentNodes:
         retriever_fn: Any | None = None,
         features: AgentFeatureFlags | None = None,
         workspace_id: str | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> None:
         self.llm = llm
         self.features = features or AgentFeatureFlags()
-        self.retriever_tool = create_retriever_tool(
-            retriever_fn,
+        self.tool_registry = tool_registry or create_default_tool_registry(
+            llm=llm,
+            retriever_fn=retriever_fn,
             workspace_id=workspace_id,
         )
 
@@ -145,10 +144,23 @@ class AgentNodes:
             expanded_queries=state.get("expanded_queries", []),
             strategy=state.get("query_transform_strategy", "rewrite"),
         )
-        query_results = [
-            (retrieval_query, self.retriever_tool.invoke({"query": retrieval_query}))
-            for retrieval_query in retrieval_queries
-        ]
+        query_results: list[tuple[str, list[RetrievedDocument]]] = []
+        tool_errors: list[str] = []
+        for retrieval_query in retrieval_queries:
+            result = self.tool_registry.invoke(
+                "retrieve_context",
+                {"query": retrieval_query},
+            )
+            if result.success:
+                query_results.append((retrieval_query, result.data or []))
+                continue
+            tool_errors.append(
+                (
+                    result.error.message
+                    if result.error is not None and result.error.message
+                    else "Unknown retrieval failure"
+                )
+            )
         documents = merge_retrieved_documents(query_results)
         retrieval_attempt = state.get("retrieval_attempt", 0) + 1
         multi_query_used = len(retrieval_queries) > 1
@@ -159,13 +171,16 @@ class AgentNodes:
             len(retrieval_queries),
             query,
         )
-        return {
+        update = {
             "documents": documents,
             "retrieval_queries": retrieval_queries,
             "multi_query_used": multi_query_used,
             "multi_query_result_count": len(documents),
             "retrieval_attempt": retrieval_attempt,
         }
+        if not documents and tool_errors:
+            update["grading_reason"] = f"Retriever tool failed: {'; '.join(tool_errors)}"
+        return update
 
     def accept_retrieved_documents_node(self, state: AgentState) -> dict[str, Any]:
         """Use retrieved documents directly when retrieval grading is disabled."""
@@ -173,7 +188,8 @@ class AgentNodes:
         documents = state.get("documents", [])
         if not documents:
             return _fallback_update(
-                "No documents retrieved while retrieval grading was disabled."
+                state.get("grading_reason")
+                or "No documents retrieved while retrieval grading was disabled."
             )
 
         return {
@@ -193,7 +209,7 @@ class AgentNodes:
 
         documents = state.get("documents", [])
         if not documents:
-            reason = "No documents retrieved."
+            reason = state.get("grading_reason") or "No documents retrieved."
             logger.info("Retrieval grading skipped: %s", reason)
             return {
                 "is_relevant": False,
@@ -415,21 +431,37 @@ class AgentNodes:
             return _fallback_update("Claim extraction returned no verifiable claims.")
 
         cited_documents = state.get("cited_documents", [])
-        valid_chunk_ids = _selected_citation_chunk_ids(cited_documents)
-        prompt = CITATION_VERIFICATION_PROMPT.format(
-            question=state["question"],
-            answer=state.get("draft_answer", ""),
-            claims=json.dumps(claims, ensure_ascii=False),
-            documents=format_documents(cited_documents),
+        result = self.tool_registry.invoke(
+            "verify_citations",
+            {
+                "question": state["question"],
+                "answer": state.get("draft_answer", ""),
+                "claims": claims,
+                "documents": cited_documents,
+            },
         )
-        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
-        verification = parse_citation_verification_response(
-            raw_result,
-            valid_chunk_ids=valid_chunk_ids,
-        )
-        if verification is None:
-            logger.warning("Citation verification returned invalid JSON.")
-            return _fallback_update("Citation verification returned invalid JSON.")
+        if not result.success:
+            message = (
+                result.error.message
+                if result.error is not None and result.error.message
+                else "Unknown citation verification failure"
+            )
+            return {
+                **_fallback_update(f"Citation verification tool failed: {message}"),
+                "citation_verification_passed": False,
+            }
+
+        verification = result.data
+        if (
+            not isinstance(verification, dict)
+            or not isinstance(verification.get("results"), list)
+            or not isinstance(verification.get("reason"), str)
+        ):
+            logger.warning("Citation verification tool returned invalid data.")
+            return {
+                **_fallback_update("Citation verification tool returned invalid data."),
+                "citation_verification_passed": False,
+            }
 
         summary = build_claim_verification_summary(
             verification["results"],
@@ -583,25 +615,6 @@ class AgentNodes:
         )
         logger.info("Fallback answer returned: %s", reason)
         return _fallback_update(reason)
-
-    def _verify_answer_claims(
-        self,
-        question: str,
-        answer: str,
-        documents: list[RetrievedDocument],
-    ) -> dict[str, Any] | None:
-        """Verify generated answer claims against selected citation chunks."""
-
-        prompt = CLAIM_VERIFICATION_PROMPT.format(
-            question=question,
-            answer=answer,
-            documents=format_documents(documents),
-        )
-        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
-        return _parse_claim_verification_result(
-            raw_result,
-            document_count=len(documents),
-        )
 
 
 def build_citations(
@@ -801,68 +814,6 @@ def _parse_answer_result(
     return {
         "answer": answer,
         "used_citation_indices": used_citation_indices,
-    }
-
-
-def _parse_claim_verification_result(
-    raw_result: str,
-    document_count: int,
-) -> dict[str, Any] | None:
-    """Parse and validate claim-level verification JSON."""
-
-    parsed = _extract_first_json_object(raw_result)
-    if parsed is None:
-        return None
-
-    raw_claims = parsed.get("claims")
-    if parsed.get("verified") is not True and parsed.get("verified") is not False:
-        return None
-    if not isinstance(raw_claims, list):
-        return None
-
-    claims: list[dict[str, object]] = []
-    for raw_claim in raw_claims:
-        if not isinstance(raw_claim, dict):
-            continue
-        claim_text = raw_claim.get("claim")
-        supported = raw_claim.get("supported")
-        raw_indices = raw_claim.get("citation_indices", [])
-        if not isinstance(claim_text, str) or not isinstance(supported, bool):
-            continue
-        if not isinstance(raw_indices, list):
-            raw_indices = []
-        citation_indices: list[int] = []
-        for raw_index in raw_indices:
-            if isinstance(raw_index, bool) or not isinstance(raw_index, int):
-                continue
-            if raw_index < 1 or raw_index > document_count:
-                logger.warning(
-                    "Ignoring out-of-range claim citation index: %s",
-                    raw_index,
-                )
-                continue
-            if raw_index not in citation_indices:
-                citation_indices.append(raw_index)
-        claims.append(
-            {
-                "claim": claim_text,
-                "supported": supported,
-                "citation_indices": citation_indices,
-            }
-        )
-
-    verified = parsed["verified"] is True and bool(claims) and all(
-        claim["supported"] is True and bool(claim["citation_indices"])
-        for claim in claims
-    )
-    reason = str(parsed.get("reason") or "").strip()
-    if not reason:
-        reason = "All claims verified." if verified else "One or more claims are unsupported."
-
-    return {
-        "verified": verified,
-        "claims": claims,
-        "reason": reason,
     }
 
 
