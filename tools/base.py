@@ -67,6 +67,7 @@ class BaseTool(Generic[ArgsT, ResultT], ABC):
     name: ClassVar[str]
     description: ClassVar[str]
     args_schema: type[ArgsT]
+    trace_metadata_fields: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, context: ToolContext):
         self.context = context
@@ -137,10 +138,6 @@ _SENSITIVE_FIELD_RE = re.compile(
     r"(?i)(?P<prefix>\b(?:api[_-]?key|password|secret|token|authorization)\b\s*[:=]\s*)"
     r"(?P<value>(?:\"[^\"]*\"|'[^']*'|[^,\s\]\}]+))"
 )
-_OBSERVER_PART_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+")
-_OBSERVER_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+")
-
-
 def redact_tool_message(message: str) -> str:
     redacted = _SK_REDACT_RE.sub("[REDACTED]", message)
     redacted = _BEARER_REDACT_RE.sub("[REDACTED]", redacted)
@@ -169,52 +166,6 @@ def snapshot_observer_value(value: Any) -> Any:
     return _snapshot_observer_value(cloned, seen=set())
 
 
-def normalize_observer_key(key: Any) -> str:
-    return "".join(split_observer_key(key))
-
-
-def is_observer_body_key(key: Any) -> bool:
-    tokens = split_observer_key(key)
-    if not tokens:
-        return False
-    if any(_contains_sequence(tokens, sequence) for sequence in (["raw", "response"], ["model", "response"])):
-        return True
-    return tokens[-1] in {"content", "documents", "prompt", "response"}
-
-
-def is_observer_credential_key(key: Any) -> bool:
-    tokens = split_observer_key(key)
-    if not tokens:
-        return False
-    if _contains_sequence(tokens, ["api", "key"]):
-        return True
-    if tokens[-1] in {"password", "secret", "token", "credential"}:
-        return True
-    if tokens == ["authorization"] or _contains_sequence(tokens, ["authorization", "header"]):
-        return True
-    return False
-
-
-def split_observer_key(key: Any) -> list[str]:
-    tokens: list[str] = []
-    for chunk in _OBSERVER_SPLIT_RE.split(str(key)):
-        if not chunk:
-            continue
-        for token in _OBSERVER_PART_RE.findall(chunk):
-            tokens.append(token.lower())
-    return tokens
-
-
-def _contains_sequence(tokens: list[str], sequence: list[str]) -> bool:
-    if len(sequence) > len(tokens):
-        return False
-    limit = len(tokens) - len(sequence) + 1
-    for index in range(limit):
-        if tokens[index : index + len(sequence)] == sequence:
-            return True
-    return False
-
-
 def _snapshot_observer_value(value: Any, *, seen: set[int]) -> Any:
     if isinstance(value, Mapping):
         value_id = id(value)
@@ -224,13 +175,7 @@ def _snapshot_observer_value(value: Any, *, seen: set[int]) -> Any:
         try:
             snapshot: dict[str, Any] = {}
             for key, item in value.items():
-                key_str = str(key)
-                if is_observer_body_key(key_str):
-                    continue
-                if is_observer_credential_key(key_str):
-                    snapshot[key_str] = "[REDACTED]"
-                    continue
-                snapshot[key_str] = _snapshot_observer_value(item, seen=seen)
+                snapshot[str(key)] = _snapshot_observer_value(item, seen=seen)
             return snapshot
         finally:
             seen.remove(value_id)

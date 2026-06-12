@@ -16,6 +16,7 @@ class EchoTool(BaseTool[EchoArgs, str]):
     name = "echo"
     description = "Return validated text."
     args_schema = EchoArgs
+    trace_metadata_fields = frozenset({"length"})
 
     def run(self, arguments: EchoArgs) -> str:
         return arguments.text
@@ -115,6 +116,9 @@ class ComplexMetadataTool(BaseTool[ComplexMetadataArgs, str]):
     name = "complex_metadata"
     description = "Nested metadata with bypass keys."
     args_schema = ComplexMetadataArgs
+    trace_metadata_fields = frozenset(
+        {"token_count", "api_key_count", "raw_response_code", "model_response_latency"}
+    )
 
     def run(self, arguments: ComplexMetadataArgs) -> str:
         return arguments.text
@@ -125,13 +129,12 @@ class ComplexMetadataTool(BaseTool[ComplexMetadataArgs, str]):
         result: str,
     ) -> dict[str, object]:
         return {
-            "access_token": "token-123",
-            "client_secret": "secret-456",
+            "access_token_value": "token-123",
+            "client_secret_value": "secret-456",
             "token_count": 11,
-            "authorization_status": "approved",
-            "content_type": "text/plain",
-            "contention_count": 4,
-            "response_time": 0.25,
+            "api_key_count": 9,
+            "raw_response_code": 200,
+            "model_response_latency": 0.25,
             "document_content": "body text",
             "retrieved_documents": ["doc-1"],
             "prompt": "system prompt",
@@ -139,13 +142,12 @@ class ComplexMetadataTool(BaseTool[ComplexMetadataArgs, str]):
             "model_response": {"text": "model body"},
             "nested": [
                 {
-                    "access_token": "nested-token",
-                    "client_secret": "nested-secret",
+                    "access_token_value": "nested-token",
+                    "client_secret_value": "nested-secret",
                     "token_count": 7,
-                    "authorization_status": "pending",
-                    "content_type": "application/json",
-                    "contention_count": 2,
-                    "response_time": 0.5,
+                    "api_key_count": 4,
+                    "raw_response_code": 201,
+                    "model_response_latency": 0.5,
                     "document_content": "nested body",
                     "retrieved_documents": ["nested-doc"],
                     "prompt": "nested prompt",
@@ -196,6 +198,7 @@ class CycleMetadataTool(BaseTool[CycleArgs, str]):
     name = "cycle_metadata"
     description = "Metadata with shared references and a cycle."
     args_schema = CycleArgs
+    trace_metadata_fields = frozenset({"first", "second", "cycle"})
 
     def run(self, arguments: CycleArgs) -> str:
         return arguments.text
@@ -395,7 +398,73 @@ def test_registry_uses_deterministic_validation_messages_for_numeric_constraints
     assert "[REDACTED]0" not in result.error.message
 
 
-def test_registry_isolates_observer_metadata_and_redacts_snapshot_fields():
+def test_registry_masks_dynamic_mapping_keys_in_validation_messages():
+    class ValuesArgs(BaseModel):
+        values: dict[str, int]
+
+    class ValuesTool(BaseTool[ValuesArgs, dict[str, int]]):
+        name = "values"
+        description = "Dynamic mapping validation."
+        args_schema = ValuesArgs
+
+        def run(self, arguments: ValuesArgs) -> dict[str, int]:
+            return arguments.values
+
+    observer_records: list[dict[str, object]] = []
+    registry = ToolRegistry(call_observer=observer_records.append)
+    registry.register(ValuesTool(ToolContext()))
+
+    result = registry.invoke("values", {"values": {"api_key": "secret"}})
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "tool_input_error"
+    assert "values.<key>" in result.error.message
+    assert "api_key" not in result.error.message
+    assert "api_key" not in str(observer_records[0]["error"])
+
+
+def test_registry_limits_validation_messages_and_reports_omitted_count():
+    class BatchArgs(BaseModel):
+        first: str = Field(min_length=2)
+        second: str = Field(min_length=2)
+        third: str = Field(min_length=2)
+        fourth: str = Field(min_length=2)
+        fifth: str = Field(min_length=2)
+        sixth: str = Field(min_length=2)
+
+    class BatchTool(BaseTool[BatchArgs, dict[str, str]]):
+        name = "batch"
+        description = "Batch validation."
+        args_schema = BatchArgs
+
+        def run(self, arguments: BatchArgs) -> dict[str, str]:
+            return arguments.model_dump()
+
+    registry = ToolRegistry()
+    registry.register(BatchTool(ToolContext()))
+
+    result = registry.invoke(
+        "batch",
+        {
+            "first": "",
+            "second": "",
+            "third": "",
+            "fourth": "",
+            "fifth": "",
+            "sixth": "",
+        },
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "tool_input_error"
+    assert result.error.message.count("loc=") == 5
+    assert "omitted=1" in result.error.message
+    assert len(result.error.message) <= 500
+
+
+def test_registry_skips_unlisted_metadata_fields_by_default():
     observer_records: list[dict[str, object]] = []
 
     def observer(record: dict[str, object]) -> None:
@@ -411,26 +480,15 @@ def test_registry_isolates_observer_metadata_and_redacts_snapshot_fields():
     assert result.metadata["nested"]["items"][1]["flag"] is True
     assert result.metadata["api_key"] == "alpha-key"
     assert result.metadata["business"] == {"count": 2}
-
-    record = observer_records[0]
-    assert record["metadata"]["nested"]["items"][1]["flag"] is False
-    assert record["metadata"]["api_key"] == "[REDACTED]"
-    assert record["metadata"]["password"] == "[REDACTED]"
-    assert record["metadata"]["token"] == "[REDACTED]"
-    assert record["metadata"]["authorization"] == "[REDACTED]"
-    assert record["metadata"]["secret"] == "[REDACTED]"
-    assert "content" not in record["metadata"]
-    assert "documents" not in record["metadata"]
-    assert "prompt" not in record["metadata"]
-    assert "raw_response" not in record["metadata"]
+    assert observer_records[0]["metadata"] == {}
 
 
-def test_registry_redacts_complex_metadata_keys_without_mutating_result():
+def test_registry_traces_only_explicit_allowlisted_metadata_fields():
     observer_records: list[dict[str, object]] = []
 
     def observer(record: dict[str, object]) -> None:
         observer_records.append(record)
-        record["metadata"]["nested"][0]["business"] = "changed"
+        record["metadata"]["token_count"] = 99
 
     registry = ToolRegistry(call_observer=observer)
     registry.register(ComplexMetadataTool(ToolContext()))
@@ -438,57 +496,38 @@ def test_registry_redacts_complex_metadata_keys_without_mutating_result():
     result = registry.invoke("complex_metadata", {"text": "hello"})
 
     assert result.success is True
-    assert result.metadata["access_token"] == "token-123"
-    assert result.metadata["client_secret"] == "secret-456"
+    assert result.metadata["access_token_value"] == "token-123"
+    assert result.metadata["client_secret_value"] == "secret-456"
     assert result.metadata["token_count"] == 11
-    assert result.metadata["authorization_status"] == "approved"
-    assert result.metadata["content_type"] == "text/plain"
-    assert result.metadata["contention_count"] == 4
-    assert result.metadata["response_time"] == 0.25
+    assert result.metadata["api_key_count"] == 9
+    assert result.metadata["raw_response_code"] == 200
+    assert result.metadata["model_response_latency"] == 0.25
     assert result.metadata["document_content"] == "body text"
     assert result.metadata["retrieved_documents"] == ["doc-1"]
     assert result.metadata["prompt"] == "system prompt"
     assert result.metadata["rawResponse"] == {"text": "raw body"}
     assert result.metadata["model_response"] == {"text": "model body"}
-    assert result.metadata["nested"][0]["access_token"] == "nested-token"
+    assert result.metadata["nested"][0]["access_token_value"] == "nested-token"
+    assert result.metadata["nested"][0]["client_secret_value"] == "nested-secret"
+    assert result.metadata["nested"][0]["token_count"] == 7
+    assert result.metadata["nested"][0]["api_key_count"] == 4
+    assert result.metadata["nested"][0]["raw_response_code"] == 201
+    assert result.metadata["nested"][0]["model_response_latency"] == 0.5
     assert result.metadata["nested"][0]["document_content"] == "nested body"
     assert result.metadata["nested"][0]["rawResponse"] == {"text": "nested raw body"}
-    assert result.metadata["nested"][0]["token_count"] == 7
-    assert result.metadata["nested"][0]["authorization_status"] == "pending"
-    assert result.metadata["nested"][0]["content_type"] == "application/json"
-    assert result.metadata["nested"][0]["contention_count"] == 2
-    assert result.metadata["nested"][0]["response_time"] == 0.5
-    assert result.metadata["nested"][0]["retrieved_documents"] == ["nested-doc"]
-    assert result.metadata["nested"][0]["prompt"] == "nested prompt"
     assert result.metadata["nested"][0]["model_response"] == {"text": "nested model body"}
-    assert "business" not in result.metadata["nested"][0]
 
     snapshot = observer_records[0]["metadata"]
-    assert snapshot["access_token"] == "[REDACTED]"
-    assert snapshot["client_secret"] == "[REDACTED]"
-    assert snapshot["token_count"] == 11
-    assert snapshot["authorization_status"] == "approved"
-    assert snapshot["content_type"] == "text/plain"
-    assert snapshot["contention_count"] == 4
-    assert snapshot["response_time"] == 0.25
-    assert "document_content" not in snapshot
-    assert "retrieved_documents" not in snapshot
-    assert "prompt" not in snapshot
-    assert "rawResponse" not in snapshot
-    assert "model_response" not in snapshot
-    assert snapshot["nested"][0]["access_token"] == "[REDACTED]"
-    assert snapshot["nested"][0]["client_secret"] == "[REDACTED]"
-    assert snapshot["nested"][0]["token_count"] == 7
-    assert snapshot["nested"][0]["authorization_status"] == "pending"
-    assert snapshot["nested"][0]["content_type"] == "application/json"
-    assert snapshot["nested"][0]["contention_count"] == 2
-    assert snapshot["nested"][0]["response_time"] == 0.5
-    assert "document_content" not in snapshot["nested"][0]
-    assert "retrieved_documents" not in snapshot["nested"][0]
-    assert "prompt" not in snapshot["nested"][0]
-    assert "rawResponse" not in snapshot["nested"][0]
-    assert "model_response" not in snapshot["nested"][0]
-    assert snapshot["nested"][0]["business"] == "changed"
+    assert snapshot == {
+        "token_count": 99,
+        "api_key_count": 9,
+        "raw_response_code": 200,
+        "model_response_latency": 0.25,
+    }
+    assert result.metadata["token_count"] == 11
+    assert result.metadata["api_key_count"] == 9
+    assert result.metadata["raw_response_code"] == 200
+    assert result.metadata["model_response_latency"] == 0.25
 
 
 def test_registry_keeps_shared_metadata_references_and_handles_cycles():

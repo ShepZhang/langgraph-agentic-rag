@@ -16,6 +16,7 @@ from tools.base import (
     ToolRegistrationError,
     ToolResult,
     error_info_from_exception,
+    redact_tool_message,
     snapshot_observer_value,
 )
 
@@ -78,14 +79,14 @@ class ToolRegistry:
                 success=True,
                 latency_ms=latency_ms,
                 error=None,
-                metadata=metadata,
+                metadata=self._observer_metadata_snapshot(tool, metadata),
             )
             return result
         except ValidationError as exc:
             return self._failure_result(
                 tool=tool,
                 start=start,
-                error=self._validation_error_message(exc),
+                error=self._validation_error_message(exc, tool.args_schema),
             )
         except ToolInputError as exc:
             return self._failure_result(
@@ -148,7 +149,7 @@ class ToolRegistry:
             "success": success,
             "latency_ms": latency_ms,
             "error": snapshot_observer_value(error) if error is not None else None,
-            "metadata": self._observer_metadata_snapshot(metadata),
+            "metadata": metadata,
         }
         try:
             self._call_observer(record)
@@ -160,23 +161,65 @@ class ToolRegistry:
         return round((perf_counter() - start) * 1000, 3)
 
     @staticmethod
-    def _validation_error_message(exc: ValidationError) -> ToolErrorInfo:
-        details: list[str] = []
-        for error in exc.errors(include_input=True, include_url=False):
-            loc = error.get("loc", ())
-            loc_text = ".".join(str(part) for part in loc) if loc else "<model>"
-            err_type = str(error.get("type", "validation_error"))
-            details.append(
-                f"loc={loc_text}; type={err_type}; message=Value failed validation."
-            )
+    def _validation_error_message(
+        exc: ValidationError,
+        schema: type[Any],
+    ) -> ToolErrorInfo:
+        schema_fields = set(getattr(schema, "model_fields", {}).keys())
+        all_errors = exc.errors(include_input=True, include_url=False)
+        limited_errors = all_errors[:5]
+        details = [
+            ToolRegistry._format_validation_error(error, schema_fields)
+            for error in limited_errors
+        ]
+        omitted = len(all_errors) - len(limited_errors)
+        if omitted > 0:
+            details.append(f"omitted={omitted}")
         message = "; ".join(details) if details else "Invalid tool input"
-        return ToolErrorInfo(code="tool_input_error", message=message)
+        return ToolErrorInfo(code="tool_input_error", message=redact_tool_message(message))
 
     @staticmethod
-    def _observer_metadata_snapshot(metadata: dict[str, Any]) -> dict[str, Any]:
+    def _format_validation_error(
+        error: dict[str, Any],
+        schema_fields: set[str],
+    ) -> str:
+        loc_text = ToolRegistry._format_validation_loc(error.get("loc", ()), schema_fields)
+        err_type = str(error.get("type", "validation_error"))
+        return f"loc={loc_text}; type={err_type}; message=Value failed validation."
+
+    @staticmethod
+    def _format_validation_loc(
+        loc: tuple[Any, ...] | list[Any] | Any,
+        schema_fields: set[str],
+    ) -> str:
+        if not loc:
+            return "<model>"
+
+        if not isinstance(loc, (tuple, list)):
+            loc = (loc,)
+
+        parts: list[str] = []
+        for index, part in enumerate(loc):
+            if isinstance(part, int):
+                parts.append(str(part))
+                continue
+            if index == 0:
+                parts.append(str(part) if part in schema_fields else "<key>")
+            else:
+                parts.append("<key>")
+        return ".".join(parts) if parts else "<model>"
+
+    def _observer_metadata_snapshot(
+        self,
+        tool: BaseTool[Any, Any],
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
         try:
-            return snapshot_observer_value(
-                {key: value for key, value in metadata.items() if key != "latency_ms"}
-            )
+            allowed = {
+                key: metadata[key]
+                for key in tool.trace_metadata_fields
+                if key in metadata
+            }
+            return snapshot_observer_value(allowed)
         except Exception:
             return {}
