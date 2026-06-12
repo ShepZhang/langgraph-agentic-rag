@@ -12,6 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from tools.base import BaseTool, ToolExecutionError
 
 
+MAX_ABS_RESULT = 1_000_000_000
+
+
 class CalculatorArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -72,9 +75,13 @@ class CalculatorTool(BaseTool[CalculatorArgs, dict[str, int | float]]):
     @staticmethod
     def _ensure_real_number(value: Any) -> int | float:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ToolExecutionError("Arithmetic result must be a finite number.")
-        if isinstance(value, float) and not math.isfinite(value):
-            raise ToolExecutionError("Arithmetic result must be a finite number.")
+            raise ToolExecutionError("Arithmetic result is too large.")
+        if isinstance(value, int):
+            if abs(value) > MAX_ABS_RESULT:
+                raise ToolExecutionError("Arithmetic result is too large.")
+            return value
+        if not math.isfinite(value) or abs(value) > MAX_ABS_RESULT:
+            raise ToolExecutionError("Arithmetic result is too large.")
         return value
 
 
