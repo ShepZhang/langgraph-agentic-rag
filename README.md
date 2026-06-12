@@ -2,9 +2,9 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, answer revision, baseline comparison, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, typed internal tools, answer revision, baseline comparison, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
 
-The project is production-oriented as an architecture and evaluation exercise, but it is not described as production-ready. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
+The project is production-oriented as an architecture and evaluation exercise, but it is not a complete production deployment. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
 ## Why This Is Not a Naive RAG Demo
 
@@ -44,6 +44,9 @@ RAG Layer
 Agent Layer
   LangGraph state -> nodes -> conditional edges -> answer or fallback
 
+Tool Registry
+  typed internal tools -> validation -> dependency injection -> diagnostics
+
 Evaluation Layer
   eval_questions.json -> baseline/agentic runners -> JSON artifacts -> report
 ```
@@ -76,6 +79,29 @@ Implemented LangGraph nodes:
 - `revise_answer_node`: removes or narrows unsupported claims once before re-running claim extraction and verification.
 - `finalize_answer_node`: promotes verified draft answers, or explicit unable-to-answer refusals, to final output.
 - `fallback_node`: returns a clear message when the indexed documents do not support an answer.
+
+## Internal Tool Registry
+
+The project uses a typed internal Tool Registry as the execution boundary for
+Agent capabilities:
+
+- `retrieve_context`: workspace-scoped dense or hybrid retrieval with optional
+  reranking.
+- `verify_citations`: claim-level verification against selected citation
+  chunks.
+- `summarize_document`: grounded summarization for supplied document text.
+- `calculator`: bounded arithmetic evaluation through an AST whitelist.
+
+`ToolContext` injects runtime dependencies such as the active LLM, retriever,
+and `workspace_id`. Pydantic schemas validate arguments, while `ToolResult`
+normalizes success data, structured errors, metadata, and latency. Compact
+tool-call events are written into Agent traces without storing prompts,
+secrets, or full document bodies.
+
+The primary LangGraph workflow uses `retrieve_context` and
+`verify_citations`. Summary and calculator are registered extension points and
+independently callable capabilities; P3d does not add autonomous tool
+selection, planning, or a ReAct loop.
 
 Key state fields:
 
@@ -119,7 +145,9 @@ Key state fields:
 - Local sentence-transformers embeddings by default.
 - Persistent Chroma vector store with deterministic chunk IDs, explicit rebuild, and incremental add support.
 - Optional hybrid retrieval: dense vector search and BM25 sparse search are fused with Reciprocal Rank Fusion before grading.
-- Retriever exposed as an Agent tool named `retrieve_context`.
+- Typed internal Tool Registry with Pydantic input validation, runtime dependency injection, normalized success/error results, and compact call diagnostics.
+- Retriever exposed through the registry as `retrieve_context`; claim verification uses the registry tool `verify_citations`.
+- Registered extension tools for grounded document summarization and bounded arithmetic calculation.
 - Optional cross-encoder reranker: retrieve candidate chunks, rerank them, then pass the strongest chunks to grading.
 - Reranker diagnostics: the reranker can emit structured records with document id, chunk id, original score, rerank score, rank, content, and metadata.
 - Structured query transformation with direct rewrite, multi-query retrieval execution, and decomposition metadata.
@@ -134,7 +162,7 @@ Key state fields:
 - Reliability evaluation runner comparing naive RAG and Agentic RAG on shared documents and a shared structured question set.
 - JSON evaluation artifacts for baseline, agentic, comparison, and ablation runs.
 - Real cumulative V0-V6 ablation using independent graph feature flags and per-variant retrieval settings.
-- Local JSONL trace logging for Agent node events, route decisions, final answers, citations, latency, retry counts, and errors.
+- Local JSONL trace logging for Agent node events, route decisions, compact tool calls, final answers, citations, latency, retry counts, and errors.
 - FastAPI service layer for chat, trace lookup, document upload/index/delete, and evaluation run retrieval.
 - Workspace-aware retrieval isolation using Chroma metadata filters for dense retrieval and workspace-filtered BM25 corpora.
 
@@ -276,13 +304,15 @@ TRACE_LOG_DIR=./data/traces
 
 When enabled, `run_agent()` returns `trace_id`, `trace_path`, and `latency_ms`.
 Each trace record is appended to `traces.jsonl` and includes node events,
-conditional route decisions, retrieved and relevant document summaries,
-document grades, final answer, citations, claim verification results, retry
-count, latency, and error metadata.
+conditional route decisions, compact tool-call diagnostics, retrieved and
+relevant document summaries, document grades, final answer, citations, claim
+verification results, retry count, latency, and error metadata.
 
 Trace records intentionally store compact document snippets and metadata rather
-than full document bodies or local source paths. Database-backed trace retention
-and a Gradio trace dashboard remain later milestones.
+than full document bodies or local source paths. Tool-call events store only
+allowlisted metadata such as workspace id, result count, claim count, latency,
+and sanitized errors. Database-backed trace retention and a Gradio trace
+dashboard remain later milestones.
 
 ## FastAPI Backend
 
@@ -543,6 +573,14 @@ agentic-rag-document-qa/
 │   ├── hybrid_retriever.py
 │   ├── retriever.py
 │   └── reranker.py
+├── tools/
+│   ├── base.py
+│   ├── registry.py
+│   ├── factory.py
+│   ├── retriever_tool.py
+│   ├── citation_verifier_tool.py
+│   ├── document_summary_tool.py
+│   └── calculator_tool.py
 ├── agent/
 │   ├── graph.py
 │   ├── state.py
@@ -599,10 +637,11 @@ agentic-rag-document-qa/
 - Designed a reliability evaluation foundation covering correctness, context relevance, source hit rate, citation hit rate, fallback accuracy, unsupported claims, retry count, latency, token usage, and cost fields.
 - Expanded the default evaluation dataset to 36 structured questions across single-doc, multi-chunk, ambiguous, unanswerable, distractor, comparison, follow-up, citation-sensitive, cross-file, and false-premise cases.
 - Added executable V0-V6 cumulative ablation artifacts with distinct Agent feature flags or retrieval settings, preventing repeated full-workflow runs from being misrepresented as module-level evidence.
-- Added local JSONL trace logging so each Agent run can expose node events, route decisions, compact evidence summaries, final answer metadata, latency, and errors.
+- Designed a typed internal Tool Registry and dependency-injection boundary that unifies retriever, claim citation verifier, document summary, and safe calculator tools with validated arguments, normalized results, stable error semantics, and compact trace diagnostics.
+- Added local JSONL trace logging so each Agent run can expose node events, route decisions, compact tool calls, evidence summaries, final answer metadata, latency, and errors.
 - Added a FastAPI backend for chat, trace lookup, document upload/index/delete, and evaluation run retrieval.
 - Added workspace-aware retrieval isolation for dense, BM25, hybrid, retriever, and Agent default retrieval paths.
-- Preserved a modular roadmap toward the Approach B typed evaluator, dynamic retrieval adjustment, per-workspace collection hardening, tool registry, prompt versioning, failed-case analysis, and an interactive evaluation dashboard.
+- Preserved a modular roadmap toward the Approach B typed evaluator, dynamic retrieval adjustment, per-workspace collection hardening, prompt versioning, failed-case analysis, and an interactive evaluation dashboard.
 
 ## Current Limitations
 
@@ -614,12 +653,12 @@ agentic-rag-document-qa/
 - Hybrid BM25 retrieval is lightweight exact-token matching. It supports workspace-filtered corpora, but it does not currently include stemming or learned sparse expansion.
 - Evaluation uses a local 36-question reliability dataset. It is useful for reproducible project-level comparison, but it is not a benchmark-grade public dataset.
 - P0b ablation variants are executable and distinct, but they are cumulative. They show incremental system trade-offs, not fully isolated causal effects for every module interaction.
-- Trace logging currently writes local JSONL records. It does not yet provide database-backed retention, API lookup endpoints, or a visual trace explorer.
-- FastAPI endpoints are integration-oriented but not production-ready. They do not yet include authentication, authorization, async job queues, rate limiting, or tenant-level access control.
+- Trace logging currently writes local JSONL records and exposes API lookup through the FastAPI layer. It does not yet provide database-backed retention or a visual trace explorer.
+- FastAPI endpoints are integration-oriented but not production-hardened. They do not yet include authentication, authorization, async job queues, rate limiting, or tenant-level access control.
 - Workspace isolation currently uses metadata filtering inside a shared Chroma collection. It does not yet create separate collections per workspace or migrate historical unscoped chunks.
 - Token usage and estimated cost are recorded only when the active model client exposes usage metadata.
 - The Gradio `Build Index` workflow intentionally rebuilds the active collection for a clean uploaded knowledge base. The lower-level vectorstore API also supports incremental `add_documents` with deterministic IDs.
-- The project is not production-ready without authentication, authorization, deployment hardening, durable trace storage, and operational monitoring.
+- The project is not a complete production deployment without authentication, authorization, deployment hardening, durable trace storage, and operational monitoring.
 
 ## Roadmap
 
@@ -644,6 +683,7 @@ agentic-rag-document-qa/
 - P3a local trace logging implemented: node events, route decisions, final answers, citations, compact evidence summaries, latency, retry counts, and errors can be saved to JSONL.
 - P3b FastAPI service layer implemented: chat, trace lookup, API-managed document upload/index/delete, and evaluation run retrieval.
 - P3c workspace-aware retrieval implemented: API-indexed documents carry workspace metadata, and Agent retrieval can filter dense, BM25, and hybrid candidates by workspace.
+- P3d typed internal Tool Registry implemented: retriever, citation verifier, document summary, and safe calculator tools share validated inputs, normalized results, stable errors, and compact trace diagnostics.
 
 ### Next Milestones
 
@@ -651,7 +691,6 @@ agentic-rag-document-qa/
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
 - Add decomposition sub-question retrieval for multi-hop workflows.
 - Harden workspace isolation with optional per-workspace Chroma collections and authorization checks.
-- Add a tool registry for retriever, citation verifier, document summary, and calculator tools without claiming autonomous tool planning.
 - Add failed-case analysis for retrieval, reranking, query rewrite, generation, citation, fallback, and tool failures.
 - Add prompt versioning under `prompts/` and record prompt versions in evaluation artifacts.
 - Add an interactive Evaluation Dashboard in Gradio for running evaluations, comparing baseline vs agentic results, inspecting failed cases, and later linking rows to trace IDs.
