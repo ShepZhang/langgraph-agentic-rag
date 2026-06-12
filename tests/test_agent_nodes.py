@@ -88,6 +88,11 @@ class RecordingVerifierTool(BaseTool[VerifyArgs, dict[str, Any]]):
         return self.result
 
 
+class FalsyToolRegistry(ToolRegistry):
+    def __bool__(self) -> bool:
+        return False
+
+
 def test_accept_retrieved_documents_node_prepares_generation_context():
     nodes = AgentNodes(llm=FakeLLM([]), retriever_fn=lambda query: [])
     state = create_initial_state("What is RAG?")
@@ -407,6 +412,51 @@ def test_retrieve_node_returns_grading_reason_when_registry_tool_fails():
     assert update["documents"] == []
     assert "Retriever tool failed: retriever backend unavailable" == update["grading_reason"]
     assert update["retrieval_attempt"] == 3
+
+
+def test_retrieve_node_uses_supplied_falsy_tool_registry():
+    calls: list[str] = []
+    registry = FalsyToolRegistry()
+    registry.register(
+        RecordingRetrieverTool(
+            ToolContext(),
+            calls=calls,
+            results_by_query={
+                "rewritten": [{"content": "context", "source": "notes.md"}]
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("original")
+    state["current_query"] = "rewritten"
+
+    update = nodes.retrieve_node(state)
+
+    assert calls == ["rewritten"]
+    assert update["documents"][0]["matched_queries"] == ["rewritten"]
+
+
+def test_retrieve_node_falls_back_when_registry_returns_invalid_success_data():
+    calls: list[str] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingRetrieverTool(
+            ToolContext(),
+            calls=calls,
+            results_by_query={"rewritten": ["not-a-document"]},
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("original")
+    state["current_query"] = "rewritten"
+
+    update = nodes.retrieve_node(state)
+
+    assert calls == ["rewritten"]
+    assert update["documents"] == []
+    assert update["grading_reason"] == (
+        "Retriever tool failed: Retriever tool returned invalid data: expected list[dict]."
+    )
 
 
 def test_grade_documents_node_marks_empty_docs_irrelevant_without_llm_call():
@@ -1233,6 +1283,44 @@ def test_verify_citations_node_falls_back_when_registry_tool_fails():
     assert update["route"] == "fallback"
     assert update["fallback_reason"] == (
         "Citation verification tool failed: verifier backend unavailable"
+    )
+    assert update["citation_verification_passed"] is False
+
+
+def test_verify_citations_node_falls_back_when_registry_returns_invalid_success_data():
+    calls: list[dict[str, Any]] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingVerifierTool(
+            ToolContext(),
+            calls=calls,
+            result={"results": [{}], "reason": "bad"},
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("What does Agentic RAG use?")
+    state["draft_answer"] = "Agentic RAG uses retrieval grading [1]."
+    state["claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval grading.",
+            "cited_chunk_ids": ["chunk-1"],
+        }
+    ]
+    state["cited_documents"] = [
+        {
+            "content": "Agentic RAG uses retrieval grading.",
+            "source": "paper.pdf",
+            "chunk_id": "chunk-1",
+        }
+    ]
+
+    update = nodes.verify_citations_node(state)
+
+    assert len(calls) == 1
+    assert update["route"] == "fallback"
+    assert update["fallback_reason"] == (
+        "Citation verification tool returned invalid data."
     )
     assert update["citation_verification_passed"] is False
 

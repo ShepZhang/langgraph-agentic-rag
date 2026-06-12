@@ -54,10 +54,14 @@ class AgentNodes:
     ) -> None:
         self.llm = llm
         self.features = features or AgentFeatureFlags()
-        self.tool_registry = tool_registry or create_default_tool_registry(
-            llm=llm,
-            retriever_fn=retriever_fn,
-            workspace_id=workspace_id,
+        self.tool_registry = (
+            tool_registry
+            if tool_registry is not None
+            else create_default_tool_registry(
+                llm=llm,
+                retriever_fn=retriever_fn,
+                workspace_id=workspace_id,
+            )
         )
 
     def rewrite_query_node(self, state: AgentState) -> dict[str, Any]:
@@ -152,6 +156,9 @@ class AgentNodes:
                 {"query": retrieval_query},
             )
             if result.success:
+                if not _is_valid_retriever_tool_data(result.data):
+                    tool_errors.append("Retriever tool returned invalid data: expected list[dict].")
+                    continue
                 query_results.append((retrieval_query, result.data or []))
                 continue
             tool_errors.append(
@@ -452,11 +459,7 @@ class AgentNodes:
             }
 
         verification = result.data
-        if (
-            not isinstance(verification, dict)
-            or not isinstance(verification.get("results"), list)
-            or not isinstance(verification.get("reason"), str)
-        ):
+        if not _is_valid_citation_verification_tool_data(verification):
             logger.warning("Citation verification tool returned invalid data.")
             return {
                 **_fallback_update("Citation verification tool returned invalid data."),
@@ -815,6 +818,49 @@ def _parse_answer_result(
         "answer": answer,
         "used_citation_indices": used_citation_indices,
     }
+
+
+def _is_valid_retriever_tool_data(data: Any) -> bool:
+    """Return True when retriever tool data matches list[dict]."""
+
+    if not isinstance(data, list):
+        return False
+    return all(isinstance(document, dict) for document in data)
+
+
+def _is_valid_citation_verification_tool_data(data: Any) -> bool:
+    """Return True when verifier tool data provides the required summary fields."""
+
+    if not isinstance(data, dict):
+        return False
+    if not isinstance(data.get("reason"), str):
+        return False
+
+    results = data.get("results")
+    if not isinstance(results, list):
+        return False
+
+    for result in results:
+        if not isinstance(result, dict):
+            return False
+        if not isinstance(result.get("claim_id"), str):
+            return False
+        if not isinstance(result.get("claim"), str):
+            return False
+        cited_chunk_ids = result.get("cited_chunk_ids")
+        if not isinstance(cited_chunk_ids, list) or not all(
+            isinstance(chunk_id, str) for chunk_id in cited_chunk_ids
+        ):
+            return False
+        if not isinstance(result.get("verification_label"), str):
+            return False
+        confidence = result.get("confidence")
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+            return False
+        if not isinstance(result.get("reason"), str):
+            return False
+
+    return True
 
 
 def _extract_first_json_object(raw_result: str) -> dict[str, Any] | None:

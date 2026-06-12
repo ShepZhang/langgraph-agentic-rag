@@ -39,11 +39,19 @@ def build_graph(
     resolved_settings = settings or get_settings()
     resolved_features = features or AgentFeatureFlags()
     resolved_llm = llm or create_chat_model(resolved_settings)
-    resolved_retriever_fn = retriever_fn or _build_workspace_retriever_fn(workspace_id)
-    resolved_tool_registry = tool_registry or create_default_tool_registry(
+    resolved_retriever_fn = (
+        retriever_fn
+        if retriever_fn is not None
+        else _build_workspace_retriever_fn(workspace_id)
+    )
+    resolved_tool_registry = (
+        tool_registry
+        if tool_registry is not None
+        else create_default_tool_registry(
         llm=resolved_llm,
         retriever_fn=resolved_retriever_fn,
         workspace_id=workspace_id,
+        )
     )
     nodes = AgentNodes(
         llm=resolved_llm,

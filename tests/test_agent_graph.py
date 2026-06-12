@@ -77,6 +77,26 @@ class RecordingVerifierTool(BaseTool[VerifyArgs, dict[str, Any]]):
         return self.result
 
 
+class FalsyRetriever:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __call__(self, query: str) -> list[dict[str, Any]]:
+        self.calls.append(query)
+        return [
+            {
+                "content": "Agentic RAG uses retrieval and agent control flow.",
+                "source": "agentic-rag.md",
+                "page": 3,
+                "chunk_id": "agentic-rag.md:p3:c1",
+                "score": 0.91,
+            }
+        ]
+
+
 def test_run_agent_skips_query_transformation_and_grading_when_disabled():
     from agent.graph import run_agent
 
@@ -439,6 +459,50 @@ def test_run_agent_uses_supplied_tool_registry_for_retrieval_and_verification():
     assert result["is_verified"] is True
     assert result["citation_verification_passed"] is True
     assert len(llm.prompts) == 4
+
+
+def test_run_agent_uses_explicit_falsy_retriever_fn():
+    from agent.graph import run_agent
+
+    retriever = FalsyRetriever()
+    llm = FakeLLM(
+        [
+            "rewritten agentic rag question",
+            '{"relevant": true, "relevant_indices": [1], "reason": "matches"}',
+            (
+                '{"answer": "Agentic RAG uses retrieval and agent control flow [1].", '
+                '"used_citation_indices": [1]}'
+            ),
+            (
+                '{"claims": ['
+                '{"claim_id": "c001", '
+                '"claim": "Agentic RAG uses retrieval and agent control flow", '
+                '"cited_chunk_ids": ["agentic-rag.md:p3:c1"]}'
+                '], "reason": "Extracted one claim."}'
+            ),
+            (
+                '{"results": ['
+                '{"claim_id": "c001", '
+                '"claim": "Agentic RAG uses retrieval and agent control flow", '
+                '"cited_chunk_ids": ["agentic-rag.md:p3:c1"], '
+                '"verification_label": "supported", "confidence": 0.94, '
+                '"reason": "Supported by chunk 1."}'
+                '], "reason": "Supported by chunk 1."}'
+            ),
+        ]
+    )
+
+    result = run_agent(
+        "How does it work?",
+        chat_history=[{"role": "user", "content": "Tell me about Agentic RAG"}],
+        llm=llm,
+        retriever_fn=retriever,
+        settings=get_settings(),
+    )
+
+    assert retriever.calls == ["rewritten agentic rag question"]
+    assert result["answer"] == "Agentic RAG uses retrieval and agent control flow [1]."
+    assert result["is_verified"] is True
 
 
 def test_run_agent_revises_unsupported_claim_then_finalizes():
