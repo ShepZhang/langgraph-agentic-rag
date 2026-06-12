@@ -200,6 +200,70 @@ def test_build_graph_without_trace_recorder_clears_reused_registry_observer():
     assert observed == []
 
 
+def test_build_graph_uses_graph_scoped_tool_observers_for_reused_registry():
+    from agent.graph import build_graph
+    from agent.state import create_initial_state
+    from observability.trace import TraceRecorder
+    from tools import create_default_tool_registry
+
+    flags = AgentFeatureFlags(
+        query_transformation_enabled=False,
+        retrieval_grading_enabled=False,
+        conditional_retry_enabled=False,
+        citation_verification_enabled=False,
+    )
+    registry = create_default_tool_registry(
+        llm=FakeLLM([]),
+        retriever_fn=lambda query: [
+            {
+                "content": "RAG retrieves supporting evidence.",
+                "source": "notes.md",
+                "chunk_id": "notes.md:pNA:c1",
+            }
+        ],
+        workspace_id="workspace_1",
+    )
+    recorder_one = TraceRecorder(
+        original_question="What is RAG?",
+        workspace_id="workspace_1",
+    )
+    recorder_two = TraceRecorder(
+        original_question="What is RAG?",
+        workspace_id="workspace_1",
+    )
+    graph_one = build_graph(
+        llm=FakeLLM(
+            [
+                (
+                    '{"answer": "RAG retrieves supporting evidence [1].", '
+                    '"used_citation_indices": [1]}'
+                )
+            ]
+        ),
+        features=flags,
+        tool_registry=registry,
+        trace_recorder=recorder_one,
+        workspace_id="workspace_1",
+    )
+    build_graph(
+        llm=FakeLLM([]),
+        features=flags,
+        tool_registry=registry,
+        trace_recorder=recorder_two,
+        workspace_id="workspace_1",
+    )
+    state = create_initial_state("What is RAG?")
+    state["current_query"] = "What is RAG?"
+    state["rewritten_question"] = "What is RAG?"
+    state["standalone_question"] = "What is RAG?"
+    state["previous_queries"] = ["What is RAG?"]
+
+    graph_one.invoke(state)
+
+    assert recorder_one.tool_calls[0]["tool_name"] == "retrieve_context"
+    assert recorder_two.tool_calls == []
+
+
 def test_run_agent_accepts_trace_store_without_path(tmp_path):
     from agent.graph import run_agent
 

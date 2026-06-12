@@ -53,15 +53,14 @@ def build_graph(
             workspace_id=workspace_id,
         )
     )
-    if trace_recorder is not None:
-        resolved_tool_registry.set_call_observer(trace_recorder.record_tool_call)
-    else:
-        resolved_tool_registry.set_call_observer(None)
-
+    graph_tool_registry = _build_graph_scoped_tool_registry(
+        resolved_tool_registry,
+        trace_recorder,
+    )
     nodes = AgentNodes(
         llm=resolved_llm,
         features=resolved_features,
-        tool_registry=resolved_tool_registry,
+        tool_registry=graph_tool_registry,
     )
 
     workflow = StateGraph(AgentState)
@@ -379,6 +378,20 @@ def _build_workspace_retriever_fn(
         return legacy_agent_tools.retrieve(query, workspace_id=workspace_id)
 
     return retrieve_with_workspace
+
+
+def _build_graph_scoped_tool_registry(
+    source: ToolRegistry,
+    trace_recorder: TraceRecorder | None,
+) -> ToolRegistry:
+    """Build an isolated registry wrapper so graph observers cannot conflict."""
+
+    observer = trace_recorder.record_tool_call if trace_recorder is not None else None
+    scoped = ToolRegistry(call_observer=observer)
+    for tool_info in source.list_tools():
+        scoped.register(source.get(tool_info["name"]))
+    source.set_call_observer(None)
+    return scoped
 
 
 def _trace_route(
