@@ -111,6 +111,33 @@ def test_citation_verifier_counts_partially_supported_and_unsupported_claims():
     assert result.metadata["unsupported_count"] == 2
 
 
+def test_citation_verifier_marks_invalid_confidence_as_unsupported():
+    oversized_confidence = 10**1000
+    llm = FakeLLM(
+        [
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "The answer cites one fact.", '
+                '"cited_chunk_ids": ["chunk-1"], '
+                '"verification_label": "supported", '
+                f'"confidence": {oversized_confidence}, '
+                '"reason": "Bad confidence."}'
+                '], "reason": "Checked."}'
+            )
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(CitationVerifierTool(ToolContext(llm=llm)))
+
+    result = registry.invoke("verify_citations", _base_arguments())
+
+    assert result.success is True
+    assert result.data is not None
+    assert result.data["results"][0]["verification_label"] == "unsupported"
+    assert result.data["results"][0]["confidence"] == 0.0
+    assert result.metadata["unsupported_count"] == 1
+
+
 def test_citation_verifier_rejects_invalid_model_output():
     registry = ToolRegistry()
     registry.register(CitationVerifierTool(ToolContext(llm=FakeLLM(["not json"]))))

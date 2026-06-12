@@ -63,7 +63,7 @@ def test_parse_claim_extraction_response_returns_none_for_invalid_json():
     )
 
 
-def test_parse_citation_verification_response_normalizes_labels_and_confidence():
+def test_parse_citation_verification_response_marks_invalid_confidence_unsupported():
     result = parse_citation_verification_response(
         (
             '{"results": ['
@@ -81,8 +81,8 @@ def test_parse_citation_verification_response_normalizes_labels_and_confidence()
         "claim_id": "c001",
         "claim": "A",
         "cited_chunk_ids": ["chunk-1"],
-        "verification_label": "supported",
-        "confidence": 1.0,
+        "verification_label": "unsupported",
+        "confidence": 0.0,
         "reason": "ok",
     }
     assert result["results"][1] == {
