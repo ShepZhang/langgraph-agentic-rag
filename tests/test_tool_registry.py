@@ -398,6 +398,76 @@ def test_registry_uses_deterministic_validation_messages_for_numeric_constraints
     assert "[REDACTED]0" not in result.error.message
 
 
+def test_registry_keeps_nested_schema_locations_for_lists_and_aliases():
+    class ClaimModel(BaseModel):
+        claim_id: str
+        confidence: float = Field(ge=0, le=1)
+
+    class EnvelopeArgs(BaseModel):
+        claims: list[ClaimModel]
+
+    class EnvelopeTool(BaseTool[EnvelopeArgs, list[ClaimModel]]):
+        name = "envelope"
+        description = "Nested schema validation."
+        args_schema = EnvelopeArgs
+
+        def run(self, arguments: EnvelopeArgs) -> list[ClaimModel]:
+            return arguments.claims
+
+    class AliasArgs(BaseModel):
+        api_key: str = Field(min_length=20, alias="apiKey")
+
+    class AliasTool(BaseTool[AliasArgs, str]):
+        name = "alias"
+        description = "Alias schema validation."
+        args_schema = AliasArgs
+
+        def run(self, arguments: AliasArgs) -> str:
+            return arguments.api_key
+
+    registry = ToolRegistry()
+    registry.register(EnvelopeTool(ToolContext()))
+    registry.register(AliasTool(ToolContext()))
+
+    nested = registry.invoke("envelope", {"claims": [{"claim_id": "c1", "confidence": 2}]})
+    aliased = registry.invoke("alias", {"apiKey": "plain-secret"})
+
+    assert nested.success is False
+    assert nested.error is not None
+    assert "claims.0.confidence" in nested.error.message
+    assert "<key>" not in nested.error.message
+
+    assert aliased.success is False
+    assert aliased.error is not None
+    assert "apiKey" in aliased.error.message
+    assert "plain-secret" not in aliased.error.message
+
+
+def test_registry_masks_dynamic_user_keys_with_schema_aware_locations():
+    class ValuesArgs(BaseModel):
+        values: dict[str, int]
+
+    class ValuesTool(BaseTool[ValuesArgs, dict[str, int]]):
+        name = "values"
+        description = "Dynamic mapping validation."
+        args_schema = ValuesArgs
+
+        def run(self, arguments: ValuesArgs) -> dict[str, int]:
+            return arguments.values
+
+    observer_records: list[dict[str, object]] = []
+    registry = ToolRegistry(call_observer=observer_records.append)
+    registry.register(ValuesTool(ToolContext()))
+
+    result = registry.invoke("values", {"values": {"api_key": "secret"}})
+
+    assert result.success is False
+    assert result.error is not None
+    assert "values.<key>" in result.error.message
+    assert "api_key" not in result.error.message
+    assert "api_key" not in str(observer_records[0]["error"])
+
+
 def test_registry_masks_dynamic_mapping_keys_in_validation_messages():
     class ValuesArgs(BaseModel):
         values: dict[str, int]
@@ -462,6 +532,55 @@ def test_registry_limits_validation_messages_and_reports_omitted_count():
     assert result.error.message.count("loc=") == 5
     assert "omitted=1" in result.error.message
     assert len(result.error.message) <= 500
+
+
+def test_registry_keeps_validation_messages_within_budget_for_many_errors():
+    class ManyArgs(BaseModel):
+        first: str = Field(min_length=2)
+        second: str = Field(min_length=2)
+        third: str = Field(min_length=2)
+        fourth: str = Field(min_length=2)
+        fifth: str = Field(min_length=2)
+        sixth: str = Field(min_length=2)
+        seventh: str = Field(min_length=2)
+        eighth: str = Field(min_length=2)
+        ninth: str = Field(min_length=2)
+        tenth: str = Field(min_length=2)
+        eleventh: str = Field(min_length=2)
+
+    class ManyTool(BaseTool[ManyArgs, dict[str, str]]):
+        name = "many"
+        description = "Many validation errors."
+        args_schema = ManyArgs
+
+        def run(self, arguments: ManyArgs) -> dict[str, str]:
+            return arguments.model_dump()
+
+    registry = ToolRegistry()
+    registry.register(ManyTool(ToolContext()))
+
+    result = registry.invoke(
+        "many",
+        {
+            "first": "",
+            "second": "",
+            "third": "",
+            "fourth": "",
+            "fifth": "",
+            "sixth": "",
+            "seventh": "",
+            "eighth": "",
+            "ninth": "",
+            "tenth": "",
+            "eleventh": "",
+        },
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert len(result.error.message) <= 500
+    assert result.error.message.count("loc=") == 5
+    assert "omitted=6" in result.error.message
 
 
 def test_registry_skips_unlisted_metadata_fields_by_default():

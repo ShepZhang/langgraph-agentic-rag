@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 import logging
 from time import perf_counter
-from typing import Any
+from typing import Any, Annotated, Union, get_args, get_origin
+from types import UnionType
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from tools.base import (
     BaseTool,
@@ -165,32 +166,39 @@ class ToolRegistry:
         exc: ValidationError,
         schema: type[Any],
     ) -> ToolErrorInfo:
-        schema_fields = set(getattr(schema, "model_fields", {}).keys())
         all_errors = exc.errors(include_input=True, include_url=False)
-        limited_errors = all_errors[:5]
-        details = [
-            ToolRegistry._format_validation_error(error, schema_fields)
-            for error in limited_errors
-        ]
-        omitted = len(all_errors) - len(limited_errors)
-        if omitted > 0:
-            details.append(f"omitted={omitted}")
+        details: list[str] = []
+        for error in all_errors[:5]:
+            detail = ToolRegistry._format_validation_error(error, schema)
+            omitted = len(all_errors) - (len(details) + 1)
+            candidate = "; ".join(details + [detail])
+            if omitted > 0:
+                candidate = f"{candidate}; omitted={omitted}"
+            if len(candidate) > 500:
+                break
+            details.append(detail)
+
+        omitted = len(all_errors) - len(details)
         message = "; ".join(details) if details else "Invalid tool input"
+        if omitted > 0:
+            message = f"{message}; omitted={omitted}"
         return ToolErrorInfo(code="tool_input_error", message=redact_tool_message(message))
 
     @staticmethod
     def _format_validation_error(
         error: dict[str, Any],
-        schema_fields: set[str],
+        schema: type[Any],
     ) -> str:
-        loc_text = ToolRegistry._format_validation_loc(error.get("loc", ()), schema_fields)
+        loc_text = ToolRegistry._safe_validation_location(schema, error.get("loc", ()))
+        if len(loc_text) > 120:
+            loc_text = f"{loc_text[:117]}..."
         err_type = str(error.get("type", "validation_error"))
         return f"loc={loc_text}; type={err_type}; message=Value failed validation."
 
     @staticmethod
-    def _format_validation_loc(
+    def _safe_validation_location(
+        schema: type[Any] | Any,
         loc: tuple[Any, ...] | list[Any] | Any,
-        schema_fields: set[str],
     ) -> str:
         if not loc:
             return "<model>"
@@ -198,16 +206,143 @@ class ToolRegistry:
         if not isinstance(loc, (tuple, list)):
             loc = (loc,)
 
-        parts: list[str] = []
-        for index, part in enumerate(loc):
-            if isinstance(part, int):
-                parts.append(str(part))
-                continue
-            if index == 0:
-                parts.append(str(part) if part in schema_fields else "<key>")
-            else:
-                parts.append("<key>")
+        parts = ToolRegistry._safe_validation_location_parts(schema, list(loc))
         return ".".join(parts) if parts else "<model>"
+
+    @staticmethod
+    def _safe_validation_location_parts(
+        annotation: type[Any] | Any,
+        loc: list[Any],
+    ) -> list[str]:
+        if not loc:
+            return []
+
+        annotation = ToolRegistry._strip_annotated(annotation)
+        annotation = ToolRegistry._resolve_union(annotation, loc[0])
+
+        if ToolRegistry._is_model(annotation):
+            field = ToolRegistry._model_field_for_segment(annotation, loc[0])
+            if field is None:
+                return ["<key>"] + ToolRegistry._safe_validation_location_parts(Any, loc[1:])
+            return [
+                str(loc[0]),
+                *ToolRegistry._safe_validation_location_parts(field.annotation, loc[1:]),
+            ]
+
+        if ToolRegistry._is_mapping(annotation):
+            return [
+                "<key>",
+                *ToolRegistry._safe_validation_location_parts(ToolRegistry._mapping_value_type(annotation), loc[1:]),
+            ]
+
+        if ToolRegistry._is_sequence(annotation):
+            if isinstance(loc[0], int):
+                next_annotation = ToolRegistry._sequence_item_type(annotation, loc[0])
+                return [
+                    str(loc[0]),
+                    *ToolRegistry._safe_validation_location_parts(next_annotation, loc[1:]),
+                ]
+            return [
+                "<key>",
+                *ToolRegistry._safe_validation_location_parts(ToolRegistry._sequence_item_type(annotation, 0), loc[1:]),
+            ]
+
+        if isinstance(loc[0], int):
+            return [str(loc[0]), *ToolRegistry._safe_validation_location_parts(Any, loc[1:])]
+
+        return ["<key>", *ToolRegistry._safe_validation_location_parts(Any, loc[1:])]
+
+    @staticmethod
+    def _strip_annotated(annotation: Any) -> Any:
+        while get_origin(annotation) is Annotated:
+            annotation = get_args(annotation)[0]
+        return annotation
+
+    @staticmethod
+    def _resolve_union(annotation: Any, segment: Any) -> Any:
+        origin = get_origin(annotation)
+        if origin not in (Union, UnionType):
+            return annotation
+
+        candidates = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if not candidates:
+            return annotation
+
+        if isinstance(segment, int):
+            for candidate in candidates:
+                candidate = ToolRegistry._strip_annotated(candidate)
+                if ToolRegistry._is_sequence(candidate):
+                    return candidate
+            return candidates[0]
+
+        for candidate in candidates:
+            candidate = ToolRegistry._strip_annotated(candidate)
+            if ToolRegistry._is_model(candidate) and ToolRegistry._model_field_for_segment(candidate, segment) is not None:
+                return candidate
+
+        for candidate in candidates:
+            candidate = ToolRegistry._strip_annotated(candidate)
+            if ToolRegistry._is_mapping(candidate):
+                return candidate
+
+        for candidate in candidates:
+            candidate = ToolRegistry._strip_annotated(candidate)
+            if ToolRegistry._is_sequence(candidate):
+                return candidate
+
+        return candidates[0]
+
+    @staticmethod
+    def _is_model(annotation: Any) -> bool:
+        return isinstance(annotation, type) and issubclass(annotation, BaseModel)
+
+    @staticmethod
+    def _is_mapping(annotation: Any) -> bool:
+        origin = get_origin(annotation)
+        return origin in (dict, Mapping) or annotation in (dict, Mapping)
+
+    @staticmethod
+    def _is_sequence(annotation: Any) -> bool:
+        origin = get_origin(annotation)
+        return origin in (list, set, frozenset, tuple) or annotation in (list, set, frozenset, tuple)
+
+    @staticmethod
+    def _sequence_item_type(annotation: Any, index: int) -> Any:
+        args = get_args(annotation)
+        origin = get_origin(annotation)
+        if origin is tuple and args:
+            if len(args) == 2 and args[1] is Ellipsis:
+                return args[0]
+            if index < len(args):
+                return args[index]
+            return args[-1]
+        if args:
+            return args[0]
+        return Any
+
+    @staticmethod
+    def _mapping_value_type(annotation: Any) -> Any:
+        args = get_args(annotation)
+        if len(args) >= 2:
+            return args[1]
+        return Any
+
+    @staticmethod
+    def _model_field_for_segment(model: type[BaseModel], segment: Any):
+        segment_text = str(segment)
+        for field_name, field in model.model_fields.items():
+            if segment_text == field_name:
+                return field
+            alias = getattr(field, "alias", None)
+            if isinstance(alias, str) and segment_text == alias:
+                return field
+            validation_alias = getattr(field, "validation_alias", None)
+            if isinstance(validation_alias, str) and segment_text == validation_alias:
+                return field
+            choices = getattr(validation_alias, "choices", None)
+            if choices and segment_text in {str(choice) for choice in choices}:
+                return field
+        return None
 
     def _observer_metadata_snapshot(
         self,
