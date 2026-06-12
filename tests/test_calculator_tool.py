@@ -84,4 +84,3 @@ def test_calculator_rejects_overlong_expression():
 def test_calculator_args_forbid_extra_fields():
     with pytest.raises(ValidationError):
         CalculatorArgs.model_validate({"expression": "1 + 1", "extra": True})
-
