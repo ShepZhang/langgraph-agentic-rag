@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -14,16 +15,13 @@ from agent.multi_query import build_retrieval_queries, merge_retrieved_documents
 from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
     ANSWER_REVISION_PROMPT,
-    CITATION_VERIFICATION_PROMPT,
     CLAIM_EXTRACTION_PROMPT,
-    CLAIM_VERIFICATION_PROMPT,
     RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
     format_documents,
 )
 from agent.citation_verification import (
     build_claim_verification_summary,
-    parse_citation_verification_response,
     parse_claim_extraction_response,
 )
 from agent.query_transform import (
@@ -33,7 +31,7 @@ from agent.query_transform import (
 )
 from agent.retrieval_grading import parse_retrieval_grading_response
 from agent.state import AgentState, Citation, RetrievedDocument
-from agent.tools import create_retriever_tool
+from tools import ToolRegistry, create_default_tool_registry
 
 
 FALLBACK_ANSWER = "根据当前已索引文档，无法可靠回答这个问题。请补充相关文档，或换一种更具体的问法。"
@@ -53,12 +51,18 @@ class AgentNodes:
         retriever_fn: Any | None = None,
         features: AgentFeatureFlags | None = None,
         workspace_id: str | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> None:
         self.llm = llm
         self.features = features or AgentFeatureFlags()
-        self.retriever_tool = create_retriever_tool(
-            retriever_fn,
-            workspace_id=workspace_id,
+        self.tool_registry = (
+            tool_registry
+            if tool_registry is not None
+            else create_default_tool_registry(
+                llm=llm,
+                retriever_fn=retriever_fn,
+                workspace_id=workspace_id,
+            )
         )
 
     def rewrite_query_node(self, state: AgentState) -> dict[str, Any]:
@@ -145,10 +149,26 @@ class AgentNodes:
             expanded_queries=state.get("expanded_queries", []),
             strategy=state.get("query_transform_strategy", "rewrite"),
         )
-        query_results = [
-            (retrieval_query, self.retriever_tool.invoke({"query": retrieval_query}))
-            for retrieval_query in retrieval_queries
-        ]
+        query_results: list[tuple[str, list[RetrievedDocument]]] = []
+        tool_errors: list[str] = []
+        for retrieval_query in retrieval_queries:
+            result = self.tool_registry.invoke(
+                "retrieve_context",
+                {"query": retrieval_query},
+            )
+            if result.success:
+                if not _is_valid_retriever_tool_data(result.data):
+                    tool_errors.append("Retriever tool returned invalid data: expected list[dict].")
+                    continue
+                query_results.append((retrieval_query, result.data or []))
+                continue
+            tool_errors.append(
+                (
+                    result.error.message
+                    if result.error is not None and result.error.message
+                    else "Unknown retrieval failure"
+                )
+            )
         documents = merge_retrieved_documents(query_results)
         retrieval_attempt = state.get("retrieval_attempt", 0) + 1
         multi_query_used = len(retrieval_queries) > 1
@@ -159,13 +179,16 @@ class AgentNodes:
             len(retrieval_queries),
             query,
         )
-        return {
+        update = {
             "documents": documents,
             "retrieval_queries": retrieval_queries,
             "multi_query_used": multi_query_used,
             "multi_query_result_count": len(documents),
             "retrieval_attempt": retrieval_attempt,
         }
+        if not documents and tool_errors:
+            update["grading_reason"] = f"Retriever tool failed: {'; '.join(tool_errors)}"
+        return update
 
     def accept_retrieved_documents_node(self, state: AgentState) -> dict[str, Any]:
         """Use retrieved documents directly when retrieval grading is disabled."""
@@ -173,7 +196,8 @@ class AgentNodes:
         documents = state.get("documents", [])
         if not documents:
             return _fallback_update(
-                "No documents retrieved while retrieval grading was disabled."
+                state.get("grading_reason")
+                or "No documents retrieved while retrieval grading was disabled."
             )
 
         return {
@@ -193,7 +217,7 @@ class AgentNodes:
 
         documents = state.get("documents", [])
         if not documents:
-            reason = "No documents retrieved."
+            reason = state.get("grading_reason") or "No documents retrieved."
             logger.info("Retrieval grading skipped: %s", reason)
             return {
                 "is_relevant": False,
@@ -415,21 +439,37 @@ class AgentNodes:
             return _fallback_update("Claim extraction returned no verifiable claims.")
 
         cited_documents = state.get("cited_documents", [])
-        valid_chunk_ids = _selected_citation_chunk_ids(cited_documents)
-        prompt = CITATION_VERIFICATION_PROMPT.format(
-            question=state["question"],
-            answer=state.get("draft_answer", ""),
-            claims=json.dumps(claims, ensure_ascii=False),
-            documents=format_documents(cited_documents),
+        result = self.tool_registry.invoke(
+            "verify_citations",
+            {
+                "question": state["question"],
+                "answer": state.get("draft_answer", ""),
+                "claims": claims,
+                "documents": cited_documents,
+            },
         )
-        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
-        verification = parse_citation_verification_response(
-            raw_result,
-            valid_chunk_ids=valid_chunk_ids,
-        )
-        if verification is None:
-            logger.warning("Citation verification returned invalid JSON.")
-            return _fallback_update("Citation verification returned invalid JSON.")
+        if not result.success:
+            message = (
+                result.error.message
+                if result.error is not None and result.error.message
+                else "Unknown citation verification failure"
+            )
+            return {
+                **_fallback_update(f"Citation verification tool failed: {message}"),
+                "citation_verification_passed": False,
+            }
+
+        verification = result.data
+        if not _is_valid_citation_verification_tool_data(
+            verification,
+            claims=claims,
+            cited_documents=cited_documents,
+        ):
+            logger.warning("Citation verification tool returned invalid data.")
+            return {
+                **_fallback_update("Citation verification tool returned invalid data."),
+                "citation_verification_passed": False,
+            }
 
         summary = build_claim_verification_summary(
             verification["results"],
@@ -583,25 +623,6 @@ class AgentNodes:
         )
         logger.info("Fallback answer returned: %s", reason)
         return _fallback_update(reason)
-
-    def _verify_answer_claims(
-        self,
-        question: str,
-        answer: str,
-        documents: list[RetrievedDocument],
-    ) -> dict[str, Any] | None:
-        """Verify generated answer claims against selected citation chunks."""
-
-        prompt = CLAIM_VERIFICATION_PROMPT.format(
-            question=question,
-            answer=answer,
-            documents=format_documents(documents),
-        )
-        raw_result = _coerce_llm_text(self.llm.invoke(prompt))
-        return _parse_claim_verification_result(
-            raw_result,
-            document_count=len(documents),
-        )
 
 
 def build_citations(
@@ -804,66 +825,169 @@ def _parse_answer_result(
     }
 
 
-def _parse_claim_verification_result(
-    raw_result: str,
-    document_count: int,
-) -> dict[str, Any] | None:
-    """Parse and validate claim-level verification JSON."""
+def _is_valid_retriever_tool_data(data: Any) -> bool:
+    """Return True when retriever tool data matches list[dict]."""
 
-    parsed = _extract_first_json_object(raw_result)
-    if parsed is None:
-        return None
+    if not isinstance(data, list):
+        return False
+    for document in data:
+        if not isinstance(document, dict):
+            return False
+        content = document.get("content")
+        if not isinstance(content, str) or not content.strip():
+            return False
+        source = document.get("source")
+        if source is not None and not isinstance(source, str):
+            return False
+        chunk_id = document.get("chunk_id")
+        if chunk_id is not None and not isinstance(chunk_id, str):
+            return False
+        page = document.get("page")
+        if isinstance(page, bool) or (page is not None and not isinstance(page, int)):
+            return False
+        score = document.get("score")
+        if (
+            isinstance(score, bool)
+            or (
+                score is not None
+                and not _is_finite_number(score)
+            )
+        ):
+            return False
+        rerank_score = document.get("rerank_score")
+        if (
+            isinstance(rerank_score, bool)
+            or (
+                rerank_score is not None
+                and not _is_finite_number(rerank_score)
+            )
+        ):
+            return False
+        document_id = document.get("document_id")
+        if document_id is not None and not isinstance(document_id, str):
+            return False
+        workspace_id = document.get("workspace_id")
+        if workspace_id is not None and not isinstance(workspace_id, str):
+            return False
+        matched_queries = document.get("matched_queries")
+        if matched_queries is not None and (
+            not isinstance(matched_queries, list)
+            or not all(isinstance(query, str) for query in matched_queries)
+        ):
+            return False
+        retrieval_query_count = document.get("retrieval_query_count")
+        if isinstance(retrieval_query_count, bool) or (
+            retrieval_query_count is not None and not isinstance(retrieval_query_count, int)
+        ):
+            return False
+        multi_query_rank = document.get("multi_query_rank")
+        if isinstance(multi_query_rank, bool) or (
+            multi_query_rank is not None and not isinstance(multi_query_rank, int)
+        ):
+            return False
+    return True
 
-    raw_claims = parsed.get("claims")
-    if parsed.get("verified") is not True and parsed.get("verified") is not False:
-        return None
-    if not isinstance(raw_claims, list):
-        return None
 
-    claims: list[dict[str, object]] = []
-    for raw_claim in raw_claims:
-        if not isinstance(raw_claim, dict):
-            continue
-        claim_text = raw_claim.get("claim")
-        supported = raw_claim.get("supported")
-        raw_indices = raw_claim.get("citation_indices", [])
-        if not isinstance(claim_text, str) or not isinstance(supported, bool):
-            continue
-        if not isinstance(raw_indices, list):
-            raw_indices = []
-        citation_indices: list[int] = []
-        for raw_index in raw_indices:
-            if isinstance(raw_index, bool) or not isinstance(raw_index, int):
-                continue
-            if raw_index < 1 or raw_index > document_count:
-                logger.warning(
-                    "Ignoring out-of-range claim citation index: %s",
-                    raw_index,
-                )
-                continue
-            if raw_index not in citation_indices:
-                citation_indices.append(raw_index)
-        claims.append(
-            {
-                "claim": claim_text,
-                "supported": supported,
-                "citation_indices": citation_indices,
-            }
-        )
+def _is_valid_citation_verification_tool_data(
+    data: Any,
+    *,
+    claims: list[dict[str, Any]],
+    cited_documents: list[RetrievedDocument],
+) -> bool:
+    """Return True when verifier tool data provides the required summary fields."""
 
-    verified = parsed["verified"] is True and bool(claims) and all(
-        claim["supported"] is True and bool(claim["citation_indices"])
-        for claim in claims
-    )
-    reason = str(parsed.get("reason") or "").strip()
-    if not reason:
-        reason = "All claims verified." if verified else "One or more claims are unsupported."
+    if not isinstance(data, dict):
+        return False
+    reason = data.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return False
 
-    return {
-        "verified": verified,
-        "claims": claims,
-        "reason": reason,
+    results = data.get("results")
+    if not isinstance(results, list):
+        return False
+
+    expected_claims: dict[str, dict[str, Any]] = {}
+    for claim in claims:
+        if not isinstance(claim, dict):
+            return False
+        claim_id = claim.get("claim_id")
+        claim_text = claim.get("claim")
+        if not isinstance(claim_id, str) or not claim_id.strip():
+            return False
+        if not isinstance(claim_text, str) or not claim_text.strip():
+            return False
+        if claim_id in expected_claims:
+            return False
+        claim_chunk_ids = claim.get("cited_chunk_ids")
+        if not isinstance(claim_chunk_ids, list) or not all(
+            isinstance(chunk_id, str) and chunk_id for chunk_id in claim_chunk_ids
+        ):
+            return False
+        if len(set(claim_chunk_ids)) != len(claim_chunk_ids):
+            return False
+        expected_claims[claim_id] = {
+            "claim": claim_text,
+            "cited_chunk_ids": set(claim_chunk_ids),
+        }
+
+    valid_chunk_ids = {
+        document.get("chunk_id")
+        for document in cited_documents
+        if isinstance(document.get("chunk_id"), str) and document.get("chunk_id")
     }
+    seen_claim_ids: set[str] = set()
+    allowed_labels = {"supported", "partially_supported", "unsupported"}
+    for result in results:
+        if not isinstance(result, dict):
+            return False
+        claim_id = result.get("claim_id")
+        if not isinstance(claim_id, str) or not claim_id.strip():
+            return False
+        if claim_id in seen_claim_ids or claim_id not in expected_claims:
+            return False
+        seen_claim_ids.add(claim_id)
+        claim_text = result.get("claim")
+        if (
+            not isinstance(claim_text, str)
+            or not claim_text.strip()
+            or claim_text != expected_claims[claim_id]["claim"]
+        ):
+            return False
+        result_reason = result.get("reason")
+        if not isinstance(result_reason, str) or not result_reason.strip():
+            return False
+        cited_chunk_ids = result.get("cited_chunk_ids")
+        if not isinstance(cited_chunk_ids, list) or not all(
+            isinstance(chunk_id, str) for chunk_id in cited_chunk_ids
+        ):
+            return False
+        if len(set(cited_chunk_ids)) != len(cited_chunk_ids):
+            return False
+        if any(not chunk_id or chunk_id not in valid_chunk_ids for chunk_id in cited_chunk_ids):
+            return False
+        if any(chunk_id not in expected_claims[claim_id]["cited_chunk_ids"] for chunk_id in cited_chunk_ids):
+            return False
+        verification_label = result.get("verification_label")
+        if verification_label not in allowed_labels:
+            return False
+        confidence = result.get("confidence")
+        if (
+            not _is_finite_number(confidence)
+            or confidence < 0
+            or confidence > 1
+        ):
+            return False
+
+    return seen_claim_ids == set(expected_claims)
+
+
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, TypeError, ValueError):
+        return False
 
 
 def _extract_first_json_object(raw_result: str) -> dict[str, Any] | None:

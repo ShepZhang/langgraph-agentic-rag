@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.3.3-p3d - Typed Internal Tool Registry
+
+Date: 2026-06-12
+
+### Added
+
+- Added a typed internal Tool Registry with Pydantic argument validation,
+  runtime dependency injection, normalized results, and compact diagnostics.
+- Registered retriever, claim citation verifier, document summary, and safe
+  calculator tools.
+- Routed LangGraph retrieval and citation verification through the registry.
+- Added tool-call trace events with success, latency, metadata, and sanitized
+  errors.
+- Preserved the existing LangChain retriever tool API through a compatibility
+  adapter.
+
+### Notes
+
+- P3d does not add autonomous tool selection, planning, a ReAct loop, or a
+  generic public tool execution endpoint.
+- Document summary and calculator tools are registered for extension and
+  independent use but are not part of the primary QA workflow.
+
 ## v0.3.2-p3c - Workspace-aware Retrieval Isolation
 
 Date: 2026-06-11
@@ -109,4 +132,4 @@ This version upgrades the project from an Agentic RAG MVP into a reliability-ori
 - The results are single-run heuristic metrics, not benchmark-grade claims.
 - V6 improves claim-support diagnostics but does not outperform V0 on every metric.
 - Token usage and cost are unavailable because the active DeepSeek integration did not expose reliable usage metadata.
-- The project is reliability-oriented and production-oriented as an architecture exercise, not production-ready.
+- The project is reliability-oriented and production-oriented as an architecture exercise, not a complete production deployment.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Literal, TypedDict
 
 
@@ -115,6 +116,13 @@ def parse_citation_verification_response(
         claim = _normalize_text(raw_result_record.get("claim"))
         if not claim_id or not claim:
             continue
+        label = _normalize_verification_label(
+            raw_result_record.get("verification_label"),
+        )
+        confidence = _normalize_confidence(raw_result_record.get("confidence"))
+        if confidence is None:
+            label = "unsupported"
+            confidence = 0.0
         results.append(
             {
                 "claim_id": claim_id,
@@ -123,12 +131,8 @@ def parse_citation_verification_response(
                     raw_result_record.get("cited_chunk_ids"),
                     valid_ids,
                 ),
-                "verification_label": _normalize_verification_label(
-                    raw_result_record.get("verification_label"),
-                ),
-                "confidence": _clamp_confidence(
-                    raw_result_record.get("confidence"),
-                ),
+                "verification_label": label,
+                "confidence": confidence,
                 "reason": _normalize_reason(
                     raw_result_record.get("reason"),
                     default=DEFAULT_CITATION_VERIFICATION_REASON,
@@ -208,10 +212,16 @@ def _normalize_verification_label(value: Any) -> VerificationLabel:
     return "unsupported"
 
 
-def _clamp_confidence(value: Any) -> float:
+def _normalize_confidence(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return 0.0
-    return float(min(1.0, max(0.0, value)))
+        return None
+    try:
+        confidence = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    if not math.isfinite(confidence) or confidence < 0 or confidence > 1:
+        return None
+    return confidence
 
 
 def _normalize_reason(value: Any, *, default: str) -> str:

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from langchain_core.tools import StructuredTool
 
+from tools import ToolContext, ToolRegistry
+from tools.retriever_tool import RetrieverArgs, RetrieverTool
 from rag.retriever import retrieve
 
 
-RetrieverFn = Any
+RetrieverFn = Callable[[str], list[dict[str, Any]]]
 
 
 def create_retriever_tool(
@@ -18,20 +21,39 @@ def create_retriever_tool(
 ) -> StructuredTool:
     """Create a retriever tool for Agent use."""
 
-    def _retrieve_context(query: str) -> list[dict[str, Any]]:
-        """Retrieve relevant document chunks from the indexed private knowledge base."""
-
-        if retriever_fn is not None:
-            return retriever_fn(query)
+    def _retrieve_with_workspace(query: str) -> list[dict[str, Any]]:
         return retrieve(query, workspace_id=workspace_id)
+
+    registry = ToolRegistry()
+    registry.register(
+        RetrieverTool(
+            ToolContext(
+                retriever_fn=(
+                    retriever_fn if retriever_fn is not None else _retrieve_with_workspace
+                ),
+                workspace_id=workspace_id,
+            )
+        )
+    )
+    registered_tool = registry.get("retrieve_context")
+
+    def _retrieve_context(query: str) -> list[dict[str, Any]]:
+        result = registry.invoke("retrieve_context", {"query": query})
+        if not result.success:
+            message = (
+                result.error.message
+                if result.error is not None and result.error.message
+                else "Unknown tool failure"
+            )
+            raise RuntimeError(message)
+        return result.data or []
 
     return StructuredTool.from_function(
         func=_retrieve_context,
-        name="retrieve_context",
-        description=(
-            "Retrieve relevant document chunks from the indexed private knowledge base "
-            "according to the user's question."
-        ),
+        name=registered_tool.name,
+        description=registered_tool.description,
+        args_schema=RetrieverArgs,
+        infer_schema=False,
     )
 
 
