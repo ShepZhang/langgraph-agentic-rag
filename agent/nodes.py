@@ -459,7 +459,11 @@ class AgentNodes:
             }
 
         verification = result.data
-        if not _is_valid_citation_verification_tool_data(verification):
+        if not _is_valid_citation_verification_tool_data(
+            verification,
+            claims=claims,
+            cited_documents=cited_documents,
+        ):
             logger.warning("Citation verification tool returned invalid data.")
             return {
                 **_fallback_update("Citation verification tool returned invalid data."),
@@ -825,42 +829,127 @@ def _is_valid_retriever_tool_data(data: Any) -> bool:
 
     if not isinstance(data, list):
         return False
-    return all(isinstance(document, dict) for document in data)
+    for document in data:
+        if not isinstance(document, dict):
+            return False
+        content = document.get("content")
+        if not isinstance(content, str) or not content.strip():
+            return False
+        source = document.get("source")
+        if source is not None and not isinstance(source, str):
+            return False
+        chunk_id = document.get("chunk_id")
+        if chunk_id is not None and not isinstance(chunk_id, str):
+            return False
+        page = document.get("page")
+        if isinstance(page, bool) or (page is not None and not isinstance(page, int)):
+            return False
+        score = document.get("score")
+        if isinstance(score, bool) or (score is not None and not isinstance(score, (int, float))):
+            return False
+        document_id = document.get("document_id")
+        if document_id is not None and not isinstance(document_id, str):
+            return False
+        workspace_id = document.get("workspace_id")
+        if workspace_id is not None and not isinstance(workspace_id, str):
+            return False
+        matched_queries = document.get("matched_queries")
+        if matched_queries is not None and (
+            not isinstance(matched_queries, list)
+            or not all(isinstance(query, str) for query in matched_queries)
+        ):
+            return False
+        retrieval_query_count = document.get("retrieval_query_count")
+        if isinstance(retrieval_query_count, bool) or (
+            retrieval_query_count is not None and not isinstance(retrieval_query_count, int)
+        ):
+            return False
+        multi_query_rank = document.get("multi_query_rank")
+        if isinstance(multi_query_rank, bool) or (
+            multi_query_rank is not None and not isinstance(multi_query_rank, int)
+        ):
+            return False
+    return True
 
 
-def _is_valid_citation_verification_tool_data(data: Any) -> bool:
+def _is_valid_citation_verification_tool_data(
+    data: Any,
+    *,
+    claims: list[dict[str, Any]],
+    cited_documents: list[RetrievedDocument],
+) -> bool:
     """Return True when verifier tool data provides the required summary fields."""
 
     if not isinstance(data, dict):
         return False
-    if not isinstance(data.get("reason"), str):
+    reason = data.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
         return False
 
     results = data.get("results")
     if not isinstance(results, list):
         return False
 
+    expected_claims: dict[str, str] = {}
+    for claim in claims:
+        if not isinstance(claim, dict):
+            return False
+        claim_id = claim.get("claim_id")
+        claim_text = claim.get("claim")
+        if not isinstance(claim_id, str) or not claim_id.strip():
+            return False
+        if not isinstance(claim_text, str) or not claim_text.strip():
+            return False
+        expected_claims[claim_id] = claim_text
+
+    valid_chunk_ids = {
+        document.get("chunk_id")
+        for document in cited_documents
+        if isinstance(document.get("chunk_id"), str) and document.get("chunk_id")
+    }
+    seen_claim_ids: set[str] = set()
+    allowed_labels = {"supported", "partially_supported", "unsupported"}
     for result in results:
         if not isinstance(result, dict):
             return False
-        if not isinstance(result.get("claim_id"), str):
+        claim_id = result.get("claim_id")
+        if not isinstance(claim_id, str) or not claim_id.strip():
             return False
-        if not isinstance(result.get("claim"), str):
+        if claim_id in seen_claim_ids or claim_id not in expected_claims:
+            return False
+        seen_claim_ids.add(claim_id)
+        claim_text = result.get("claim")
+        if (
+            not isinstance(claim_text, str)
+            or not claim_text.strip()
+            or claim_text != expected_claims[claim_id]
+        ):
+            return False
+        result_reason = result.get("reason")
+        if not isinstance(result_reason, str) or not result_reason.strip():
             return False
         cited_chunk_ids = result.get("cited_chunk_ids")
         if not isinstance(cited_chunk_ids, list) or not all(
             isinstance(chunk_id, str) for chunk_id in cited_chunk_ids
         ):
             return False
-        if not isinstance(result.get("verification_label"), str):
+        if len(set(cited_chunk_ids)) != len(cited_chunk_ids):
+            return False
+        if any(not chunk_id or chunk_id not in valid_chunk_ids for chunk_id in cited_chunk_ids):
+            return False
+        verification_label = result.get("verification_label")
+        if verification_label not in allowed_labels:
             return False
         confidence = result.get("confidence")
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
-            return False
-        if not isinstance(result.get("reason"), str):
+        if (
+            isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or confidence < 0
+            or confidence > 1
+        ):
             return False
 
-    return True
+    return seen_claim_ids == set(expected_claims)
 
 
 def _extract_first_json_object(raw_result: str) -> dict[str, Any] | None:
