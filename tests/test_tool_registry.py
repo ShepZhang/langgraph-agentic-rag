@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from tools import ToolContext, ToolError, ToolExecutionError, ToolInputError
 from tools.base import BaseTool, ToolErrorInfo
@@ -85,6 +85,59 @@ class MetadataTool(BaseTool[MetadataArgs, str]):
             "prompt": "system prompt",
             "raw_response": {"text": "raw"},
             "business": {"count": 2},
+        }
+
+
+class ValidatorArgs(BaseModel):
+    api_key: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, value: str) -> str:
+        raise ValueError(f"rejected {value}")
+
+
+class ValidatorTool(BaseTool[ValidatorArgs, str]):
+    name = "validator"
+    description = "Validation error with echoed secret."
+    args_schema = ValidatorArgs
+
+    def run(self, arguments: ValidatorArgs) -> str:
+        return arguments.api_key
+
+
+class ComplexMetadataArgs(BaseModel):
+    text: str = Field(min_length=1)
+
+
+class ComplexMetadataTool(BaseTool[ComplexMetadataArgs, str]):
+    name = "complex_metadata"
+    description = "Nested metadata with bypass keys."
+    args_schema = ComplexMetadataArgs
+
+    def run(self, arguments: ComplexMetadataArgs) -> str:
+        return arguments.text
+
+    def build_metadata(
+        self,
+        arguments: ComplexMetadataArgs,
+        result: str,
+    ) -> dict[str, object]:
+        return {
+            "access_token": "token-123",
+            "client_secret": "secret-456",
+            "document_content": "body text",
+            "rawResponse": {"text": "raw body"},
+            "nested": [
+                {
+                    "access_token": "nested-token",
+                    "client_secret": "nested-secret",
+                    "document_content": "nested body",
+                    "rawResponse": {"text": "nested raw body"},
+                }
+            ],
+            "business": {"count": 3},
         }
 
 
@@ -210,6 +263,31 @@ def test_registry_hides_validation_inputs_from_errors_and_observer_records():
     assert secret_password not in str(observer_records[0]["error"])
 
 
+def test_registry_sanitizes_validator_echoes_without_leaking_inputs():
+    observer_records: list[dict[str, object]] = []
+    secret_api_key = "validator-secret-api-key"
+    secret_password = "validator-secret-password"
+
+    registry = ToolRegistry(call_observer=observer_records.append)
+    registry.register(ValidatorTool(ToolContext()))
+
+    result = registry.invoke(
+        "validator",
+        {"api_key": secret_api_key, "password": secret_password},
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "tool_input_error"
+    assert "api_key" in result.error.message
+    assert "value_error" in result.error.message
+    assert secret_api_key not in result.error.message
+    assert secret_password not in result.error.message
+    assert observer_records[0]["error"] is not None
+    assert secret_api_key not in str(observer_records[0]["error"])
+    assert secret_password not in str(observer_records[0]["error"])
+
+
 def test_registry_isolates_observer_metadata_and_redacts_snapshot_fields():
     observer_records: list[dict[str, object]] = []
 
@@ -238,6 +316,40 @@ def test_registry_isolates_observer_metadata_and_redacts_snapshot_fields():
     assert "documents" not in record["metadata"]
     assert "prompt" not in record["metadata"]
     assert "raw_response" not in record["metadata"]
+
+
+def test_registry_redacts_complex_metadata_keys_without_mutating_result():
+    observer_records: list[dict[str, object]] = []
+
+    def observer(record: dict[str, object]) -> None:
+        observer_records.append(record)
+        record["metadata"]["nested"][0]["business"] = "changed"
+
+    registry = ToolRegistry(call_observer=observer)
+    registry.register(ComplexMetadataTool(ToolContext()))
+
+    result = registry.invoke("complex_metadata", {"text": "hello"})
+
+    assert result.success is True
+    assert result.metadata["access_token"] == "token-123"
+    assert result.metadata["client_secret"] == "secret-456"
+    assert result.metadata["document_content"] == "body text"
+    assert result.metadata["rawResponse"] == {"text": "raw body"}
+    assert result.metadata["nested"][0]["access_token"] == "nested-token"
+    assert result.metadata["nested"][0]["document_content"] == "nested body"
+    assert result.metadata["nested"][0]["rawResponse"] == {"text": "nested raw body"}
+    assert "business" not in result.metadata["nested"][0]
+
+    snapshot = observer_records[0]["metadata"]
+    assert snapshot["access_token"] == "[REDACTED]"
+    assert snapshot["client_secret"] == "[REDACTED]"
+    assert "document_content" not in snapshot
+    assert "rawResponse" not in snapshot
+    assert snapshot["nested"][0]["access_token"] == "[REDACTED]"
+    assert snapshot["nested"][0]["client_secret"] == "[REDACTED]"
+    assert "document_content" not in snapshot["nested"][0]
+    assert "rawResponse" not in snapshot["nested"][0]
+    assert snapshot["nested"][0]["business"] == "changed"
 
 
 def test_registry_forces_tool_input_error_code_even_when_exception_carries_custom_code():

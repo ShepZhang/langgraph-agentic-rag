@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import logging
-from copy import deepcopy
 from time import perf_counter
 from typing import Any
 
@@ -17,6 +16,9 @@ from tools.base import (
     ToolRegistrationError,
     ToolResult,
     error_info_from_exception,
+    is_observer_body_key,
+    is_observer_credential_key,
+    redact_tool_message,
     snapshot_observer_value,
 )
 
@@ -86,7 +88,7 @@ class ToolRegistry:
             return self._failure_result(
                 tool=tool,
                 start=start,
-                error=self._validation_error_info(exc),
+                error=self._validation_error_message(exc),
             )
         except ToolInputError as exc:
             return self._failure_result(
@@ -161,26 +163,33 @@ class ToolRegistry:
         return round((perf_counter() - start) * 1000, 3)
 
     @staticmethod
-    def _validation_error_info(exc: ValidationError) -> ToolErrorInfo:
+    def _validation_error_message(exc: ValidationError) -> ToolErrorInfo:
         details: list[str] = []
-        for error in exc.errors(include_input=False, include_url=False):
+        for error in exc.errors(include_input=True, include_url=False):
             loc = error.get("loc", ())
             loc_text = ".".join(str(part) for part in loc) if loc else "input"
-            msg = str(error.get("msg", "invalid input"))
+            msg = str(error.get("msg", "Value failed validation."))
             err_type = str(error.get("type", "validation_error"))
+            if any(is_observer_credential_key(part) or is_observer_body_key(part) for part in loc):
+                msg = "Value failed validation."
+            else:
+                input_value = error.get("input")
+                if input_value is not None:
+                    msg = msg.replace(str(input_value), "[REDACTED]")
+                    msg = msg.replace(repr(input_value), "[REDACTED]")
+                msg = redact_tool_message(msg)
             details.append(f"{loc_text}: {msg} [{err_type}]")
         message = "; ".join(details) if details else "Invalid tool input"
         return ToolErrorInfo(
             code="tool_input_error",
-            message=error_info_from_exception(
-                Exception(message),
-                default_code="tool_input_error",
-            ).message,
+            message=redact_tool_message(message),
         )
 
     @staticmethod
     def _observer_metadata_snapshot(metadata: dict[str, Any]) -> dict[str, Any]:
         try:
-            return snapshot_observer_value(deepcopy({key: value for key, value in metadata.items() if key != "latency_ms"}))
+            return snapshot_observer_value(
+                {key: value for key, value in metadata.items() if key != "latency_ms"}
+            )
         except Exception:
             return {}

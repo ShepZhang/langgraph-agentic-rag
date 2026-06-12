@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from copy import deepcopy
 import re
 from typing import Any, Callable, ClassVar, Generic, Mapping, TypeVar
 
@@ -137,6 +137,22 @@ _SENSITIVE_FIELD_RE = re.compile(
     r"(?i)(?P<prefix>\b(?:api[_-]?key|password|secret|token|authorization)\b\s*[:=]\s*)"
     r"(?P<value>(?:\"[^\"]*\"|'[^']*'|[^,\s\]\}]+))"
 )
+_OBSERVER_KEY_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
+_OBSERVER_CREDENTIAL_PARTS = (
+    "apikey",
+    "password",
+    "secret",
+    "token",
+    "authorization",
+    "credential",
+)
+_OBSERVER_BODY_PARTS = (
+    "content",
+    "documents",
+    "prompt",
+    "rawresponse",
+    "modelresponse",
+)
 
 
 def redact_tool_message(message: str) -> str:
@@ -164,32 +180,47 @@ def snapshot_observer_value(value: Any) -> Any:
         cloned = deepcopy(value)
     except Exception:
         cloned = value
-    return _snapshot_observer_value(cloned)
+    return _snapshot_observer_value(cloned, seen=set())
 
 
-_OBSERVER_DROP_KEYS = {"content", "documents", "prompt", "raw_response"}
-_OBSERVER_REDACT_KEYS = {"api_key", "authorization", "password", "secret", "token"}
+def normalize_observer_key(key: Any) -> str:
+    return _OBSERVER_KEY_NORMALIZE_RE.sub("", str(key).lower())
 
 
-def _snapshot_observer_value(value: Any) -> Any:
+def is_observer_body_key(key: Any) -> bool:
+    normalized = normalize_observer_key(key)
+    return any(part in normalized for part in _OBSERVER_BODY_PARTS)
+
+
+def is_observer_credential_key(key: Any) -> bool:
+    normalized = normalize_observer_key(key)
+    return any(part in normalized for part in _OBSERVER_CREDENTIAL_PARTS)
+
+
+def _snapshot_observer_value(value: Any, *, seen: set[int]) -> Any:
+    if isinstance(value, (Mapping, list, tuple, set)):
+        value_id = id(value)
+        if value_id in seen:
+            return "[REDACTED]"
+        seen.add(value_id)
+
     if isinstance(value, Mapping):
         snapshot: dict[str, Any] = {}
         for key, item in value.items():
             key_str = str(key)
-            key_lower = key_str.lower()
-            if key_lower in _OBSERVER_DROP_KEYS:
+            if is_observer_body_key(key_str):
                 continue
-            if key_lower in _OBSERVER_REDACT_KEYS:
+            if is_observer_credential_key(key_str):
                 snapshot[key_str] = "[REDACTED]"
                 continue
-            snapshot[key_str] = _snapshot_observer_value(item)
+            snapshot[key_str] = _snapshot_observer_value(item, seen=seen)
         return snapshot
     if isinstance(value, list):
-        return [_snapshot_observer_value(item) for item in value]
+        return [_snapshot_observer_value(item, seen=seen) for item in value]
     if isinstance(value, tuple):
-        return [_snapshot_observer_value(item) for item in value]
+        return [_snapshot_observer_value(item, seen=seen) for item in value]
     if isinstance(value, set):
-        return [_snapshot_observer_value(item) for item in value]
+        return [_snapshot_observer_value(item, seen=seen) for item in value]
     if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    return str(value)
+        return redact_tool_message(value) if isinstance(value, str) else value
+    return redact_tool_message(str(value))
