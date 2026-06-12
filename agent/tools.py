@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 
 from tools import ToolContext, ToolRegistry
-from tools.retriever_tool import RetrieverTool
+from tools.retriever_tool import RetrieverArgs, RetrieverTool
 from rag.retriever import retrieve
 
 
@@ -50,6 +50,8 @@ def create_retriever_tool(
         func=_retrieve_context,
         name=registered_tool.name,
         description=registered_tool.description,
+        args_schema=RetrieverArgs,
+        infer_schema=False,
     )
 
 

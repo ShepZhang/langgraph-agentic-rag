@@ -31,3 +31,18 @@ def test_create_retriever_tool_raises_for_broken_retriever():
 
     with pytest.raises(RuntimeError, match="retrieval unavailable"):
         tool.invoke({"query": "What is RAG?"})
+
+
+def test_create_retriever_tool_rejects_extra_workspace_id_before_invoking_retriever():
+    calls = []
+
+    def fake_retriever(query: str):
+        calls.append(query)
+        return [{"content": "context", "source": "notes.md"}]
+
+    tool = create_retriever_tool(fake_retriever)
+
+    with pytest.raises(Exception):
+        tool.invoke({"query": "hello", "workspace_id": "ws-999"})
+
+    assert calls == []
