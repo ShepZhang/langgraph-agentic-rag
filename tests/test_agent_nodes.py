@@ -517,6 +517,38 @@ def test_retrieve_node_falls_back_when_document_score_is_nan():
     )
 
 
+def test_retrieve_node_falls_back_when_document_score_is_oversized_integer():
+    calls: list[str] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingRetrieverTool(
+            ToolContext(),
+            calls=calls,
+            results_by_query={
+                "rewritten": [
+                    {
+                        "content": "context",
+                        "source": "notes.md",
+                        "chunk_id": "c1",
+                        "score": 10**1000,
+                    }
+                ]
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("original")
+    state["current_query"] = "rewritten"
+
+    update = nodes.retrieve_node(state)
+
+    assert calls == ["rewritten"]
+    assert update["documents"] == []
+    assert update["grading_reason"] == (
+        "Retriever tool failed: Retriever tool returned invalid data: expected list[dict]."
+    )
+
+
 def test_retrieve_node_falls_back_when_document_rerank_score_is_invalid():
     calls: list[str] = []
     registry = ToolRegistry()
@@ -531,6 +563,38 @@ def test_retrieve_node_falls_back_when_document_rerank_score_is_invalid():
                         "source": "notes.md",
                         "chunk_id": "c1",
                         "rerank_score": {"value": 0.5},
+                    }
+                ]
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("original")
+    state["current_query"] = "rewritten"
+
+    update = nodes.retrieve_node(state)
+
+    assert calls == ["rewritten"]
+    assert update["documents"] == []
+    assert update["grading_reason"] == (
+        "Retriever tool failed: Retriever tool returned invalid data: expected list[dict]."
+    )
+
+
+def test_retrieve_node_falls_back_when_document_rerank_score_is_oversized_integer():
+    calls: list[str] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingRetrieverTool(
+            ToolContext(),
+            calls=calls,
+            results_by_query={
+                "rewritten": [
+                    {
+                        "content": "context",
+                        "source": "notes.md",
+                        "chunk_id": "c1",
+                        "rerank_score": 10**1000,
                     }
                 ]
             },
@@ -1434,6 +1498,53 @@ def test_verify_citations_node_falls_back_for_unknown_chunk_supported_and_bad_co
                     }
                 ],
                 "reason": "bad",
+            },
+        )
+    )
+    nodes = AgentNodes(llm=FakeLLM([]), tool_registry=registry)
+    state = create_initial_state("What does Agentic RAG use?")
+    state["draft_answer"] = "Agentic RAG uses retrieval grading [1]."
+    state["claims"] = [
+        {
+            "claim_id": "c001",
+            "claim": "Agentic RAG uses retrieval grading.",
+            "cited_chunk_ids": ["chunk-1"],
+        }
+    ]
+    state["cited_documents"] = [
+        {
+            "content": "Agentic RAG uses retrieval grading.",
+            "source": "paper.pdf",
+            "chunk_id": "chunk-1",
+        }
+    ]
+
+    update = nodes.verify_citations_node(state)
+
+    assert len(calls) == 1
+    assert update["route"] == "fallback"
+    assert update["fallback_reason"] == "Citation verification tool returned invalid data."
+
+
+def test_verify_citations_node_falls_back_when_confidence_is_oversized_integer():
+    calls: list[dict[str, Any]] = []
+    registry = ToolRegistry()
+    registry.register(
+        RecordingVerifierTool(
+            ToolContext(),
+            calls=calls,
+            result={
+                "results": [
+                    {
+                        "claim_id": "c001",
+                        "claim": "Agentic RAG uses retrieval grading.",
+                        "cited_chunk_ids": ["chunk-1"],
+                        "verification_label": "supported",
+                        "confidence": 10**1000,
+                        "reason": "oversized confidence",
+                    }
+                ],
+                "reason": "bad confidence",
             },
         )
     )

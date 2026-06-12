@@ -850,10 +850,7 @@ def _is_valid_retriever_tool_data(data: Any) -> bool:
             isinstance(score, bool)
             or (
                 score is not None
-                and (
-                    not isinstance(score, (int, float))
-                    or not math.isfinite(float(score))
-                )
+                and not _is_finite_number(score)
             )
         ):
             return False
@@ -862,10 +859,7 @@ def _is_valid_retriever_tool_data(data: Any) -> bool:
             isinstance(rerank_score, bool)
             or (
                 rerank_score is not None
-                and (
-                    not isinstance(rerank_score, (int, float))
-                    or not math.isfinite(float(rerank_score))
-                )
+                and not _is_finite_number(rerank_score)
             )
         ):
             return False
@@ -978,15 +972,22 @@ def _is_valid_citation_verification_tool_data(
             return False
         confidence = result.get("confidence")
         if (
-            isinstance(confidence, bool)
-            or not isinstance(confidence, (int, float))
+            not _is_finite_number(confidence)
             or confidence < 0
             or confidence > 1
-            or not math.isfinite(float(confidence))
         ):
             return False
 
     return seen_claim_ids == set(expected_claims)
+
+
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, TypeError, ValueError):
+        return False
 
 
 def _extract_first_json_object(raw_result: str) -> dict[str, Any] | None:
