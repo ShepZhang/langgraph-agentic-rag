@@ -84,3 +84,15 @@ def test_calculator_rejects_overlong_expression():
 def test_calculator_args_forbid_extra_fields():
     with pytest.raises(ValidationError):
         CalculatorArgs.model_validate({"expression": "1 + 1", "extra": True})
+
+
+def test_calculator_rejects_complex_results():
+    registry = ToolRegistry()
+    registry.register(CalculatorTool(ToolContext()))
+
+    result = registry.invoke("calculator", {"expression": "(-1) ** 0.5"})
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "tool_execution_error"
+    assert "finite" in result.error.message or "numeric result" in result.error.message

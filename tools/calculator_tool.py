@@ -48,9 +48,7 @@ class CalculatorTool(BaseTool[CalculatorArgs, dict[str, int | float]]):
             raise ToolExecutionError("Arithmetic expression is too complex.")
 
         value = self._evaluate(tree.body)
-        if isinstance(value, float) and not math.isfinite(value):
-            raise ToolExecutionError("Arithmetic result must be finite.")
-        return {"value": value}
+        return {"value": self._ensure_real_number(value)}
 
     def _evaluate(self, node: ast.AST) -> int | float:
         if isinstance(node, ast.Constant):
@@ -67,11 +65,17 @@ class CalculatorTool(BaseTool[CalculatorArgs, dict[str, int | float]]):
             if isinstance(node.op, ast.Pow) and abs(right) > 10:
                 raise ToolExecutionError("Exponent magnitude must not exceed 10.")
             result = _BINARY_OPERATORS[type(node.op)](left, right)
-            if isinstance(result, float) and not math.isfinite(result):
-                raise ToolExecutionError("Arithmetic result must be finite.")
-            return result
+            return self._ensure_real_number(result)
 
         raise ToolExecutionError("Expression contains a disallowed operation.")
+
+    @staticmethod
+    def _ensure_real_number(value: Any) -> int | float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ToolExecutionError("Arithmetic result must be a finite number.")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ToolExecutionError("Arithmetic result must be a finite number.")
+        return value
 
 
 __all__ = ["CalculatorArgs", "CalculatorTool"]
