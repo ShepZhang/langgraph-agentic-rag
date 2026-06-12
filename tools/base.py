@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from copy import deepcopy
 import re
 from typing import Any, Callable, ClassVar, Generic, Mapping, TypeVar
 
@@ -65,7 +66,7 @@ class ToolExecutionError(ToolError):
 class BaseTool(Generic[ArgsT, ResultT], ABC):
     name: ClassVar[str]
     description: ClassVar[str]
-    args_schema: ClassVar[type[ArgsT]]
+    args_schema: type[ArgsT]
 
     def __init__(self, context: ToolContext):
         self.context = context
@@ -132,11 +133,16 @@ def _coerce_block(block: Any) -> str:
 
 _SK_REDACT_RE = re.compile(r"\bsk-[A-Za-z0-9._-]+\b")
 _BEARER_REDACT_RE = re.compile(r"\bBearer\s+\S+", re.IGNORECASE)
+_SENSITIVE_FIELD_RE = re.compile(
+    r"(?i)(?P<prefix>\b(?:api[_-]?key|password|secret|token|authorization)\b\s*[:=]\s*)"
+    r"(?P<value>(?:\"[^\"]*\"|'[^']*'|[^,\s\]\}]+))"
+)
 
 
 def redact_tool_message(message: str) -> str:
     redacted = _SK_REDACT_RE.sub("[REDACTED]", message)
     redacted = _BEARER_REDACT_RE.sub("[REDACTED]", redacted)
+    redacted = _SENSITIVE_FIELD_RE.sub(r"\g<prefix>[REDACTED]", redacted)
     return redacted[:500]
 
 
@@ -151,3 +157,39 @@ def error_info_from_exception(
     else:
         message = str(exc)
     return ToolErrorInfo(code=default_code, message=redact_tool_message(message))
+
+
+def snapshot_observer_value(value: Any) -> Any:
+    try:
+        cloned = deepcopy(value)
+    except Exception:
+        cloned = value
+    return _snapshot_observer_value(cloned)
+
+
+_OBSERVER_DROP_KEYS = {"content", "documents", "prompt", "raw_response"}
+_OBSERVER_REDACT_KEYS = {"api_key", "authorization", "password", "secret", "token"}
+
+
+def _snapshot_observer_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        snapshot: dict[str, Any] = {}
+        for key, item in value.items():
+            key_str = str(key)
+            key_lower = key_str.lower()
+            if key_lower in _OBSERVER_DROP_KEYS:
+                continue
+            if key_lower in _OBSERVER_REDACT_KEYS:
+                snapshot[key_str] = "[REDACTED]"
+                continue
+            snapshot[key_str] = _snapshot_observer_value(item)
+        return snapshot
+    if isinstance(value, list):
+        return [_snapshot_observer_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_snapshot_observer_value(item) for item in value]
+    if isinstance(value, set):
+        return [_snapshot_observer_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import logging
+from copy import deepcopy
 from time import perf_counter
 from typing import Any
 
@@ -16,6 +17,7 @@ from tools.base import (
     ToolRegistrationError,
     ToolResult,
     error_info_from_exception,
+    snapshot_observer_value,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,7 +86,7 @@ class ToolRegistry:
             return self._failure_result(
                 tool=tool,
                 start=start,
-                error=error_info_from_exception(exc, default_code="tool_input_error"),
+                error=self._validation_error_info(exc),
             )
         except ToolInputError as exc:
             return self._failure_result(
@@ -146,8 +148,8 @@ class ToolRegistry:
             "tool_name": tool_name,
             "success": success,
             "latency_ms": latency_ms,
-            "error": error,
-            "metadata": {key: value for key, value in metadata.items() if key != "latency_ms"},
+            "error": snapshot_observer_value(error) if error is not None else None,
+            "metadata": self._observer_metadata_snapshot(metadata),
         }
         try:
             self._call_observer(record)
@@ -157,3 +159,28 @@ class ToolRegistry:
     @staticmethod
     def _latency_ms(start: float) -> float:
         return round((perf_counter() - start) * 1000, 3)
+
+    @staticmethod
+    def _validation_error_info(exc: ValidationError) -> ToolErrorInfo:
+        details: list[str] = []
+        for error in exc.errors(include_input=False, include_url=False):
+            loc = error.get("loc", ())
+            loc_text = ".".join(str(part) for part in loc) if loc else "input"
+            msg = str(error.get("msg", "invalid input"))
+            err_type = str(error.get("type", "validation_error"))
+            details.append(f"{loc_text}: {msg} [{err_type}]")
+        message = "; ".join(details) if details else "Invalid tool input"
+        return ToolErrorInfo(
+            code="tool_input_error",
+            message=error_info_from_exception(
+                Exception(message),
+                default_code="tool_input_error",
+            ).message,
+        )
+
+    @staticmethod
+    def _observer_metadata_snapshot(metadata: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return snapshot_observer_value(deepcopy({key: value for key, value in metadata.items() if key != "latency_ms"}))
+        except Exception:
+            return {}

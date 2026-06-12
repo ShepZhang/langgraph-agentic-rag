@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, Field
 
-from tools.base import BaseTool, ToolContext, ToolErrorInfo, ToolInputError
-from tools.base import ToolExecutionError
+from tools import ToolContext, ToolError, ToolExecutionError, ToolInputError
+from tools.base import BaseTool, ToolErrorInfo
 from tools.registry import ToolNotFoundError, ToolRegistrationError, ToolRegistry
 
 
@@ -40,6 +40,52 @@ class RejectTool(BaseTool[EchoArgs, str]):
 
     def run(self, arguments: EchoArgs) -> str:
         raise ToolInputError(ToolErrorInfo(code="tool_input_error", message="bad input"))
+
+
+class SecretArgs(BaseModel):
+    api_key: str = Field(min_length=20)
+    password: str = Field(min_length=20)
+
+
+class SecretInputTool(BaseTool[SecretArgs, str]):
+    name = "secret_input"
+    description = "Validation failure with secret-bearing input."
+    args_schema = SecretArgs
+
+    def run(self, arguments: SecretArgs) -> str:
+        return arguments.api_key
+
+
+class MetadataArgs(BaseModel):
+    text: str = Field(min_length=1)
+
+
+class MetadataTool(BaseTool[MetadataArgs, str]):
+    name = "metadata"
+    description = "Return metadata with nested and sensitive fields."
+    args_schema = MetadataArgs
+
+    def run(self, arguments: MetadataArgs) -> str:
+        return arguments.text
+
+    def build_metadata(
+        self,
+        arguments: MetadataArgs,
+        result: str,
+    ) -> dict[str, object]:
+        return {
+            "nested": {"items": [1, {"flag": True}]},
+            "api_key": "alpha-key",
+            "password": "secret-pass",
+            "token": "tok-123",
+            "authorization": "Bearer hidden-token",
+            "secret": "vault-secret",
+            "content": "do not expose this body",
+            "documents": [{"title": "doc"}],
+            "prompt": "system prompt",
+            "raw_response": {"text": "raw"},
+            "business": {"count": 2},
+        }
 
 
 def test_registry_registers_lists_and_invokes_typed_tool():
@@ -138,6 +184,60 @@ def test_registry_redacts_secrets_and_ignores_observer_failure():
     assert "sk-secretvalue123" not in result.error.message
     assert "Bearer" not in result.error.message
     assert "[REDACTED]" in result.error.message
+
+
+def test_registry_hides_validation_inputs_from_errors_and_observer_records():
+    observer_records: list[dict[str, object]] = []
+    secret_api_key = "plain-secret"
+    secret_password = "plain-secret"
+
+    registry = ToolRegistry(call_observer=observer_records.append)
+    registry.register(SecretInputTool(ToolContext()))
+
+    result = registry.invoke(
+        "secret_input",
+        {"api_key": secret_api_key, "password": secret_password},
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "tool_input_error"
+    assert secret_api_key not in result.error.message
+    assert secret_password not in result.error.message
+    assert "input=" not in result.error.message
+    assert observer_records[0]["error"] is not None
+    assert secret_api_key not in str(observer_records[0]["error"])
+    assert secret_password not in str(observer_records[0]["error"])
+
+
+def test_registry_isolates_observer_metadata_and_redacts_snapshot_fields():
+    observer_records: list[dict[str, object]] = []
+
+    def observer(record: dict[str, object]) -> None:
+        observer_records.append(record)
+        record["metadata"]["nested"]["items"][1]["flag"] = False
+
+    registry = ToolRegistry(call_observer=observer)
+    registry.register(MetadataTool(ToolContext()))
+
+    result = registry.invoke("metadata", {"text": "hello"})
+
+    assert result.success is True
+    assert result.metadata["nested"]["items"][1]["flag"] is True
+    assert result.metadata["api_key"] == "alpha-key"
+    assert result.metadata["business"] == {"count": 2}
+
+    record = observer_records[0]
+    assert record["metadata"]["nested"]["items"][1]["flag"] is False
+    assert record["metadata"]["api_key"] == "[REDACTED]"
+    assert record["metadata"]["password"] == "[REDACTED]"
+    assert record["metadata"]["token"] == "[REDACTED]"
+    assert record["metadata"]["authorization"] == "[REDACTED]"
+    assert record["metadata"]["secret"] == "[REDACTED]"
+    assert "content" not in record["metadata"]
+    assert "documents" not in record["metadata"]
+    assert "prompt" not in record["metadata"]
+    assert "raw_response" not in record["metadata"]
 
 
 def test_registry_forces_tool_input_error_code_even_when_exception_carries_custom_code():
