@@ -28,7 +28,9 @@ def create_retriever_tool(
     registry.register(
         RetrieverTool(
             ToolContext(
-                retriever_fn=retriever_fn or _retrieve_with_workspace,
+                retriever_fn=(
+                    retriever_fn if retriever_fn is not None else _retrieve_with_workspace
+                ),
                 workspace_id=workspace_id,
             )
         )
