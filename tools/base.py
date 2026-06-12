@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from copy import deepcopy
 import re
 from typing import Any, Callable, ClassVar, Generic, Mapping, TypeVar
 
@@ -137,22 +137,8 @@ _SENSITIVE_FIELD_RE = re.compile(
     r"(?i)(?P<prefix>\b(?:api[_-]?key|password|secret|token|authorization)\b\s*[:=]\s*)"
     r"(?P<value>(?:\"[^\"]*\"|'[^']*'|[^,\s\]\}]+))"
 )
-_OBSERVER_KEY_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
-_OBSERVER_CREDENTIAL_PARTS = (
-    "apikey",
-    "password",
-    "secret",
-    "token",
-    "authorization",
-    "credential",
-)
-_OBSERVER_BODY_PARTS = (
-    "content",
-    "documents",
-    "prompt",
-    "rawresponse",
-    "modelresponse",
-)
+_OBSERVER_PART_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+")
+_OBSERVER_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+")
 
 
 def redact_tool_message(message: str) -> str:
@@ -184,43 +170,97 @@ def snapshot_observer_value(value: Any) -> Any:
 
 
 def normalize_observer_key(key: Any) -> str:
-    return _OBSERVER_KEY_NORMALIZE_RE.sub("", str(key).lower())
+    return "".join(split_observer_key(key))
 
 
 def is_observer_body_key(key: Any) -> bool:
-    normalized = normalize_observer_key(key)
-    return any(part in normalized for part in _OBSERVER_BODY_PARTS)
+    tokens = split_observer_key(key)
+    if not tokens:
+        return False
+    if any(_contains_sequence(tokens, sequence) for sequence in (["raw", "response"], ["model", "response"])):
+        return True
+    return tokens[-1] in {"content", "documents", "prompt", "response"}
 
 
 def is_observer_credential_key(key: Any) -> bool:
-    normalized = normalize_observer_key(key)
-    return any(part in normalized for part in _OBSERVER_CREDENTIAL_PARTS)
+    tokens = split_observer_key(key)
+    if not tokens:
+        return False
+    if _contains_sequence(tokens, ["api", "key"]):
+        return True
+    if tokens[-1] in {"password", "secret", "token", "credential"}:
+        return True
+    if tokens == ["authorization"] or _contains_sequence(tokens, ["authorization", "header"]):
+        return True
+    return False
+
+
+def split_observer_key(key: Any) -> list[str]:
+    tokens: list[str] = []
+    for chunk in _OBSERVER_SPLIT_RE.split(str(key)):
+        if not chunk:
+            continue
+        for token in _OBSERVER_PART_RE.findall(chunk):
+            tokens.append(token.lower())
+    return tokens
+
+
+def _contains_sequence(tokens: list[str], sequence: list[str]) -> bool:
+    if len(sequence) > len(tokens):
+        return False
+    limit = len(tokens) - len(sequence) + 1
+    for index in range(limit):
+        if tokens[index : index + len(sequence)] == sequence:
+            return True
+    return False
 
 
 def _snapshot_observer_value(value: Any, *, seen: set[int]) -> Any:
-    if isinstance(value, (Mapping, list, tuple, set)):
+    if isinstance(value, Mapping):
         value_id = id(value)
         if value_id in seen:
             return "[REDACTED]"
         seen.add(value_id)
-
-    if isinstance(value, Mapping):
-        snapshot: dict[str, Any] = {}
-        for key, item in value.items():
-            key_str = str(key)
-            if is_observer_body_key(key_str):
-                continue
-            if is_observer_credential_key(key_str):
-                snapshot[key_str] = "[REDACTED]"
-                continue
-            snapshot[key_str] = _snapshot_observer_value(item, seen=seen)
-        return snapshot
+        try:
+            snapshot: dict[str, Any] = {}
+            for key, item in value.items():
+                key_str = str(key)
+                if is_observer_body_key(key_str):
+                    continue
+                if is_observer_credential_key(key_str):
+                    snapshot[key_str] = "[REDACTED]"
+                    continue
+                snapshot[key_str] = _snapshot_observer_value(item, seen=seen)
+            return snapshot
+        finally:
+            seen.remove(value_id)
     if isinstance(value, list):
-        return [_snapshot_observer_value(item, seen=seen) for item in value]
+        value_id = id(value)
+        if value_id in seen:
+            return "[REDACTED]"
+        seen.add(value_id)
+        try:
+            return [_snapshot_observer_value(item, seen=seen) for item in value]
+        finally:
+            seen.remove(value_id)
     if isinstance(value, tuple):
-        return [_snapshot_observer_value(item, seen=seen) for item in value]
+        value_id = id(value)
+        if value_id in seen:
+            return "[REDACTED]"
+        seen.add(value_id)
+        try:
+            return [_snapshot_observer_value(item, seen=seen) for item in value]
+        finally:
+            seen.remove(value_id)
     if isinstance(value, set):
-        return [_snapshot_observer_value(item, seen=seen) for item in value]
+        value_id = id(value)
+        if value_id in seen:
+            return "[REDACTED]"
+        seen.add(value_id)
+        try:
+            return [_snapshot_observer_value(item, seen=seen) for item in value]
+        finally:
+            seen.remove(value_id)
     if isinstance(value, (str, int, float, bool)) or value is None:
         return redact_tool_message(value) if isinstance(value, str) else value
     return redact_tool_message(str(value))
