@@ -9,6 +9,7 @@ from tools.base import (
     ToolRegistrationError,
     ToolResult,
 )
+from tools.factory import create_default_tool_registry
 from tools.registry import ToolRegistry
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "ToolRegistrationError",
     "ToolRegistry",
     "ToolResult",
+    "create_default_tool_registry",
 ]

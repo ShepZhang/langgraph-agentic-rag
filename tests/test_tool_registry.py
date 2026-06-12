@@ -711,3 +711,30 @@ def test_registry_forces_tool_execution_error_code_even_when_exception_carries_c
     assert result.error.code == "tool_execution_error"
     assert "Bearer" not in result.error.message
     assert "[REDACTED]" in result.error.message
+
+
+def test_default_factory_registers_p3d_tools_and_preserves_retriever_context():
+    from tools.factory import create_default_tool_registry
+
+    calls: list[str] = []
+
+    def fake_retriever(query: str) -> list[dict[str, object]]:
+        calls.append(query)
+        return [{"content": "chunk", "source": "notes.md"}]
+
+    registry = create_default_tool_registry(
+        llm=object(),
+        retriever_fn=fake_retriever,
+        workspace_id="workspace_1",
+    )
+
+    assert [item["name"] for item in registry.list_tools()] == [
+        "retrieve_context",
+        "verify_citations",
+        "summarize_document",
+        "calculator",
+    ]
+
+    retriever_tool = registry.get("retrieve_context")
+    assert retriever_tool.context.workspace_id == "workspace_1"
+    assert retriever_tool.context.retriever_fn is fake_retriever
