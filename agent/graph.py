@@ -48,11 +48,16 @@ def build_graph(
         tool_registry
         if tool_registry is not None
         else create_default_tool_registry(
-        llm=resolved_llm,
-        retriever_fn=resolved_retriever_fn,
-        workspace_id=workspace_id,
+            llm=resolved_llm,
+            retriever_fn=resolved_retriever_fn,
+            workspace_id=workspace_id,
         )
     )
+    if trace_recorder is not None:
+        resolved_tool_registry.set_call_observer(trace_recorder.record_tool_call)
+    else:
+        resolved_tool_registry.set_call_observer(None)
+
     nodes = AgentNodes(
         llm=resolved_llm,
         features=resolved_features,

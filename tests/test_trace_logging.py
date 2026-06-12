@@ -44,6 +44,46 @@ def test_jsonl_trace_store_persists_and_reads_by_trace_id(tmp_path):
     assert store.get("missing") is None
 
 
+def test_trace_recorder_records_compact_tool_calls():
+    from observability.trace import TraceRecorder
+
+    recorder = TraceRecorder(
+        original_question="question",
+        workspace_id="workspace_1",
+    )
+    recorder.record_tool_call(
+        {
+            "tool_name": "retrieve_context",
+            "success": True,
+            "latency_ms": 12.5,
+            "error": None,
+            "metadata": {
+                "workspace_id": "workspace_1",
+                "result_count": 2,
+            },
+        }
+    )
+
+    record = recorder.build_record({}, latency_ms=20)
+
+    assert record["tool_calls"] == [
+        {
+            "tool_name": "retrieve_context",
+            "success": True,
+            "latency_ms": 12.5,
+            "error": None,
+            "metadata": {
+                "workspace_id": "workspace_1",
+                "result_count": 2,
+            },
+        }
+    ]
+    assert {
+        "event_type": "tool",
+        **record["tool_calls"][0],
+    } in record["events"]
+
+
 def test_run_agent_writes_node_events_and_route_decisions_to_trace(tmp_path):
     from agent.graph import run_agent
     from observability.storage import JsonlTraceStore
@@ -101,6 +141,10 @@ def test_run_agent_writes_node_events_and_route_decisions_to_trace(tmp_path):
     assert trace["relevant_documents"][0]["chunk_id"] == "notes.md:pNA:c1"
     assert trace["citations"][0]["chunk_id"] == "notes.md:pNA:c1"
     assert trace["error"] is None
+    assert trace["tool_calls"][0]["tool_name"] == "retrieve_context"
+    assert trace["tool_calls"][0]["success"] is True
+    assert trace["tool_calls"][0]["metadata"]["workspace_id"] == "workspace_1"
+    assert "content" not in trace["tool_calls"][0]["metadata"]
 
     node_events = [
         event for event in trace["events"] if event["event_type"] == "node"
@@ -124,6 +168,36 @@ def test_run_agent_writes_node_events_and_route_decisions_to_trace(tmp_path):
         "to": "finalize_answer",
         "reason": "Citation verification skipped.",
     } in route_decisions
+
+
+def test_build_graph_without_trace_recorder_clears_reused_registry_observer():
+    from agent.graph import build_graph
+    from tools import create_default_tool_registry
+
+    observed: list[dict] = []
+    registry = create_default_tool_registry(
+        llm=FakeLLM([]),
+        retriever_fn=lambda query: [
+            {
+                "content": "RAG retrieves supporting evidence.",
+                "source": "notes.md",
+                "chunk_id": "notes.md:pNA:c1",
+            }
+        ],
+        workspace_id="workspace_1",
+    )
+    registry.set_call_observer(observed.append)
+
+    build_graph(
+        llm=FakeLLM([]),
+        retriever_fn=lambda query: [],
+        tool_registry=registry,
+        trace_recorder=None,
+        workspace_id="workspace_1",
+    )
+    registry.invoke("retrieve_context", {"query": "What is RAG?"})
+
+    assert observed == []
 
 
 def test_run_agent_accepts_trace_store_without_path(tmp_path):

@@ -26,6 +26,7 @@ class TraceRecorder:
         self.started_at = time.perf_counter()
         self.events: list[dict[str, Any]] = []
         self.route_decisions: list[dict[str, Any]] = []
+        self.tool_calls: list[dict[str, Any]] = []
 
     def record_node(
         self,
@@ -73,6 +74,18 @@ class TraceRecorder:
             }
         )
 
+    def record_tool_call(self, record: dict[str, Any]) -> None:
+        """Record a compact internal tool invocation."""
+
+        normalized = _jsonable(record)
+        self.tool_calls.append(normalized)
+        self.events.append(
+            {
+                "event_type": "tool",
+                **normalized,
+            }
+        )
+
     def build_record(
         self,
         final_state: dict[str, Any] | None,
@@ -106,6 +119,7 @@ class TraceRecorder:
                 ),
                 "document_grades": state.get("document_grades", []),
                 "route_decisions": self.route_decisions,
+                "tool_calls": self.tool_calls,
                 "events": self.events,
                 "final_answer": state.get("answer", ""),
                 "citations": state.get("citations", []),
