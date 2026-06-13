@@ -510,8 +510,12 @@ def _build_observed_tradeoffs(runs: list[dict[str, Any]]) -> list[str]:
     ]
     for previous, current in zip(completed_runs, completed_runs[1:]):
         changes: list[str] = []
-        previous_summary = previous.get("summary", {})
-        current_summary = current.get("summary", {})
+        previous_summary = previous.get("summary")
+        if not isinstance(previous_summary, dict):
+            previous_summary = {}
+        current_summary = current.get("summary")
+        if not isinstance(current_summary, dict):
+            current_summary = {}
         for key, label, suffix in metrics:
             previous_value = previous_summary.get(key)
             current_value = current_summary.get(key)

@@ -434,6 +434,30 @@ def test_format_ablation_report_handles_missing_failure_analysis_inputs():
     assert "No failed cases recorded in completed runs." in report
 
 
+def test_format_ablation_report_tolerates_missing_completed_run_summaries():
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "summary": None,
+            },
+            {
+                "id": "v1_query_rewrite",
+                "method": "+ Query Rewrite",
+                "status": "completed",
+                "summary": None,
+            },
+        ],
+    }
+
+    report = format_ablation_report(payload)
+
+    assert "## Observed Trade-offs" in report
+    assert "- No adjacent completed variants are available for comparison." in report
+
+
 def test_format_ablation_report_uses_observed_metrics_and_explicit_limitations():
     payload = {
         "runs": [
