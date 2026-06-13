@@ -244,6 +244,75 @@ def test_select_questions_preserves_dataset_order_and_rejects_unknown_ids():
         select_questions(questions, "q999")
 
 
+def test_format_ablation_report_includes_failed_case_analysis():
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "summary": {
+                    "failure_type_counts": {
+                        "no_failure": 1,
+                        "retrieval_failure": 1,
+                    },
+                },
+                "results": [
+                    {
+                        "question_id": "q001",
+                        "question_type": "single_doc",
+                        "failure_analysis": {
+                            "failure_type": "retrieval_failure",
+                            "reason": "Expected source | missing\ncheck retriever",
+                            "suggestion": "Improve retrieval.",
+                        },
+                    },
+                    {
+                        "question_id": "q002",
+                        "question_type": "single_doc",
+                        "failure_analysis": {
+                            "failure_type": "no_failure",
+                            "reason": "No action required.",
+                            "suggestion": "No action required.",
+                        },
+                    },
+                ],
+            },
+            {
+                "id": "v6_citation_verification",
+                "method": "+ Claim-level Citation Verification",
+                "status": "completed",
+                "summary": {
+                    "failure_type_counts": {
+                        "no_failure": 1,
+                        "citation_failure": 1,
+                    },
+                },
+                "results": [
+                    {
+                        "question_id": "q003",
+                        "question_type": "multi_doc",
+                        "failure_analysis": {
+                            "failure_type": "citation_failure",
+                            "reason": "Cited source is unsupported.",
+                            "suggestion": "Tighten citation selection.",
+                        },
+                    },
+                ],
+            },
+        ],
+    }
+
+    report = format_ablation_report(payload)
+
+    assert "## Failed Case Analysis" in report
+    assert "## Representative Failed Cases" in report
+    assert "retrieval_failure" in report
+    assert "citation_failure" in report
+    assert "q001" in report
+    assert "Expected source \\| missing check retriever" in report
+
+
 def test_format_ablation_report_uses_observed_metrics_and_explicit_limitations():
     payload = {
         "runs": [
