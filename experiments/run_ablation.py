@@ -21,6 +21,16 @@ from experiments.variants import (
 DEFAULT_CONFIG_DIR = Path(__file__).with_name("configs")
 EvaluationRunner = Callable[[str, list[ChatMessage]], dict[str, Any]]
 VariantRunnerFactory = Callable[[AblationVariant, Settings], EvaluationRunner]
+FAILURE_COUNT_COLUMNS = [
+    "no_failure",
+    "retrieval_failure",
+    "reranking_failure",
+    "query_rewrite_failure",
+    "generation_failure",
+    "citation_failure",
+    "fallback_failure",
+    "tool_failure",
+]
 
 
 def main(
@@ -138,6 +148,9 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
 def format_ablation_report(payload: dict[str, Any]) -> str:
     """Format the current ablation payload as Markdown."""
 
+    runs = payload.get("runs", [])
+    if not isinstance(runs, list):
+        runs = []
     lines = [
         "# P0b Ablation Report",
         "",
@@ -151,8 +164,12 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
         "Avg Retry | Avg Latency | Errors | Status |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
-    for run in payload.get("runs", []):
-        summary = run.get("summary", {})
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        summary = run.get("summary")
+        if not isinstance(summary, dict):
+            summary = {}
         lines.append(
             (
                 f"| {_display_method(run)} | "
@@ -169,8 +186,10 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
             )
         )
 
+    lines.extend(_format_failed_case_analysis(runs))
+
     lines.extend(["", "## Observed Trade-offs", ""])
-    tradeoffs = _build_observed_tradeoffs(payload.get("runs", []))
+    tradeoffs = _build_observed_tradeoffs(runs)
     if tradeoffs:
         lines.extend(f"- {tradeoff}" for tradeoff in tradeoffs)
     else:
@@ -356,6 +375,118 @@ def _format_metric(value: Any) -> str:
     return str(value)
 
 
+def _format_failed_case_analysis(runs: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "",
+        "## Failed Case Analysis",
+        "",
+        "| Method | "
+        + " | ".join(FAILURE_COUNT_COLUMNS)
+        + " |",
+        "|---|" + "|".join("---:" for _ in FAILURE_COUNT_COLUMNS) + "|",
+    ]
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        counts = _failure_type_counts(run)
+        cells = [
+            _format_failure_count(counts.get(column, 0))
+            for column in FAILURE_COUNT_COLUMNS
+        ]
+        lines.append(
+            f"| {_escape_table_cell(_display_method(run))} | "
+            + " | ".join(cells)
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Representative Failed Cases",
+            "",
+            "| Method | Question ID | Type | Failure | Reason | Suggestion |",
+            "|---|---|---|---|---|---|",
+        ]
+    )
+    representatives = _representative_failed_cases(runs)
+    if not representatives:
+        lines.append("No failed cases recorded in completed runs.")
+        return lines
+
+    for item in representatives:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape_table_cell(item["method"]),
+                    _escape_table_cell(item["question_id"]),
+                    _escape_table_cell(item["question_type"]),
+                    _escape_table_cell(item["failure_type"]),
+                    _escape_table_cell(item["reason"]),
+                    _escape_table_cell(item["suggestion"]),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
+def _failure_type_counts(run: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(run, dict):
+        return {}
+    summary = run.get("summary")
+    if not isinstance(summary, dict):
+        return {}
+    counts = summary.get("failure_type_counts")
+    if not isinstance(counts, dict):
+        return {}
+    return counts
+
+
+def _format_failure_count(value: Any) -> str:
+    if _is_number(value):
+        return str(int(value))
+    return "0"
+
+
+def _representative_failed_cases(runs: list[dict[str, Any]]) -> list[dict[str, str]]:
+    representatives: list[dict[str, str]] = []
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        results = run.get("results")
+        if not isinstance(results, list):
+            continue
+        run_count = 0
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            analysis = result.get("failure_analysis")
+            if not isinstance(analysis, dict):
+                continue
+            failure_type = str(analysis.get("failure_type", "")).strip()
+            if not failure_type or failure_type == "no_failure":
+                continue
+            representatives.append(
+                {
+                    "method": _display_method(run),
+                    "question_id": str(result.get("question_id", "")),
+                    "question_type": str(result.get("question_type", "")),
+                    "failure_type": failure_type,
+                    "reason": str(analysis.get("reason", "")),
+                    "suggestion": str(analysis.get("suggestion", "")),
+                }
+            )
+            run_count += 1
+            if run_count >= 3:
+                break
+    return representatives
+
+
+def _escape_table_cell(value: Any) -> str:
+    return " ".join(str(value).replace("|", "\\|").split())
+
+
 def _display_method(run: dict[str, Any]) -> str:
     version = str(run.get("id", "")).split("_", 1)[0].upper()
     method = str(run.get("method", "")).strip()
@@ -366,7 +497,7 @@ def _build_observed_tradeoffs(runs: list[dict[str, Any]]) -> list[str]:
     completed_runs = [
         run
         for run in runs
-        if run.get("status") == "completed"
+        if isinstance(run, dict) and run.get("status") == "completed"
     ]
     tradeoffs: list[str] = []
     metrics = [
@@ -379,8 +510,12 @@ def _build_observed_tradeoffs(runs: list[dict[str, Any]]) -> list[str]:
     ]
     for previous, current in zip(completed_runs, completed_runs[1:]):
         changes: list[str] = []
-        previous_summary = previous.get("summary", {})
-        current_summary = current.get("summary", {})
+        previous_summary = previous.get("summary")
+        if not isinstance(previous_summary, dict):
+            previous_summary = {}
+        current_summary = current.get("summary")
+        if not isinstance(current_summary, dict):
+            current_summary = {}
         for key, label, suffix in metrics:
             previous_value = previous_summary.get(key)
             current_value = current_summary.get(key)

@@ -468,6 +468,15 @@ Metric fields include:
 - `average_token_usage`
 - `estimated_cost`
 - `error_count`
+- `failure_type_counts`
+
+### Failed Case Analysis
+
+Each question result includes a `failure_analysis` object with `failure_type`, `reason`, and `suggestion` fields. The taxonomy covers `retrieval_failure`, `reranking_failure`, `query_rewrite_failure`, `generation_failure`, `citation_failure`, `fallback_failure`, `tool_failure`, and `no_failure`.
+
+Attribution uses available source and citation signals, fallback behavior, unsupported claims, retrieved and relevant document diagnostics, and recorded errors. The analyzer is rule-based and deterministic: it does not use an LLM judge and does not automatically repair failures.
+
+Ablation reports now include failure counts and representative failed cases for debugging and regression triage. This is a framework and reporting capability upgrade; P4a does not claim a new full DeepSeek ablation run, and the historical P0b result numbers below remain unchanged.
 
 If an individual question fails, evaluation records the exception and marks the variant `completed_with_errors`. Configuration, index, or runner-construction failures leave an `incomplete` checkpoint instead of publishing misleading aggregate results.
 
@@ -641,7 +650,8 @@ agentic-rag-document-qa/
 - Added local JSONL trace logging so each Agent run can expose node events, route decisions, compact tool calls, evidence summaries, final answer metadata, latency, and errors.
 - Added a FastAPI backend for chat, trace lookup, document upload/index/delete, and evaluation run retrieval.
 - Added workspace-aware retrieval isolation for dense, BM25, hybrid, retriever, and Agent default retrieval paths.
-- Preserved a modular roadmap toward the Approach B typed evaluator, dynamic retrieval adjustment, per-workspace collection hardening, prompt versioning, failed-case analysis, and an interactive evaluation dashboard.
+- Added deterministic failed-case analysis with rule-based failure attribution, per-question reasons and suggestions, summary counts, and representative ablation cases.
+- Preserved a modular roadmap toward the Approach B typed evaluator, dynamic retrieval adjustment, per-workspace collection hardening, prompt versioning, and an interactive evaluation dashboard.
 
 ## Current Limitations
 
@@ -684,6 +694,7 @@ agentic-rag-document-qa/
 - P3b FastAPI service layer implemented: chat, trace lookup, API-managed document upload/index/delete, and evaluation run retrieval.
 - P3c workspace-aware retrieval implemented: API-indexed documents carry workspace metadata, and Agent retrieval can filter dense, BM25, and hybrid candidates by workspace.
 - P3d typed internal Tool Registry implemented: retriever, citation verifier, document summary, and safe calculator tools share validated inputs, normalized results, stable errors, and compact trace diagnostics.
+- P4a deterministic failed-case analysis implemented: evaluation results include primary failure types, reasons, and suggestions, while summaries and ablation reports include failure counts and representative cases.
 
 ### Next Milestones
 
@@ -691,7 +702,6 @@ agentic-rag-document-qa/
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
 - Add decomposition sub-question retrieval for multi-hop workflows.
 - Harden workspace isolation with optional per-workspace Chroma collections and authorization checks.
-- Add failed-case analysis for retrieval, reranking, query rewrite, generation, citation, fallback, and tool failures.
 - Add prompt versioning under `prompts/` and record prompt versions in evaluation artifacts.
 - Add an interactive Evaluation Dashboard in Gradio for running evaluations, comparing baseline vs agentic results, inspecting failed cases, and later linking rows to trace IDs.
 - Add model-specific prompt tuning and cost/latency evaluation for local and remote models.

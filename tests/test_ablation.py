@@ -22,6 +22,10 @@ from evaluation.runtime_config import build_runtime_config_snapshot
 CONFIG_DIR = Path("experiments/configs")
 
 
+def _report_section(report: str, start: str, end: str) -> str:
+    return report.split(start, 1)[1].split(end, 1)[0]
+
+
 def test_repository_ablation_configs_define_distinct_cumulative_variants():
     variants = load_ablation_variants(CONFIG_DIR)
 
@@ -242,6 +246,216 @@ def test_select_questions_preserves_dataset_order_and_rejects_unknown_ids():
     assert [question["id"] for question in selected] == ["q001", "q003"]
     with pytest.raises(ValueError, match="q999"):
         select_questions(questions, "q999")
+
+
+def test_format_ablation_report_includes_failed_case_analysis():
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "summary": {
+                    "failure_type_counts": {
+                        "no_failure": 1,
+                        "retrieval_failure": 1,
+                    },
+                },
+                "results": [
+                    {
+                        "question_id": "q001",
+                        "question_type": "single_doc",
+                        "failure_analysis": {
+                            "failure_type": "retrieval_failure",
+                            "reason": "Expected source | missing\ncheck retriever",
+                            "suggestion": "Improve retrieval.",
+                        },
+                    },
+                    {
+                        "question_id": "q002",
+                        "question_type": "single_doc",
+                        "failure_analysis": {
+                            "failure_type": "no_failure",
+                            "reason": "No action required.",
+                            "suggestion": "No action required.",
+                        },
+                    },
+                ],
+            },
+            {
+                "id": "v6_citation_verification",
+                "method": "+ Claim-level Citation Verification",
+                "status": "completed",
+                "summary": {
+                    "failure_type_counts": {
+                        "no_failure": 1,
+                        "citation_failure": 1,
+                    },
+                },
+                "results": [
+                    {
+                        "question_id": "q003",
+                        "question_type": "multi_doc",
+                        "failure_analysis": {
+                            "failure_type": "citation_failure",
+                            "reason": "Cited source is unsupported.",
+                            "suggestion": "Tighten citation selection.",
+                        },
+                    },
+                ],
+            },
+        ],
+    }
+
+    report = format_ablation_report(payload)
+
+    assert "## Failed Case Analysis" in report
+    assert "## Representative Failed Cases" in report
+    assert "retrieval_failure" in report
+    assert "citation_failure" in report
+    assert (
+        "| V0 Naive RAG | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |"
+        in report
+    )
+    assert (
+        "| V6 + Claim-level Citation Verification | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |"
+        in report
+    )
+    assert "q001" in report
+    assert "Expected source \\| missing check retriever" in report
+    representative_cases = _report_section(
+        report,
+        "## Representative Failed Cases",
+        "## Observed Trade-offs",
+    )
+    assert "q002" not in representative_cases
+    assert "no_failure" not in representative_cases
+
+
+def test_format_ablation_report_limits_representative_failed_cases_per_run():
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "summary": {
+                    "failure_type_counts": {
+                        "retrieval_failure": 4,
+                    },
+                },
+                "results": [
+                    {
+                        "question_id": f"q00{index}",
+                        "question_type": "single_doc",
+                        "failure_analysis": {
+                            "failure_type": "retrieval_failure",
+                            "reason": f"Missing source {index}.",
+                            "suggestion": "Tune retriever.",
+                        },
+                    }
+                    for index in range(1, 5)
+                ],
+            },
+            {
+                "id": "v6_citation_verification",
+                "method": "+ Claim-level Citation Verification",
+                "status": "completed",
+                "summary": {
+                    "failure_type_counts": {
+                        "citation_failure": 1,
+                    },
+                },
+                "results": [
+                    {
+                        "question_id": "q101",
+                        "question_type": "multi_doc",
+                        "failure_analysis": {
+                            "failure_type": "citation_failure",
+                            "reason": "Citation mismatch.",
+                            "suggestion": "Verify citations.",
+                        },
+                    }
+                ],
+            },
+        ],
+    }
+
+    report = format_ablation_report(payload)
+
+    representative_cases = _report_section(
+        report,
+        "## Representative Failed Cases",
+        "## Observed Trade-offs",
+    )
+    assert "q001" in representative_cases
+    assert "q002" in representative_cases
+    assert "q003" in representative_cases
+    assert "q004" not in representative_cases
+    assert "q101" in representative_cases
+
+
+def test_format_ablation_report_handles_missing_failure_analysis_inputs():
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "incomplete",
+                "summary": None,
+                "results": None,
+            },
+            {
+                "id": "v6_citation_verification",
+                "method": "+ Claim-level Citation Verification",
+                "status": "completed",
+                "results": [
+                    {
+                        "question_id": "q001",
+                        "question_type": "single_doc",
+                        "failure_analysis": None,
+                    }
+                ],
+            },
+            None,
+        ],
+    }
+
+    report = format_ablation_report(payload)
+
+    assert (
+        "| V0 Naive RAG | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | incomplete |"
+        in report
+    )
+    assert (
+        "| V0 Naive RAG | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |"
+        in report
+    )
+    assert "No failed cases recorded in completed runs." in report
+
+
+def test_format_ablation_report_tolerates_missing_completed_run_summaries():
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "summary": None,
+            },
+            {
+                "id": "v1_query_rewrite",
+                "method": "+ Query Rewrite",
+                "status": "completed",
+                "summary": None,
+            },
+        ],
+    }
+
+    report = format_ablation_report(payload)
+
+    assert "## Observed Trade-offs" in report
+    assert "- No adjacent completed variants are available for comparison." in report
 
 
 def test_format_ablation_report_uses_observed_metrics_and_explicit_limitations():

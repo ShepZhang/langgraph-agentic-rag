@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.4.0-p4a - Failed Case Analyzer
+
+Date: 2026-06-13
+
+### Added
+
+- Added deterministic failed-case analysis for evaluation results with primary failure types, reasons, and suggested next actions.
+- Added `failure_analysis` per question and `failure_type_counts` in evaluation summaries.
+- Added failed-case count and representative-case sections to ablation reports.
+
+### Notes
+
+- P4a does not use an LLM judge and does not automatically repair failures.
+- Failure attribution is rule-based and intended for debugging, regression triage, and portfolio explanation rather than benchmark-grade causal proof.
+
 ## v0.3.3-p3d - Typed Internal Tool Registry
 
 Date: 2026-06-12
