@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from evaluation.failure_analyzer import analyze_failure, summarize_failure_types
 
 
@@ -149,6 +151,7 @@ def test_expected_source_in_candidates_but_not_relevant_or_cited_is_reranking_fa
         _question(expected_sources=["policy.md"]),
         _result(
             correct=False,
+            answer_returned=False,
             source_hit=True,
             context_relevant=False,
             citation_hit=False,
@@ -203,6 +206,81 @@ def test_answer_with_expected_source_evidence_but_wrong_citation_is_citation_fai
     assert "citation" in analysis["reason"].lower()
     assert "source" in analysis["reason"].lower()
     assert "citation" in analysis["suggestion"].lower()
+
+
+def test_answer_with_retrieved_source_but_wrong_citation_is_not_reranking_failure():
+    analysis = analyze_failure(
+        _question(expected_sources=["notes.md"]),
+        _result(
+            correct=True,
+            fallback_correct=True,
+            answer_returned=True,
+            source_hit=True,
+            context_relevant=False,
+            citation_hit=False,
+            retrieved_documents=[
+                {"source": "/workspace/docs/notes.md"},
+            ],
+            relevant_documents=[],
+            citations=[
+                {"source": "/workspace/docs/wrong.md"},
+            ],
+        ),
+    )
+
+    assert analysis["failure_type"] == "citation_failure"
+
+
+def test_rewrite_question_without_expected_sources_prefers_fallback_failure():
+    analysis = analyze_failure(
+        _question(
+            expected_sources=[],
+            question_type="ambiguous",
+            requires_rewrite=True,
+        ),
+        _result(
+            correct=False,
+            fallback_correct=False,
+            answer_returned=False,
+            fallback_triggered=False,
+            source_hit=False,
+            context_relevant=False,
+            citation_hit=False,
+            retrieved_documents=[],
+            relevant_documents=[],
+            citations=[],
+        ),
+    )
+
+    assert analysis["failure_type"] == "fallback_failure"
+    assert "expected source" not in analysis["reason"].lower()
+
+
+@pytest.mark.parametrize(
+    "source_record",
+    [
+        {"source_path": "/tmp/notes.md"},
+        {"metadata": {"source_path": "/tmp/notes.md"}},
+    ],
+    ids=["top-level-source-path", "metadata-source-path"],
+)
+def test_source_path_matches_expected_source(source_record):
+    analysis = analyze_failure(
+        _question(expected_sources=["notes.md"]),
+        _result(
+            correct=True,
+            fallback_correct=True,
+            answer_returned=True,
+            source_hit=False,
+            context_relevant=False,
+            citation_hit=False,
+            retrieved_documents=[source_record],
+            relevant_documents=[source_record],
+            citations=[source_record],
+        ),
+    )
+
+    assert analysis["failure_type"] == "no_failure"
 
 
 def test_evidence_hit_but_incorrect_answer_is_generation_failure():

@@ -62,6 +62,13 @@ def analyze_failure(question: Mapping[str, Any], result: Mapping[str, Any]) -> d
             "Unanswerable question returned an answer instead of falling back.",
             "Tighten answerability detection and require fallback when evidence is insufficient.",
         )
+    if not bool(result.get("fallback_correct", True)):
+        return _analysis(
+            question_id,
+            "fallback_failure",
+            "Fallback behavior did not match the question answerability expectation.",
+            "Review answerability labels, fallback policy, and fallback trigger conditions.",
+        )
 
     retrieved_has_expected = _has_source(
         expected_sources,
@@ -75,7 +82,8 @@ def analyze_failure(question: Mapping[str, Any], result: Mapping[str, Any]) -> d
     retry_count = _safe_int(result.get("retry_count", result.get("rewrite_count", 0)))
 
     if (
-        _requires_query_rewrite(question)
+        expected_sources
+        and _requires_query_rewrite(question)
         and not source_hit
         and retry_count == 0
         and not bool(result.get("rewrite_triggered"))
@@ -97,6 +105,7 @@ def analyze_failure(question: Mapping[str, Any], result: Mapping[str, Any]) -> d
 
     if (
         expected_sources
+        and not answer_returned
         and retrieved_has_expected
         and not evidence_has_expected
         and not bool(result.get("context_relevant"))
@@ -132,14 +141,6 @@ def analyze_failure(question: Mapping[str, Any], result: Mapping[str, Any]) -> d
             "generation_failure",
             "Evidence was available, but the generated answer failed correctness checks.",
             "Revise answer synthesis prompts or post-generation validation against the gold answer.",
-        )
-
-    if not bool(result.get("fallback_correct", True)):
-        return _analysis(
-            question_id,
-            "fallback_failure",
-            "Fallback behavior did not match the question answerability expectation.",
-            "Review answerability labels, fallback policy, and fallback trigger conditions.",
         )
 
     return _analysis(
@@ -339,13 +340,13 @@ def _iter_sources(records: Any) -> Iterable[str]:
 
 
 def _sources_from_document(document: Mapping[str, Any]) -> Iterable[str]:
-    for field_name in ("source", "document_id"):
+    for field_name in ("source", "document_id", "source_path", "file_path"):
         for value in _string_list(document.get(field_name)):
             yield value
 
     metadata = document.get("metadata")
     if isinstance(metadata, Mapping):
-        for field_name in ("source", "file_path"):
+        for field_name in ("source", "file_path", "source_path"):
             for value in _string_list(metadata.get(field_name)):
                 yield value
 
