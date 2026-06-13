@@ -148,6 +148,9 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
 def format_ablation_report(payload: dict[str, Any]) -> str:
     """Format the current ablation payload as Markdown."""
 
+    runs = payload.get("runs", [])
+    if not isinstance(runs, list):
+        runs = []
     lines = [
         "# P0b Ablation Report",
         "",
@@ -161,8 +164,12 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
         "Avg Retry | Avg Latency | Errors | Status |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
-    for run in payload.get("runs", []):
-        summary = run.get("summary", {})
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        summary = run.get("summary")
+        if not isinstance(summary, dict):
+            summary = {}
         lines.append(
             (
                 f"| {_display_method(run)} | "
@@ -179,10 +186,10 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
             )
         )
 
-    lines.extend(_format_failed_case_analysis(payload.get("runs", [])))
+    lines.extend(_format_failed_case_analysis(runs))
 
     lines.extend(["", "## Observed Trade-offs", ""])
-    tradeoffs = _build_observed_tradeoffs(payload.get("runs", []))
+    tradeoffs = _build_observed_tradeoffs(runs)
     if tradeoffs:
         lines.extend(f"- {tradeoff}" for tradeoff in tradeoffs)
     else:
@@ -379,6 +386,8 @@ def _format_failed_case_analysis(runs: list[dict[str, Any]]) -> list[str]:
         "|---|" + "|".join("---:" for _ in FAILURE_COUNT_COLUMNS) + "|",
     ]
     for run in runs:
+        if not isinstance(run, dict):
+            continue
         counts = _failure_type_counts(run)
         cells = [
             _format_failure_count(counts.get(column, 0))
@@ -423,6 +432,8 @@ def _format_failed_case_analysis(runs: list[dict[str, Any]]) -> list[str]:
 
 
 def _failure_type_counts(run: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(run, dict):
+        return {}
     summary = run.get("summary")
     if not isinstance(summary, dict):
         return {}
@@ -441,6 +452,8 @@ def _format_failure_count(value: Any) -> str:
 def _representative_failed_cases(runs: list[dict[str, Any]]) -> list[dict[str, str]]:
     representatives: list[dict[str, str]] = []
     for run in runs:
+        if not isinstance(run, dict):
+            continue
         results = run.get("results")
         if not isinstance(results, list):
             continue
@@ -484,7 +497,7 @@ def _build_observed_tradeoffs(runs: list[dict[str, Any]]) -> list[str]:
     completed_runs = [
         run
         for run in runs
-        if run.get("status") == "completed"
+        if isinstance(run, dict) and run.get("status") == "completed"
     ]
     tradeoffs: list[str] = []
     metrics = [
