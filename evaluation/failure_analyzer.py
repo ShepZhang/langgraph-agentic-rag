@@ -109,6 +109,14 @@ def analyze_failure(question: Mapping[str, Any], result: Mapping[str, Any]) -> d
             "Tune reranking, relevance grading, or evidence selection thresholds.",
         )
 
+    if expected_sources and answer_returned and not _citation_hit(result, expected_sources):
+        return _analysis(
+            question_id,
+            "citation_failure",
+            "Answer citation sources did not match the expected source.",
+            "Verify citation selection so returned answers cite the expected source evidence.",
+        )
+
     unsupported_claim_count = _safe_int(result.get("unsupported_claim_count"))
     if unsupported_claim_count > 0:
         return _analysis(
@@ -192,6 +200,12 @@ def _is_successful_case(
     if not expected_sources:
         return True
 
+    if bool(result.get("answer_returned")):
+        return _source_hit(result, expected_sources) and _citation_hit(
+            result,
+            expected_sources,
+        )
+
     return _source_hit(result, expected_sources) and (
         bool(result.get("context_relevant"))
         or bool(result.get("citation_hit"))
@@ -238,6 +252,13 @@ def _source_hit(result: Mapping[str, Any], expected_sources: list[str]) -> bool:
     return bool(result.get("source_hit")) or _has_source(
         expected_sources,
         _candidate_and_evidence_records(result),
+    )
+
+
+def _citation_hit(result: Mapping[str, Any], expected_sources: list[str]) -> bool:
+    return bool(result.get("citation_hit")) or _has_source(
+        expected_sources,
+        result.get("citations", []),
     )
 
 

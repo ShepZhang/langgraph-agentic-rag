@@ -177,6 +177,34 @@ def test_unsupported_claims_are_citation_failure():
     assert analysis["failure_type"] == "citation_failure"
 
 
+def test_answer_with_expected_source_evidence_but_wrong_citation_is_citation_failure():
+    analysis = analyze_failure(
+        _question(expected_sources=["notes.md"]),
+        _result(
+            correct=True,
+            fallback_correct=True,
+            answer_returned=True,
+            source_hit=True,
+            context_relevant=True,
+            citation_hit=False,
+            retrieved_documents=[
+                {"source": "/workspace/docs/notes.md"},
+            ],
+            relevant_documents=[
+                {"metadata": {"file_path": "/workspace/docs/notes.md"}},
+            ],
+            citations=[
+                {"source": "/workspace/docs/wrong.md"},
+            ],
+        ),
+    )
+
+    assert analysis["failure_type"] == "citation_failure"
+    assert "citation" in analysis["reason"].lower()
+    assert "source" in analysis["reason"].lower()
+    assert "citation" in analysis["suggestion"].lower()
+
+
 def test_evidence_hit_but_incorrect_answer_is_generation_failure():
     analysis = analyze_failure(
         _question(expected_sources=["agentic_rag"]),
