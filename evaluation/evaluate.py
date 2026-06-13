@@ -14,6 +14,7 @@ from typing import Any, Callable
 from agent.graph import run_agent
 from agent.state import ChatMessage
 from evaluation.baselines import run_naive_rag
+from evaluation.failure_analyzer import analyze_failure, summarize_failure_types
 from evaluation.runtime_config import build_runtime_config_snapshot
 
 
@@ -253,6 +254,7 @@ def _evaluate_single_system(
 
     result["latency"] = latency
     result["error"] = error
+    result["failure_analysis"] = analyze_failure(item, result)
     return result
 
 
@@ -481,6 +483,7 @@ def _summarize(
             "average_latency": 0,
             "rewrite_triggered_count": 0,
             "error_count": 0,
+            "failure_type_counts": {},
         }
 
     answer_count = sum(1 for result in results if result["answer_returned"])
@@ -584,6 +587,7 @@ def _summarize(
         "average_latency": _average(result["latency"] for result in results),
         "rewrite_triggered_count": rewrite_triggered_count,
         "error_count": error_count,
+        "failure_type_counts": summarize_failure_types(results),
     }
 
 

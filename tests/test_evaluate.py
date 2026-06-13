@@ -438,11 +438,60 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
         "average_latency": 1.5,
         "rewrite_triggered_count": 2,
         "error_count": 0,
+        "failure_type_counts": {"no_failure": 2},
     }
     assert report["results"][0]["source_hit"] is True
     assert report["results"][0]["keyword_hit"] is True
     assert report["results"][1]["fallback_triggered"] is True
     assert report["results"][1]["fallback_correct"] is True
+
+
+def test_evaluate_questions_attaches_failure_analysis_and_summary_counts():
+    questions = [
+        {
+            "question": "What is Agentic RAG?",
+            "expected_keywords": ["agentic", "retrieval"],
+            "expected_sources": ["notes.md"],
+            "answerable": True,
+        },
+        {
+            "question": "Where is the policy documented?",
+            "expected_keywords": ["policy"],
+            "expected_sources": ["policy.md"],
+            "answerable": True,
+        },
+    ]
+    timer_values = iter([0.0, 0.5, 0.5, 1.0])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_runner(question):
+        if question == "What is Agentic RAG?":
+            return {
+                "answer": "Agentic RAG uses retrieval.",
+                "citations": [{"source": "notes.md"}],
+                "retrieved_documents": [{"source": "notes.md"}],
+                "relevant_documents": [{"source": "notes.md"}],
+            }
+        return {
+            "answer": "The policy is documented elsewhere.",
+            "citations": [],
+            "retrieved_documents": [{"source": "other.md"}],
+            "relevant_documents": [],
+        }
+
+    report = evaluate_questions(questions, run_agent_fn=fake_runner, timer=fake_timer)
+
+    failure_types = [
+        result["failure_analysis"]["failure_type"]
+        for result in report["results"]
+    ]
+    assert failure_types == ["no_failure", "retrieval_failure"]
+    assert report["summary"]["failure_type_counts"] == {
+        "no_failure": 1,
+        "retrieval_failure": 1,
+    }
 
 
 def test_evaluate_questions_respects_answerable_without_should_answer():
@@ -621,6 +670,54 @@ def test_evaluate_questions_compares_naive_and_agentic_results():
     assert report["results"][0]["naive"]["rewrite_triggered"] is False
 
 
+def test_evaluate_comparison_preserves_failure_analysis_for_each_system():
+    questions = [
+        {
+            "question": "How does Agentic RAG use evidence?",
+            "expected_keywords": ["evidence"],
+            "expected_sources": ["notes.md"],
+            "answerable": True,
+        }
+    ]
+    timer_values = iter([0.0, 0.25, 0.25, 0.75])
+
+    def fake_timer():
+        return next(timer_values)
+
+    def fake_agentic(question):
+        return {
+            "answer": "Agentic RAG uses evidence.",
+            "citations": [{"source": "notes.md"}],
+            "retrieved_documents": [{"source": "notes.md"}],
+            "relevant_documents": [{"source": "notes.md"}],
+        }
+
+    def fake_naive(question):
+        return {
+            "answer": "Agentic RAG uses evidence.",
+            "citations": [],
+            "retrieved_documents": [{"source": "other.md"}],
+            "relevant_documents": [],
+        }
+
+    report = evaluate_questions(
+        questions,
+        run_agent_fn=fake_agentic,
+        run_naive_fn=fake_naive,
+        timer=fake_timer,
+    )
+
+    paired_result = report["results"][0]
+    assert paired_result["naive"]["failure_analysis"]["failure_type"] == (
+        "retrieval_failure"
+    )
+    assert paired_result["agentic"]["failure_analysis"]["failure_type"] == "no_failure"
+    assert report["summary"]["naive"]["failure_type_counts"] == {
+        "retrieval_failure": 1
+    }
+    assert report["summary"]["agentic"]["failure_type_counts"] == {"no_failure": 1}
+
+
 def test_evaluate_questions_records_agent_errors():
     questions = [{"question": "Broken?", "expected_sources": ["notes.md"]}]
     timer_values = iter([0.0, 0.25])
@@ -636,6 +733,7 @@ def test_evaluate_questions_records_agent_errors():
     assert report["summary"]["answer_rate"] == 0.0
     assert report["summary"]["error_count"] == 1
     assert report["results"][0]["error"] == "RuntimeError: Missing LLM configuration"
+    assert report["results"][0]["failure_analysis"]["failure_type"] == "tool_failure"
 
 
 def test_evaluate_questions_records_malformed_agent_payload_errors():
