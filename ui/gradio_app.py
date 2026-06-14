@@ -33,6 +33,18 @@ SYSTEM_MODE_VALUES = {
 }
 DEFAULT_FAILURE_DETAIL = "Select a failed case to inspect its diagnosis."
 DEFAULT_QUICK_STATUS = "Select a system mode and questions."
+APP_CSS = """
+@media (max-width: 640px) {
+    .dashboard-quick-controls {
+        flex-direction: column !important;
+    }
+
+    .dashboard-quick-controls > * {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
+}
+"""
 
 
 def build_document_index(
@@ -444,7 +456,7 @@ def _build_evaluation_tab(
 
     with gr.Tabs():
         with gr.Tab("Quick Compare"):
-            with gr.Row():
+            with gr.Row(elem_classes="dashboard-quick-controls"):
                 system_mode = gr.Radio(
                     choices=list(SYSTEM_MODE_VALUES),
                     value="Compare Both",

@@ -190,6 +190,14 @@ def _component_values(config: dict) -> list[str]:
     return values
 
 
+def _components_with_class(config: dict, class_name: str) -> list[dict]:
+    return [
+        component
+        for component in config.get("components", [])
+        if class_name in component.get("props", {}).get("elem_classes", [])
+    ]
+
+
 def test_create_app_contains_document_and_evaluation_tabs():
     from ui.gradio_app import create_app
 
@@ -216,6 +224,54 @@ def test_create_app_contains_dashboard_tables_and_filters():
     assert "Ablation reliability metrics" in labels
     assert "Ablation variant" in labels
     assert "Runtime configuration" in labels
+
+
+def test_create_app_stacks_quick_controls_on_narrow_viewports():
+    from ui.gradio_app import APP_CSS, create_app
+
+    config = create_app().get_config_file()
+    quick_control_rows = _components_with_class(
+        config,
+        "dashboard-quick-controls",
+    )
+
+    assert len(quick_control_rows) == 1
+    assert quick_control_rows[0]["type"] == "row"
+    assert "@media (max-width: 640px)" in APP_CSS
+    assert ".dashboard-quick-controls" in APP_CSS
+    assert "flex-direction: column" in APP_CSS
+    assert "min-width: 100%" in APP_CSS
+
+
+def test_app_main_passes_responsive_css_to_gradio_launch(monkeypatch):
+    from types import SimpleNamespace
+
+    import app as app_module
+    from ui.gradio_app import APP_CSS
+
+    launch_kwargs = {}
+
+    class FakeApp:
+        def launch(self, **kwargs):
+            launch_kwargs.update(kwargs)
+
+    monkeypatch.setattr(
+        app_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            gradio_server_name="127.0.0.1",
+            gradio_server_port=7860,
+        ),
+    )
+    monkeypatch.setattr(app_module, "create_app", FakeApp)
+
+    app_module.main()
+
+    assert launch_kwargs == {
+        "server_name": "127.0.0.1",
+        "server_port": 7860,
+        "css": APP_CSS,
+    }
 
 
 def test_create_app_survives_question_loading_failure(monkeypatch):
