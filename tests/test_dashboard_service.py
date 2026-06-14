@@ -820,6 +820,21 @@ def test_load_ablation_snapshot_returns_unavailable_for_missing_artifact(
     assert missing_path.name in view["message"]
 
 
+def test_load_ablation_snapshot_parse_error_message_includes_artifact_name(
+    tmp_path,
+):
+    result_path = tmp_path / "bad-ablation.json"
+    result_path.write_text("{not valid json", encoding="utf-8")
+    service = EvaluationDashboardService(
+        ablation_provider=JsonAblationResultProvider(result_path),
+    )
+
+    view = service.load_ablation_snapshot()
+
+    assert view["status"] == "unavailable"
+    assert "bad-ablation.json" in view["message"]
+
+
 @pytest.mark.parametrize(
     "payload",
     [

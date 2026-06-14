@@ -69,7 +69,12 @@ class JsonAblationResultProvider:
 
     def load(self) -> dict[str, Any]:
         with self.path.open(encoding="utf-8") as result_file:
-            payload = json.load(result_file)
+            try:
+                payload = json.load(result_file)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Unable to parse ablation artifact {self.path}: {exc}"
+                ) from exc
 
         if not isinstance(payload, dict):
             raise ValueError("ablation result payload must be an object")
