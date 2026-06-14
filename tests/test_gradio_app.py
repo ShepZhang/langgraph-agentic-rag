@@ -306,6 +306,29 @@ def test_failed_run_preserves_previous_successful_state():
     ]
 
 
+def test_failed_run_ignores_non_mapping_previous_state():
+    failed = _dashboard_view(status="failed")
+    failed["message"] = "Evaluation failed: unavailable"
+    failed["summary_rows"] = []
+    failed["failure_count_rows"] = []
+    failed["failure_cases"] = []
+    service = FakeDashboardService(failed)
+
+    state, status, metrics, counts, cases, choices = run_dashboard_evaluation(
+        "Agentic RAG",
+        ["q001"],
+        ["bad"],
+        service=service,
+    )
+
+    assert state == failed
+    assert "failed" in status.lower()
+    assert metrics == []
+    assert counts == []
+    assert cases == []
+    assert choices["choices"] == []
+
+
 def test_filter_and_detail_helpers_do_not_run_evaluation_again():
     view = _dashboard_view()
     service = FakeDashboardService(view)
@@ -338,6 +361,36 @@ def test_filter_and_detail_helpers_do_not_run_evaluation_again():
     assert empty_detail == "Select a failed case to inspect its diagnosis."
     assert service.run_calls == []
     assert service.filter_calls == [(view, "agentic", "retrieval_failure")]
+
+
+def test_dashboard_helpers_treat_non_mapping_state_as_empty():
+    service = FakeDashboardService(_dashboard_view())
+
+    counts, table, choices = filter_dashboard_failures(
+        ["bad"],
+        "agentic",
+        "retrieval_failure",
+        service=service,
+    )
+    detail = format_failure_detail(
+        ["bad"],
+        "agentic:q001",
+        service=service,
+    )
+    runtime_config = format_variant_runtime_config(
+        ["bad"],
+        "v0_naive",
+        service=service,
+    )
+
+    assert counts == []
+    assert table == []
+    assert choices["choices"] == []
+    assert detail == "Select a failed case to inspect its diagnosis."
+    assert runtime_config == {}
+    assert service.filter_calls == []
+    assert service.detail_calls == []
+    assert service.runtime_calls == []
 
 
 def test_snapshot_helpers_return_dropdown_updates_and_runtime_config():

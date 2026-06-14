@@ -146,7 +146,7 @@ def question_selection(
 def run_dashboard_evaluation(
     system_label: str,
     question_ids: Sequence[str] | None,
-    previous_state: Mapping[str, Any] | None,
+    previous_state: Any,
     service: EvaluationDashboardService | None = None,
 ) -> tuple[
     Mapping[str, Any],
@@ -161,8 +161,9 @@ def run_dashboard_evaluation(
     resolved_service = service or EvaluationDashboardService()
     mode = SYSTEM_MODE_VALUES.get(system_label, "comparison")
     view = resolved_service.run_quick_evaluation(list(question_ids or []), mode)
+    previous_view = _dashboard_state(previous_state)
     active_view = (
-        view if view["status"] == "completed" else previous_state or view
+        view if view["status"] == "completed" else previous_view or view
     )
     cases = _dashboard_cases(active_view)
 
@@ -177,7 +178,7 @@ def run_dashboard_evaluation(
 
 
 def filter_dashboard_failures(
-    dashboard_state: Mapping[str, Any] | None,
+    dashboard_state: Any,
     system: str | None,
     failure_type: str | None,
     service: EvaluationDashboardService | None = None,
@@ -186,6 +187,9 @@ def filter_dashboard_failures(
 
     resolved_service = service or EvaluationDashboardService()
     state = _dashboard_state(dashboard_state)
+    if not state:
+        return ([], [], gr.update(choices=[], value=None))
+
     cases = resolved_service.filter_failure_cases(
         state,
         system=system,
@@ -200,17 +204,18 @@ def filter_dashboard_failures(
 
 
 def format_failure_detail(
-    dashboard_state: Mapping[str, Any] | None,
+    dashboard_state: Any,
     case_key: str | None,
     service: EvaluationDashboardService | None = None,
 ) -> str:
     """Format one failure detail as concise Markdown."""
 
     resolved_service = service or EvaluationDashboardService()
-    detail = resolved_service.get_failure_detail(
-        _dashboard_state(dashboard_state),
-        case_key,
-    )
+    state = _dashboard_state(dashboard_state)
+    if not state:
+        return "Select a failed case to inspect its diagnosis."
+
+    detail = resolved_service.get_failure_detail(state, case_key)
     if not detail["case_key"]:
         return "Select a failed case to inspect its diagnosis."
 
@@ -223,7 +228,7 @@ def format_failure_detail(
 
 
 def load_ablation_dashboard(
-    previous_state: Mapping[str, Any] | None,
+    previous_state: Any,
     service: EvaluationDashboardService | None = None,
 ) -> tuple[
     Mapping[str, Any],
@@ -238,8 +243,9 @@ def load_ablation_dashboard(
 
     resolved_service = service or EvaluationDashboardService()
     view = resolved_service.load_ablation_snapshot()
+    previous_view = _dashboard_state(previous_state)
     active_view = (
-        view if view["status"] == "completed" else previous_state or view
+        view if view["status"] == "completed" else previous_view or view
     )
     cases = _dashboard_cases(active_view)
     variant_choices = [("All variants", "all"), *_variant_choices(active_view)]
@@ -256,17 +262,17 @@ def load_ablation_dashboard(
 
 
 def format_variant_runtime_config(
-    dashboard_state: Mapping[str, Any] | None,
+    dashboard_state: Any,
     variant_id: str | None,
     service: EvaluationDashboardService | None = None,
 ) -> dict[str, Any]:
     """Return saved runtime config for one selected ablation variant."""
 
     resolved_service = service or EvaluationDashboardService()
-    return resolved_service.get_runtime_config(
-        _dashboard_state(dashboard_state),
-        variant_id,
-    )
+    state = _dashboard_state(dashboard_state)
+    if not state:
+        return {}
+    return resolved_service.get_runtime_config(state, variant_id)
 
 
 def create_app() -> gr.Blocks:
@@ -382,29 +388,17 @@ def _normalize_uploaded_files(uploaded_files: list[Any] | None) -> list[str]:
 
 
 def _dashboard_state(
-    dashboard_state: Mapping[str, Any] | None,
+    dashboard_state: Any,
 ) -> dict[str, Any]:
-    if dashboard_state is None:
-        return _empty_dashboard_state()
+    if not isinstance(dashboard_state, Mapping):
+        return {}
     return dict(dashboard_state)
 
 
-def _empty_dashboard_state() -> dict[str, Any]:
-    return {
-        "status": "unavailable",
-        "run_id": "",
-        "summary_rows": [],
-        "failure_count_rows": [],
-        "failure_cases": [],
-        "raw_report": {},
-        "message": "",
-    }
-
-
 def _dashboard_cases(
-    dashboard_state: Mapping[str, Any] | None,
+    dashboard_state: Any,
 ) -> list[Mapping[str, Any]]:
-    state = dashboard_state or {}
+    state = _dashboard_state(dashboard_state)
     cases = state.get("failure_cases", [])
     if not isinstance(cases, Sequence) or isinstance(cases, (str, bytes)):
         return []
@@ -424,9 +418,9 @@ def _failure_choices(
 
 
 def _variant_choices(
-    dashboard_state: Mapping[str, Any] | None,
+    dashboard_state: Any,
 ) -> list[tuple[str, str]]:
-    state = dashboard_state or {}
+    state = _dashboard_state(dashboard_state)
     raw_report = state.get("raw_report", {})
     runs = raw_report.get("runs", []) if isinstance(raw_report, Mapping) else []
     choices: list[tuple[str, str]] = []
