@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from pathlib import Path
+
+import pytest
 
 from evaluation.dashboard_formatters import (
     build_ablation_failure_cases,
@@ -21,6 +25,10 @@ from evaluation.dashboard_models import (
     FAILURE_COUNT_COLUMNS,
     METRIC_COLUMNS,
     SMOKE_QUESTION_IDS,
+)
+from evaluation.dashboard_service import (
+    EvaluationDashboardService,
+    JsonAblationResultProvider,
 )
 
 
@@ -406,3 +414,287 @@ def test_formatter_sequences_accept_tuples_without_expanding_strings():
         {"summary": _summary(), "results": bytearray(b"q007")}
     ) == []
     assert build_ablation_summary_rows({"runs": "v2"}) == []
+
+
+def _question(question_id: str) -> dict:
+    return {
+        "id": question_id,
+        "question_type": "single_doc",
+        "question": f"Question {question_id}",
+        "expected_sources": ["notes.md"],
+        "answerable": True,
+    }
+
+
+def _runner_result(question: str) -> dict:
+    return {
+        "answer": f"Grounded answer for {question} [1].",
+        "citations": [{"source": "notes.md"}],
+        "retrieved_documents": [{"source": "notes.md"}],
+        "relevant_documents": [{"source": "notes.md"}],
+    }
+
+
+def test_json_ablation_result_provider_loads_utf8_json_and_uses_default_path(
+    tmp_path,
+):
+    result_path = tmp_path / "ablation.json"
+    payload = {"runs": [{"id": "v1", "method": "\u65b9\u6cd5"}]}
+    result_path.write_text(
+        json.dumps(payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    provider = JsonAblationResultProvider(result_path)
+
+    assert provider.path == result_path
+    assert provider.load() == payload
+    assert JsonAblationResultProvider().path == DEFAULT_ABLATION_RESULT_PATH
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ([], "object"),
+        ({"runs": {}}, "runs"),
+        ({}, "runs"),
+    ],
+)
+def test_json_ablation_result_provider_validates_payload_shape(
+    tmp_path,
+    payload,
+    message,
+):
+    result_path = tmp_path / "invalid.json"
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        JsonAblationResultProvider(result_path).load()
+
+
+def test_list_questions_preserves_dataset_order_and_exact_labels():
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q002"), _question("q001")],
+    )
+
+    assert service.list_questions() == [
+        {
+            "id": "q002",
+            "label": "[q002] single_doc - Question q002",
+            "question_type": "single_doc",
+            "question": "Question q002",
+        },
+        {
+            "id": "q001",
+            "label": "[q001] single_doc - Question q001",
+            "question_type": "single_doc",
+            "question": "Question q001",
+        },
+    ]
+
+
+def test_list_questions_loads_all_repository_questions_in_order():
+    options = EvaluationDashboardService().list_questions()
+
+    assert len(options) == 36
+    assert options[0]["id"] == "q001"
+    assert options[-1]["id"] == "q036"
+
+
+@pytest.mark.parametrize(
+    ("system_mode", "expected_calls", "expected_labels"),
+    [
+        (
+            "naive",
+            [("naive", "Question q001"), ("naive", "Question q002")],
+            ["Naive RAG"],
+        ),
+        (
+            "agentic",
+            [("agentic", "Question q001"), ("agentic", "Question q002")],
+            ["Agentic RAG"],
+        ),
+        (
+            "comparison",
+            [
+                ("naive", "Question q001"),
+                ("agentic", "Question q001"),
+                ("naive", "Question q002"),
+                ("agentic", "Question q002"),
+            ],
+            ["Naive RAG", "Agentic RAG"],
+        ),
+    ],
+)
+def test_run_quick_evaluation_dispatches_runners_and_builds_summary_rows(
+    system_mode,
+    expected_calls,
+    expected_labels,
+):
+    calls = []
+    id_calls = []
+
+    def agentic_runner(question):
+        calls.append(("agentic", question))
+        return _runner_result(question)
+
+    def naive_runner(question):
+        calls.append(("naive", question))
+        return _runner_result(question)
+
+    def id_factory(prefix):
+        id_calls.append(prefix)
+        return f"{prefix}-id"
+
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001"), _question("q002")],
+        agentic_runner=agentic_runner,
+        naive_runner=naive_runner,
+        id_factory=id_factory,
+    )
+
+    view = service.run_quick_evaluation(["q002", "q001"], system_mode)
+
+    assert view["status"] == "completed"
+    assert view["run_id"] == "quick-id"
+    assert id_calls == ["quick"]
+    assert calls == expected_calls
+    assert [row[0] for row in view["summary_rows"]] == expected_labels
+    assert [
+        result.get("question_id")
+        or result["naive"]["question_id"]
+        for result in view["raw_report"]["results"]
+    ] == ["q001", "q002"]
+    assert "2 question" in view["message"]
+    assert "0 failure" in view["message"]
+
+
+@pytest.mark.parametrize(
+    ("question_ids", "system_mode", "message"),
+    [
+        ([], "agentic", "Select at least one"),
+        (["q001", "q999"], "agentic", "q999"),
+        (["q001"], "unsupported", "unsupported"),
+    ],
+)
+def test_run_quick_evaluation_rejects_invalid_requests_before_runner_calls(
+    question_ids,
+    system_mode,
+    message,
+):
+    runner_calls = []
+
+    def runner(question):
+        runner_calls.append(question)
+        return _runner_result(question)
+
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        agentic_runner=runner,
+        naive_runner=runner,
+        id_factory=lambda prefix: f"{prefix}-failed",
+    )
+
+    view = service.run_quick_evaluation(question_ids, system_mode)
+
+    assert view["status"] == "failed"
+    assert message in view["message"]
+    assert runner_calls == []
+    assert view["summary_rows"] == []
+    assert view["failure_count_rows"] == []
+    assert view["failure_cases"] == []
+    assert view["raw_report"] == {}
+    json.dumps(view)
+
+
+def test_run_quick_evaluation_keeps_per_case_runner_errors_completed():
+    def failing_runner(question):
+        raise RuntimeError(f"runner failed for {question}")
+
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        agentic_runner=failing_runner,
+        id_factory=lambda prefix: f"{prefix}-error-case",
+    )
+
+    view = service.run_quick_evaluation(["q001"], "agentic")
+
+    assert view["status"] == "completed"
+    assert view["run_id"] == "quick-error-case"
+    assert [case["failure_type"] for case in view["failure_cases"]] == [
+        "tool_failure"
+    ]
+    assert view["failure_count_rows"] == [
+        ["Agentic RAG", "tool_failure", 1]
+    ]
+    assert "1 question" in view["message"]
+    assert "1 failure" in view["message"]
+
+
+def test_run_quick_evaluation_returns_failed_view_for_loader_errors():
+    def failing_loader():
+        raise RuntimeError("dataset unavailable")
+
+    service = EvaluationDashboardService(
+        question_loader=failing_loader,
+        id_factory=lambda prefix: f"{prefix}-loader-error",
+    )
+
+    view = service.run_quick_evaluation(["q001"], "agentic")
+
+    assert view == {
+        "status": "failed",
+        "run_id": "quick-loader-error",
+        "summary_rows": [],
+        "failure_count_rows": [],
+        "failure_cases": [],
+        "raw_report": {},
+        "message": "Quick evaluation failed: RuntimeError: dataset unavailable",
+    }
+
+
+def test_service_filters_and_selects_failure_cases_without_mutating_view():
+    cases = build_failure_cases(
+        {
+            "summary": {"mode": "comparison"},
+            "results": [
+                {
+                    "naive": _result("q001", "retrieval_failure"),
+                    "agentic": _result("q001", "citation_failure"),
+                }
+            ],
+        }
+    )
+    view = {
+        "status": "completed",
+        "run_id": "quick-1",
+        "summary_rows": [],
+        "failure_count_rows": build_failure_count_rows(cases),
+        "failure_cases": cases,
+        "raw_report": {},
+        "message": "",
+    }
+    original = deepcopy(view)
+    service = EvaluationDashboardService()
+
+    filtered = service.filter_failure_cases(
+        view,
+        system="agentic",
+        failure_type="citation_failure",
+    )
+    detail = service.get_failure_detail(view, "agentic:q001")
+
+    assert [case["case_key"] for case in filtered] == ["agentic:q001"]
+    assert detail["reason"] == "Reason for q001"
+    assert view == original
+
+
+def test_default_id_factory_generates_unique_prefixed_run_ids():
+    service = EvaluationDashboardService()
+
+    first = service.run_quick_evaluation([], "agentic")
+    second = service.run_quick_evaluation([], "agentic")
+
+    assert first["run_id"].startswith("quick-")
+    assert second["run_id"].startswith("quick-")
+    assert first["run_id"] != second["run_id"]
