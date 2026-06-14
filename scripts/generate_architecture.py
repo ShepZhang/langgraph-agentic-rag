@@ -155,7 +155,7 @@ def draw_band(
 
 
 def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
-    """Draw the graph as conditional routes instead of a sequential pipeline."""
+    """Draw LangGraph routing and the safety checks inside answer generation."""
 
     x0, x1 = 70, WIDTH - 70
     band_h = 300
@@ -166,19 +166,39 @@ def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
         outline=BAND_OUTLINE,
         width=3,
     )
-    draw.text((x0 + 28, y + 22), "LangGraph", font=BAND_FONT, fill=TEXT)
+    draw.text(
+        (x0 + 28, y + 22),
+        "LangGraph control + answer safety",
+        font=BAND_FONT,
+        fill=TEXT,
+    )
 
-    grade = (98, y + 76, 305, y + 166)
-    generate = (430, y + 76, 665, y + 166)
-    citation = (750, y + 76, 1005, y + 166)
-    verification = (1090, y + 76, 1335, y + 166)
-    grounded = (1480, y + 76, 1702, y + 166)
+    grade = (98, y + 86, 305, y + 166)
+    generate = (430, y + 86, 665, y + 166)
+    safety = (720, y + 62, 1370, y + 185)
+    citation = (742, y + 100, 1002, y + 172)
+    verification = (1075, y + 100, 1348, y + 172)
+    grounded = (1480, y + 86, 1702, y + 166)
     retry = (110, y + 215, 390, y + 282)
     fallback = (1145, y + 215, 1450, y + 282)
 
+    draw.rounded_rectangle(
+        safety,
+        radius=8,
+        fill="#f7f6f2",
+        outline=BAND_OUTLINE,
+        width=2,
+    )
+    draw.text(
+        (safety[0] + 18, safety[1] + 8),
+        "Inside generate_answer node",
+        font=SMALL_FONT,
+        fill=MUTED,
+    )
+
     for box, label in [
         (grade, "Grade Chunks"),
-        (generate, "Generate Answer"),
+        (generate, "generate_answer node"),
         (citation, "Citation Marker Check"),
         (verification, "Claim Verification"),
         (grounded, "Answer / END"),
@@ -193,16 +213,16 @@ def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
     draw_arrow(
         draw,
         (generate[2] + 2, center_y),
-        (citation[0] - 2, center_y),
+        (citation[0] - 2, (citation[1] + citation[3]) // 2),
     )
     draw_arrow(
         draw,
-        (citation[2] + 2, center_y),
-        (verification[0] - 2, center_y),
+        (citation[2] + 2, (citation[1] + citation[3]) // 2),
+        (verification[0] - 2, (verification[1] + verification[3]) // 2),
     )
     draw_arrow(
         draw,
-        (verification[2] + 2, center_y),
+        (verification[2] + 2, (verification[1] + verification[3]) // 2),
         (grounded[0] - 2, center_y),
     )
     draw_branch_label(draw, (1360, center_y - 36), "verified")
@@ -242,22 +262,24 @@ def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
         [
             ((citation[0] + citation[2]) // 2, citation[3] + 2),
             ((citation[0] + citation[2]) // 2, y + 190),
-            (1200, y + 190),
-            (1200, fallback[1] - 2),
+            (1195, y + 190),
+            (1195, fallback[1] - 2),
         ],
         fill=LOOP,
     )
-    draw_branch_label(draw, (885, y + 158), "invalid citation")
+    draw_branch_label(draw, (885, y + 187), "invalid citation")
 
     draw_path_arrow(
         draw,
         [
             ((verification[0] + verification[2]) // 2, verification[3] + 2),
-            ((verification[0] + verification[2]) // 2, fallback[1] - 2),
+            ((verification[0] + verification[2]) // 2, y + 200),
+            (1385, y + 200),
+            (1385, fallback[1] - 2),
         ],
         fill=LOOP,
     )
-    draw_branch_label(draw, (1220, y + 175), "unsupported")
+    draw_branch_label(draw, (1285, y + 174), "unsupported")
 
 
 def main() -> None:
@@ -289,9 +311,9 @@ def main() -> None:
             "Retrieval",
             [
                 "Query Rewrite",
+                "Retriever Tool",
                 "Vector Candidate Retrieval",
                 "Optional Cross-Encoder Reranker",
-                "Retriever Tool",
             ],
         ),
         (
