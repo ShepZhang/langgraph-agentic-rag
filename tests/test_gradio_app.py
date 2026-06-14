@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from langchain_core.documents import Document
 
-from ui.gradio_app import answer_question, build_document_index
+from ui.gradio_app import (
+    answer_question,
+    build_document_index,
+    filter_dashboard_failures,
+    format_failure_detail,
+    format_variant_runtime_config,
+    load_ablation_dashboard,
+    question_selection,
+    run_dashboard_evaluation,
+)
 
 
 class UploadedFile:
@@ -152,3 +161,239 @@ def test_create_app_returns_gradio_blocks():
     app = create_app()
 
     assert isinstance(app, gr.Blocks)
+
+
+class FakeDashboardService:
+    def __init__(self, view):
+        self.view = view
+        self.run_calls = []
+        self.filter_calls = []
+        self.detail_calls = []
+        self.snapshot_calls = []
+        self.runtime_calls = []
+
+    def run_quick_evaluation(self, question_ids, system_mode):
+        self.run_calls.append((question_ids, system_mode))
+        return self.view
+
+    def filter_failure_cases(self, view, system=None, failure_type=None):
+        self.filter_calls.append((view, system, failure_type))
+        return [
+            case
+            for case in view["failure_cases"]
+            if (not system or system == "all" or case["system"] == system)
+            and (
+                not failure_type
+                or failure_type == "all"
+                or case["failure_type"] == failure_type
+            )
+        ]
+
+    def get_failure_detail(self, view, case_key):
+        self.detail_calls.append((view, case_key))
+        for case in view["failure_cases"]:
+            if case["case_key"] == case_key:
+                return {
+                    "case_key": case_key,
+                    "title": (
+                        f"{case['system_label']} / {case['question_id']} / "
+                        f"{case['failure_type']}"
+                    ),
+                    "reason": case["reason"],
+                    "suggestion": case["suggestion"],
+                    "diagnostics_source": case["diagnostics_source"],
+                }
+        return {
+            "case_key": "",
+            "title": "No failed case selected",
+            "reason": "",
+            "suggestion": "",
+            "diagnostics_source": "unavailable",
+        }
+
+    def load_ablation_snapshot(self):
+        self.snapshot_calls.append(())
+        return self.view
+
+    def get_runtime_config(self, view, variant_id):
+        self.runtime_calls.append((view, variant_id))
+        raw_report = view.get("raw_report") if isinstance(view, dict) else {}
+        for run in raw_report.get("runs", []):
+            if run.get("id") == variant_id:
+                return run.get("runtime_config", {})
+        return {}
+
+
+def _dashboard_view(status="completed"):
+    return {
+        "status": status,
+        "run_id": "quick-fixed",
+        "summary_rows": [["Agentic RAG", 0.8, 0.9, 0.7, 1.0, 0, 2.5, 0.4]],
+        "failure_count_rows": [["Agentic RAG", "retrieval_failure", 1]],
+        "failure_cases": [
+            {
+                "case_key": "agentic:q001",
+                "system": "agentic",
+                "system_label": "Agentic RAG",
+                "question_id": "q001",
+                "question_type": "single_doc",
+                "question": "Question q001",
+                "failure_type": "retrieval_failure",
+                "reason": "Expected source missing.",
+                "suggestion": "Tune retrieval.",
+                "diagnostics_source": "stored",
+            }
+        ],
+        "raw_report": {},
+        "message": "Evaluation completed.",
+    }
+
+
+def test_question_selection_returns_smoke_and_all_ids():
+    options = [{"id": "q001"}, {"id": "q002"}, {"id": "q016"}]
+
+    assert question_selection(options, "smoke") == ["q001", "q016"]
+    assert question_selection(options, "all") == ["q001", "q002", "q016"]
+    assert question_selection(options, "unknown") == ["q001", "q016"]
+
+
+def test_run_dashboard_evaluation_returns_visible_rows_and_state():
+    view = _dashboard_view()
+    service = FakeDashboardService(view)
+
+    result = run_dashboard_evaluation(
+        "Agentic RAG",
+        ["q001"],
+        {},
+        service=service,
+    )
+
+    state, status, metrics, counts, cases, case_update = result
+    assert state == view
+    assert "completed" in status.lower()
+    assert metrics == view["summary_rows"]
+    assert counts == view["failure_count_rows"]
+    assert cases[0][0] == "agentic:q001"
+    assert case_update["choices"] == [
+        ("q001 / retrieval_failure", "agentic:q001")
+    ]
+    assert service.run_calls == [(["q001"], "agentic")]
+
+
+def test_failed_run_preserves_previous_successful_state():
+    previous = _dashboard_view()
+    failed = _dashboard_view(status="failed")
+    failed["message"] = "Evaluation failed: unavailable"
+    failed["summary_rows"] = []
+    failed["failure_count_rows"] = []
+    failed["failure_cases"] = []
+    service = FakeDashboardService(failed)
+
+    state, status, metrics, counts, cases, choices = run_dashboard_evaluation(
+        "Agentic RAG",
+        ["q001"],
+        previous,
+        service=service,
+    )
+
+    assert state == previous
+    assert "failed" in status.lower()
+    assert metrics == previous["summary_rows"]
+    assert counts == previous["failure_count_rows"]
+    assert cases[0][0] == "agentic:q001"
+    assert choices["choices"] == [
+        ("q001 / retrieval_failure", "agentic:q001")
+    ]
+
+
+def test_filter_and_detail_helpers_do_not_run_evaluation_again():
+    view = _dashboard_view()
+    service = FakeDashboardService(view)
+
+    counts, table, choices = filter_dashboard_failures(
+        view,
+        "agentic",
+        "retrieval_failure",
+        service=service,
+    )
+    detail = format_failure_detail(
+        view,
+        "agentic:q001",
+        service=service,
+    )
+    empty_detail = format_failure_detail(
+        view,
+        None,
+        service=service,
+    )
+
+    assert table[0][0] == "agentic:q001"
+    assert counts == [["Agentic RAG", "retrieval_failure", 1]]
+    assert choices["choices"] == [
+        ("q001 / retrieval_failure", "agentic:q001")
+    ]
+    assert "### Agentic RAG / q001 / retrieval_failure" in detail
+    assert "Expected source missing." in detail
+    assert "Diagnostics source" in detail
+    assert empty_detail == "Select a failed case to inspect its diagnosis."
+    assert service.run_calls == []
+    assert service.filter_calls == [(view, "agentic", "retrieval_failure")]
+
+
+def test_snapshot_helpers_return_dropdown_updates_and_runtime_config():
+    view = _dashboard_view()
+    view["run_id"] = "snapshot-fixed"
+    view["raw_report"] = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "runtime_config": {"llm": {"model": "test-model"}},
+            }
+        ]
+    }
+    service = FakeDashboardService(view)
+
+    result = load_ablation_dashboard({}, service=service)
+    state, status, metrics, counts, cases, case_update, variant_update = result
+
+    assert state == view
+    assert "completed" in status.lower()
+    assert metrics == view["summary_rows"]
+    assert counts == view["failure_count_rows"]
+    assert cases[0][0] == "agentic:q001"
+    assert case_update["choices"][0][1] == "agentic:q001"
+    assert variant_update["choices"] == [
+        ("All variants", "all"),
+        ("v0_naive Naive RAG", "v0_naive"),
+    ]
+    assert format_variant_runtime_config(
+        view,
+        "v0_naive",
+        service=service,
+    ) == {"llm": {"model": "test-model"}}
+    assert format_variant_runtime_config(None, "v0_naive", service=service) == {}
+    assert service.run_calls == []
+    assert service.snapshot_calls == [()]
+
+
+def test_snapshot_helper_preserves_previous_state_when_refresh_is_unavailable():
+    previous = _dashboard_view()
+    unavailable = _dashboard_view(status="unavailable")
+    unavailable["message"] = "Ablation snapshot unavailable: missing artifact"
+    unavailable["summary_rows"] = []
+    unavailable["failure_count_rows"] = []
+    unavailable["failure_cases"] = []
+    service = FakeDashboardService(unavailable)
+
+    state, status, metrics, counts, cases, case_update, variant_update = (
+        load_ablation_dashboard(previous, service=service)
+    )
+
+    assert state == previous
+    assert "unavailable" in status.lower()
+    assert metrics == previous["summary_rows"]
+    assert counts == previous["failure_count_rows"]
+    assert cases[0][0] == "agentic:q001"
+    assert case_update["choices"][0][1] == "agentic:q001"
+    assert variant_update["choices"][0] == ("All variants", "all")
