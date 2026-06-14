@@ -48,7 +48,7 @@ def build_ablation_summary_rows(payload: Mapping[str, Any]) -> list[list[Any]]:
 
     rows: list[list[Any]] = []
     for run in _sequence(payload.get("runs")):
-        if not isinstance(run, Mapping):
+        if not isinstance(run, Mapping) or not is_complete_ablation_run(run):
             continue
         run_id = str(run.get("id") or "unknown")
         method = str(run.get("method") or run_id)
@@ -93,7 +93,7 @@ def build_ablation_failure_cases(
 
     cases: list[FailureCaseRow] = []
     for run in _sequence(payload.get("runs")):
-        if not isinstance(run, Mapping):
+        if not isinstance(run, Mapping) or not is_complete_ablation_run(run):
             continue
         run_id = str(run.get("id") or "unknown")
         method = str(run.get("method") or run_id)
@@ -197,9 +197,22 @@ def get_runtime_config(
     """Return one ablation variant's saved runtime configuration."""
 
     for run in _sequence(payload.get("runs")):
-        if isinstance(run, Mapping) and run.get("id") == variant_id:
+        if (
+            isinstance(run, Mapping)
+            and is_complete_ablation_run(run)
+            and run.get("id") == variant_id
+        ):
             return dict(_mapping(run.get("runtime_config")))
     return {}
+
+
+def is_complete_ablation_run(run: Mapping[str, Any]) -> bool:
+    """Accept completed runs and legacy runs that do not store status."""
+
+    if "status" not in run or run.get("status") is None:
+        return True
+    status = run.get("status")
+    return isinstance(status, str) and status.strip() == "completed"
 
 
 def _metric_row(label: str, summary: Mapping[str, Any]) -> list[Any]:
@@ -220,13 +233,34 @@ def _failure_case(
     diagnostics_source: str,
     system_label: str | None = None,
 ) -> FailureCaseRow | None:
+    source = _diagnostics_source(diagnostics_source)
     analysis = result.get("failure_analysis")
-    if not isinstance(analysis, Mapping):
+    failure_type = (
+        str(analysis.get("failure_type") or "")
+        if isinstance(analysis, Mapping)
+        else ""
+    )
+    if failure_type == "no_failure":
         return None
-    failure_type = str(analysis.get("failure_type") or "")
-    if not failure_type or failure_type == "no_failure":
-        return None
-    question_id = str(result.get("question_id") or analysis.get("question_id") or "")
+    if failure_type:
+        reason = str(analysis.get("reason") or "")
+        suggestion = str(analysis.get("suggestion") or "")
+        analysis_question_id = str(analysis.get("question_id") or "")
+    else:
+        failure_signals = _unavailable_failure_signals(result)
+        if source != "unavailable" or not failure_signals:
+            return None
+        failure_type = "unclassified_failure"
+        reason = (
+            "Failure diagnostics are unavailable for this legacy result; "
+            f"observed signal(s): {', '.join(failure_signals)}."
+        )
+        suggestion = (
+            "Rerun the evaluation or load a newer artifact with stored "
+            "failure diagnostics."
+        )
+        analysis_question_id = ""
+    question_id = str(result.get("question_id") or analysis_question_id)
     return {
         "case_key": "",
         "system": system,
@@ -235,10 +269,22 @@ def _failure_case(
         "question_type": str(result.get("question_type") or "unspecified"),
         "question": str(result.get("question") or ""),
         "failure_type": failure_type,
-        "reason": str(analysis.get("reason") or ""),
-        "suggestion": str(analysis.get("suggestion") or ""),
-        "diagnostics_source": _diagnostics_source(diagnostics_source),
+        "reason": reason,
+        "suggestion": suggestion,
+        "diagnostics_source": source,
     }
+
+
+def _unavailable_failure_signals(result: Mapping[str, Any]) -> list[str]:
+    signals: list[str] = []
+    if result.get("correct") is False:
+        signals.append("correct=false")
+    if result.get("fallback_correct") is False:
+        signals.append("fallback_correct=false")
+    error = result.get("error")
+    if isinstance(error, str) and error.strip():
+        signals.append("error")
+    return signals
 
 
 def _assign_unique_case_keys(

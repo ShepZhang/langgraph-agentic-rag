@@ -426,7 +426,7 @@ def test_run_dashboard_evaluation_returns_visible_rows_and_state():
     assert counts == view["failure_count_rows"]
     assert cases[0][0] == "agentic:q001"
     assert case_update["choices"] == [
-        ("q001 / retrieval_failure", "agentic:q001")
+        ("Agentic RAG / q001 / retrieval_failure", "agentic:q001")
     ]
     assert system_update["value"] == "all"
     assert type_update["value"] == "all"
@@ -466,7 +466,7 @@ def test_failed_run_preserves_previous_successful_state():
     assert counts == previous["failure_count_rows"]
     assert cases[0][0] == "agentic:q001"
     assert choices["choices"] == [
-        ("q001 / retrieval_failure", "agentic:q001")
+        ("Agentic RAG / q001 / retrieval_failure", "agentic:q001")
     ]
     assert system_update["value"] == "all"
     assert type_update["value"] == "all"
@@ -533,7 +533,7 @@ def test_filter_and_detail_helpers_do_not_run_evaluation_again():
     assert table[0][0] == "agentic:q001"
     assert counts == [["Agentic RAG", "retrieval_failure", 1]]
     assert choices["choices"] == [
-        ("q001 / retrieval_failure", "agentic:q001")
+        ("Agentic RAG / q001 / retrieval_failure", "agentic:q001")
     ]
     assert "### Agentic RAG / q001 / retrieval_failure" in detail
     assert "Expected source missing." in detail
@@ -624,6 +624,41 @@ def test_snapshot_helpers_return_dropdown_updates_and_runtime_config():
     assert format_variant_runtime_config(None, "v0_naive", service=service) == {}
     assert service.run_calls == []
     assert service.snapshot_calls == [()]
+
+
+def test_snapshot_failure_choices_disambiguate_same_case_across_variants():
+    view = _dashboard_view()
+    first_case = {
+        **view["failure_cases"][0],
+        "case_key": "v0_naive:q004",
+        "system": "v0_naive",
+        "system_label": "v0_naive Naive RAG",
+        "question_id": "q004",
+        "failure_type": "generation_failure",
+    }
+    second_case = {
+        **first_case,
+        "case_key": "v1_query_rewrite:q004",
+        "system": "v1_query_rewrite",
+        "system_label": "v1_query_rewrite + Query Transformation",
+    }
+    view["failure_cases"] = [first_case, second_case]
+    service = FakeDashboardService(view)
+
+    result = load_ablation_dashboard({}, service=service)
+    case_update = result[5]
+
+    assert case_update["choices"] == [
+        (
+            "v0_naive Naive RAG / q004 / generation_failure",
+            "v0_naive:q004",
+        ),
+        (
+            "v1_query_rewrite + Query Transformation / q004 / "
+            "generation_failure",
+            "v1_query_rewrite:q004",
+        ),
+    ]
 
 
 def test_snapshot_helper_preserves_previous_state_when_refresh_is_unavailable():

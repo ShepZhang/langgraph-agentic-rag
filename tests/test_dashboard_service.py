@@ -411,6 +411,58 @@ def test_ablation_failure_cases_assign_stable_unique_keys_per_full_output():
     )
 
 
+def test_ablation_failure_cases_keep_unavailable_failures_without_false_positives():
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "results": [
+                    {
+                        "question_id": "q001",
+                        "question_type": "single_doc",
+                        "question": "Failed legacy question",
+                        "correct": False,
+                        "_diagnostics_source": "unavailable",
+                    },
+                    {
+                        "question_id": "q002",
+                        "question_type": "single_doc",
+                        "question": "Errored legacy question",
+                        "correct": True,
+                        "error": "runner unavailable",
+                        "_diagnostics_source": "unavailable",
+                    },
+                    {
+                        "question_id": "q003",
+                        "question_type": "single_doc",
+                        "question": "Successful legacy question",
+                        "correct": True,
+                        "fallback_correct": True,
+                        "error": "",
+                        "_diagnostics_source": "unavailable",
+                    },
+                ],
+            }
+        ]
+    }
+
+    cases = build_ablation_failure_cases(payload)
+
+    assert [case["question_id"] for case in cases] == ["q001", "q002"]
+    assert [case["failure_type"] for case in cases] == [
+        "unclassified_failure",
+        "unclassified_failure",
+    ]
+    assert all(
+        case["diagnostics_source"] == "unavailable"
+        for case in cases
+    )
+    assert all("unavailable" in case["reason"].lower() for case in cases)
+    assert all("rerun" in case["suggestion"].lower() for case in cases)
+
+
 def test_formatter_sequences_accept_tuples_without_expanding_strings():
     tuple_report = {
         "summary": _summary(),
@@ -558,6 +610,60 @@ def test_load_ablation_snapshot_uses_stored_analysis_and_runtime_config():
     assert service.get_runtime_config(view, "all") == {}
 
 
+@pytest.mark.parametrize("run_status", ["incomplete", "completed_with_errors"])
+def test_load_ablation_snapshot_excludes_non_completed_run_status(run_status):
+    completed_run = _ablation_payload(
+        _result("q001", "retrieval_failure")
+    )["runs"][0]
+    skipped_run = deepcopy(completed_run)
+    skipped_run["id"] = f"v1_{run_status}"
+    skipped_run["method"] = run_status
+    skipped_run["status"] = run_status
+    skipped_run["results"] = [_result("q002", "generation_failure")]
+    payload = {"runs": [completed_run, skipped_run]}
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001"), _question("q002")],
+        ablation_provider=StaticAblationProvider(payload),
+        id_factory=lambda prefix: f"{prefix}-status-filter",
+    )
+
+    view = service.load_ablation_snapshot()
+
+    assert [row[0] for row in view["summary_rows"]] == [
+        "v0_naive Naive RAG"
+    ]
+    assert [case["case_key"] for case in view["failure_cases"]] == [
+        "v0_naive:q001"
+    ]
+    assert [run["id"] for run in view["raw_report"]["runs"]] == [
+        "v0_naive"
+    ]
+    assert "skipped 1 non-completed variant" in view["message"].lower()
+    assert run_status in view["message"]
+
+
+def test_load_ablation_snapshot_accepts_legacy_run_without_status():
+    legacy_run = _ablation_payload(
+        _result("q001", "retrieval_failure")
+    )["runs"][0]
+    legacy_run.pop("status")
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        ablation_provider=StaticAblationProvider({"runs": [legacy_run]}),
+        id_factory=lambda prefix: f"{prefix}-legacy-status",
+    )
+
+    view = service.load_ablation_snapshot()
+
+    assert [row[0] for row in view["summary_rows"]] == [
+        "v0_naive Naive RAG"
+    ]
+    assert [case["case_key"] for case in view["failure_cases"]] == [
+        "v0_naive:q001"
+    ]
+    assert "non-completed variant" not in view["message"].lower()
+
+
 def test_load_ablation_snapshot_does_not_require_metadata_for_stored_analysis():
     def failing_loader():
         raise RuntimeError("question metadata unavailable")
@@ -655,8 +761,12 @@ def test_load_ablation_snapshot_marks_missing_metadata_diagnostics_unavailable()
     enriched_result = view["raw_report"]["runs"][0]["results"][0]
     assert view["status"] == "completed"
     assert len(view["summary_rows"]) == 1
-    assert view["failure_cases"] == []
-    assert view["failure_count_rows"] == []
+    assert view["failure_cases"][0]["question_id"] == "q999"
+    assert view["failure_cases"][0]["failure_type"] == "unclassified_failure"
+    assert view["failure_cases"][0]["diagnostics_source"] == "unavailable"
+    assert view["failure_count_rows"] == [
+        ["v0_naive Naive RAG", "unclassified_failure", 1]
+    ]
     assert enriched_result["_diagnostics_source"] == "unavailable"
     assert "failure_analysis" not in enriched_result
     assert "unavailable diagnostics: 1" in view["message"].lower()
@@ -682,8 +792,11 @@ def test_load_ablation_snapshot_rejects_incomplete_stored_analysis():
 
     enriched_result = view["raw_report"]["runs"][0]["results"][0]
     assert view["status"] == "completed"
-    assert view["failure_cases"] == []
-    assert view["failure_count_rows"] == []
+    assert view["failure_cases"][0]["question_id"] == "q001"
+    assert view["failure_cases"][0]["failure_type"] == "unclassified_failure"
+    assert view["failure_count_rows"] == [
+        ["v0_naive Naive RAG", "unclassified_failure", 1]
+    ]
     assert enriched_result["_diagnostics_source"] == "unavailable"
     assert enriched_result["failure_analysis"] == {}
     assert "unavailable diagnostics: 1" in view["message"].lower()
@@ -754,7 +867,14 @@ def test_load_ablation_snapshot_degrades_when_metadata_unavailable_for_legacy():
 
     enriched_results = view["raw_report"]["runs"][0]["results"]
     assert view["status"] == "completed"
-    assert [case["question_id"] for case in view["failure_cases"]] == ["q002"]
+    assert [case["question_id"] for case in view["failure_cases"]] == [
+        "q002",
+        "q001",
+    ]
+    assert [case["failure_type"] for case in view["failure_cases"]] == [
+        "citation_failure",
+        "unclassified_failure",
+    ]
     assert enriched_results[0]["_diagnostics_source"] == "stored"
     assert enriched_results[1]["_diagnostics_source"] == "unavailable"
     assert "failure_analysis" not in enriched_results[1]

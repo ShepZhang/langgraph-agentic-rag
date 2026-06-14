@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ from evaluation.dashboard_formatters import (
     filter_failure_cases as filter_failure_case_rows,
     get_failure_detail as select_failure_detail,
     get_runtime_config as select_runtime_config,
+    is_complete_ablation_run,
 )
 from evaluation.dashboard_models import (
     DEFAULT_ABLATION_RESULT_PATH,
@@ -207,6 +209,7 @@ class EvaluationDashboardService:
             (
                 enriched,
                 skipped,
+                skipped_run_statuses,
                 unavailable_diagnostics,
                 metadata_error,
             ) = _enrich_ablation_payload(
@@ -224,6 +227,18 @@ class EvaluationDashboardService:
                 message += (
                     " Snapshot is partial; "
                     f"skipped {skipped} malformed item(s)."
+                )
+            if skipped_run_statuses:
+                skipped_variants = sum(skipped_run_statuses.values())
+                status_counts = ", ".join(
+                    f"{status}={count}"
+                    for status, count in sorted(
+                        skipped_run_statuses.items()
+                    )
+                )
+                message += (
+                    f" Skipped {skipped_variants} non-completed "
+                    f"variant(s): {status_counts}."
                 )
             if unavailable_diagnostics:
                 message += (
@@ -346,7 +361,7 @@ def _default_id_factory(prefix: str) -> str:
 def _enrich_ablation_payload(
     payload: Mapping[str, Any],
     question_loader: QuestionLoader,
-) -> tuple[dict[str, Any], int, int, str | None]:
+) -> tuple[dict[str, Any], int, dict[str, int], int, str | None]:
     if not isinstance(payload, Mapping):
         raise ValueError("ablation result payload must be an object")
 
@@ -357,6 +372,7 @@ def _enrich_ablation_payload(
 
     valid_runs: list[dict[str, Any]] = []
     skipped = 0
+    skipped_run_statuses: Counter[str] = Counter()
     unavailable_diagnostics = 0
     questions_by_id: dict[str, dict[str, Any]] | None = None
     metadata_error: str | None = None
@@ -385,6 +401,11 @@ def _enrich_ablation_payload(
             continue
 
         run = raw_run
+        if not is_complete_ablation_run(run):
+            status = _clean_text(run.get("status")) or "invalid_status"
+            skipped_run_statuses[status] += 1
+            continue
+
         results = run.get("results")
         if not isinstance(results, list):
             run["results"] = []
@@ -422,7 +443,13 @@ def _enrich_ablation_payload(
         valid_runs.append(run)
 
     enriched["runs"] = valid_runs
-    return enriched, skipped, unavailable_diagnostics, metadata_error
+    return (
+        enriched,
+        skipped,
+        dict(skipped_run_statuses),
+        unavailable_diagnostics,
+        metadata_error,
+    )
 
 
 def _is_stored_failure_analysis(analysis: Any) -> bool:

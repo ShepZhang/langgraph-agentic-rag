@@ -747,7 +747,8 @@ def _failure_choices(
 ) -> list[tuple[str, str]]:
     return [
         (
-            f"{case['question_id']} / {case['failure_type']}",
+            f"{case['system_label']} / {case['question_id']} / "
+            f"{case['failure_type']}",
             str(case["case_key"]),
         )
         for case in cases
