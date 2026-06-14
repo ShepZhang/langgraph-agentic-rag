@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.1-p4b - Evaluation Dashboard
+
+Date: 2026-06-14
+
+### Added
+
+- Added a Gradio Evaluation tab with a five-question smoke set, manual selection across all 36 questions, and Naive RAG, Agentic RAG, or Compare Both modes.
+- Added reliability metrics, failure counts, filterable failed cases, and selected-case details.
+- Added a read-only V0-V6 ablation snapshot with saved runtime configuration.
+- Added deterministic in-memory diagnostics for pre-P4a artifacts, with transparent `stored` or `derived` labels and no writes back to source artifacts.
+
+### Notes
+
+- Quick evaluation is synchronous, so a 36-question run may take time and incur model cost.
+- The ablation view reads existing artifacts; it does not run V0-V6 from the browser.
+- Background progress, cancellation, checkpoint recovery, trace drill-down, and historical run views remain future work.
+
 ## v0.4.0-p4a - Failed Case Analyzer
 
 Date: 2026-06-13

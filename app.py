@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from config import get_settings
-from ui.gradio_app import create_app
+from ui.gradio_app import APP_CSS, create_app
 
 
 def main() -> None:
@@ -14,6 +14,7 @@ def main() -> None:
     app.launch(
         server_name=settings.gradio_server_name,
         server_port=settings.gradio_server_port,
+        css=APP_CSS,
     )
 
 
