@@ -163,6 +163,44 @@ def test_create_app_returns_gradio_blocks():
     assert isinstance(app, gr.Blocks)
 
 
+def _component_labels(config: dict) -> set[str]:
+    labels = set()
+    for component in config.get("components", []):
+        props = component.get("props", {})
+        label = props.get("label")
+        if isinstance(label, str):
+            labels.add(label)
+    return labels
+
+
+def test_create_app_contains_document_and_evaluation_tabs():
+    from ui.gradio_app import create_app
+
+    app = create_app()
+    labels = _component_labels(app.get_config_file())
+
+    assert "Document QA" in labels
+    assert "Evaluation" in labels
+    assert "Quick Compare" in labels
+    assert "Ablation Snapshot" in labels
+
+
+def test_create_app_contains_dashboard_tables_and_filters():
+    from ui.gradio_app import create_app
+
+    app = create_app()
+    labels = _component_labels(app.get_config_file())
+
+    assert "Evaluation questions" in labels
+    assert "Reliability metrics" in labels
+    assert "Failure type counts" in labels
+    assert "Failed cases" in labels
+    assert "Failure case" in labels
+    assert "Ablation reliability metrics" in labels
+    assert "Ablation variant" in labels
+    assert "Runtime configuration" in labels
+
+
 class FakeDashboardService:
     def __init__(self, view):
         self.view = view

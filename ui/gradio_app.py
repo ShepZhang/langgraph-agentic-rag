@@ -14,7 +14,12 @@ from evaluation.dashboard_formatters import (
     build_failure_count_rows,
     failure_cases_to_table,
 )
-from evaluation.dashboard_models import SMOKE_QUESTION_IDS
+from evaluation.dashboard_models import (
+    FAILURE_CASE_COLUMNS,
+    FAILURE_COUNT_COLUMNS,
+    METRIC_COLUMNS,
+    SMOKE_QUESTION_IDS,
+)
 from evaluation.dashboard_service import EvaluationDashboardService
 from rag.chunker import split_documents
 from rag.loader import load_documents
@@ -279,101 +284,391 @@ def create_app() -> gr.Blocks:
     """Create the Gradio interface."""
 
     settings = get_settings()
+    dashboard_service = EvaluationDashboardService()
+    question_options = dashboard_service.list_questions()
+    question_choices = [
+        (option["label"], option["id"])
+        for option in question_options
+    ]
+    smoke_ids = question_selection(question_options, "smoke")
 
-    with gr.Blocks(title="Agentic RAG Document QA System") as demo:
+    with gr.Blocks(title="Reliability-oriented Agentic RAG") as demo:
         gr.Markdown(
-            """
-            # Agentic RAG Document QA System
-
-            Upload PDF, Markdown, or TXT documents, build a local index, and ask
-            citation-aware questions with Agentic RAG.
-            """
+            "# Reliability-oriented Agentic RAG Document QA System"
         )
-
-        chat_history = gr.State([])
-
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("## Document Indexing")
-                uploaded_files = gr.File(
-                    label="Upload documents",
-                    file_count="multiple",
-                    file_types=[".pdf", ".md", ".markdown", ".txt"],
+        with gr.Tabs():
+            with gr.Tab("Document QA"):
+                _build_document_qa_tab(settings)
+            with gr.Tab("Evaluation"):
+                _build_evaluation_tab(
+                    dashboard_service,
+                    question_options,
+                    question_choices,
+                    smoke_ids,
                 )
-                build_button = gr.Button("Build Index", variant="primary")
-                index_status = gr.Textbox(
-                    label="Index status",
-                    value="Upload documents, then build the index.",
-                    interactive=False,
-                )
-
-            with gr.Column():
-                gr.Markdown("## Question Answering")
-                question = gr.Textbox(label="Question", lines=3)
-                ask_button = gr.Button("Ask", variant="primary")
-                answer = gr.Textbox(
-                    label="Answer",
-                    lines=6,
-                    interactive=False,
-                )
-
-        with gr.Row():
-            citations = gr.JSON(label="Citations")
-            retrieved_chunks = gr.JSON(label="Retrieved chunks")
-
-        with gr.Row():
-            rewritten_question = gr.Textbox(
-                label="Rewritten question",
-                interactive=False,
-            )
-            rewrite_count = gr.Number(
-                label="Retry count",
-                value=0,
-                precision=0,
-                interactive=False,
-            )
-
-        diagnostics = gr.Markdown(
-            label="Diagnostics",
-            value=_format_diagnostics(
-                retry_count=0,
-                retrieval_attempt=0,
-                relevant_doc_count=0,
-            ),
-        )
-
-        build_button.click(
-            fn=build_document_index,
-            inputs=uploaded_files,
-            outputs=index_status,
-        )
-        ask_button.click(
-            fn=answer_question,
-            inputs=[question, chat_history],
-            outputs=[
-                answer,
-                citations,
-                retrieved_chunks,
-                rewritten_question,
-                rewrite_count,
-                diagnostics,
-                chat_history,
-            ],
-        )
-
-        gr.Markdown(
-            f"""
-            **Current configuration**
-
-            - LLM model: `{settings.openai_model}`
-            - Embedding model: `{settings.embedding_model}`
-            - Chroma path: `{settings.chroma_persist_dir}`
-            - Top K: `{settings.top_k}`
-            - Max retry count: `{settings.max_retry_count}`
-            """
-        )
 
     return demo
+
+
+def _build_document_qa_tab(settings: Any) -> None:
+    """Build the existing upload, indexing, and QA workflow."""
+
+    chat_history = gr.State([])
+
+    with gr.Row():
+        with gr.Column():
+            gr.Markdown("## Document Indexing")
+            uploaded_files = gr.File(
+                label="Upload documents",
+                file_count="multiple",
+                file_types=[".pdf", ".md", ".markdown", ".txt"],
+            )
+            build_button = gr.Button("Build Index", variant="primary")
+            index_status = gr.Textbox(
+                label="Index status",
+                value="Upload documents, then build the index.",
+                interactive=False,
+            )
+
+        with gr.Column():
+            gr.Markdown("## Question Answering")
+            question = gr.Textbox(label="Question", lines=3)
+            ask_button = gr.Button("Ask", variant="primary")
+            answer = gr.Textbox(
+                label="Answer",
+                lines=6,
+                interactive=False,
+            )
+
+    with gr.Row():
+        citations = gr.JSON(label="Citations")
+        retrieved_chunks = gr.JSON(label="Retrieved chunks")
+
+    with gr.Row():
+        rewritten_question = gr.Textbox(
+            label="Rewritten question",
+            interactive=False,
+        )
+        rewrite_count = gr.Number(
+            label="Retry count",
+            value=0,
+            precision=0,
+            interactive=False,
+        )
+
+    diagnostics = gr.Markdown(
+        label="Diagnostics",
+        value=_format_diagnostics(
+            retry_count=0,
+            retrieval_attempt=0,
+            relevant_doc_count=0,
+        ),
+    )
+
+    build_button.click(
+        fn=build_document_index,
+        inputs=uploaded_files,
+        outputs=index_status,
+    )
+    ask_button.click(
+        fn=answer_question,
+        inputs=[question, chat_history],
+        outputs=[
+            answer,
+            citations,
+            retrieved_chunks,
+            rewritten_question,
+            rewrite_count,
+            diagnostics,
+            chat_history,
+        ],
+    )
+
+    gr.Markdown(
+        f"""
+        **Current configuration**
+
+        - LLM model: `{settings.openai_model}`
+        - Embedding model: `{settings.embedding_model}`
+        - Chroma path: `{settings.chroma_persist_dir}`
+        - Top K: `{settings.top_k}`
+        - Max retry count: `{settings.max_retry_count}`
+        """
+    )
+
+
+def _build_evaluation_tab(
+    service: EvaluationDashboardService,
+    question_options: Sequence[Mapping[str, Any]],
+    question_choices: list[tuple[str, str]],
+    smoke_ids: list[str],
+) -> None:
+    """Build quick evaluation and saved ablation views."""
+
+    quick_state = gr.State({})
+    snapshot_state = gr.State({})
+    failure_type_choices = [
+        ("All failure types", "all"),
+        "retrieval_failure",
+        "reranking_failure",
+        "query_rewrite_failure",
+        "generation_failure",
+        "citation_failure",
+        "fallback_failure",
+        "tool_failure",
+    ]
+
+    with gr.Tabs():
+        with gr.Tab("Quick Compare"):
+            with gr.Row():
+                system_mode = gr.Radio(
+                    choices=list(SYSTEM_MODE_VALUES),
+                    value="Compare Both",
+                    label="System mode",
+                )
+                questions = gr.Dropdown(
+                    choices=question_choices,
+                    value=smoke_ids,
+                    multiselect=True,
+                    label="Evaluation questions",
+                )
+
+            with gr.Row():
+                smoke_button = gr.Button("Select smoke set")
+                all_button = gr.Button("Select all 36")
+                run_button = gr.Button("Run Evaluation", variant="primary")
+
+            quick_status = gr.Markdown(
+                "Select a system mode and questions.",
+                elem_classes="dashboard-status",
+            )
+            quick_metrics = gr.Dataframe(
+                headers=METRIC_COLUMNS,
+                value=[],
+                label="Reliability metrics",
+                interactive=False,
+                wrap=True,
+            )
+
+            with gr.Row():
+                quick_counts = gr.Dataframe(
+                    headers=FAILURE_COUNT_COLUMNS,
+                    value=[],
+                    label="Failure type counts",
+                    interactive=False,
+                )
+                with gr.Column():
+                    quick_system_filter = gr.Dropdown(
+                        choices=[
+                            ("All systems", "all"),
+                            ("Naive RAG", "naive"),
+                            ("Agentic RAG", "agentic"),
+                        ],
+                        value="all",
+                        label="Failure system",
+                    )
+                    quick_type_filter = gr.Dropdown(
+                        choices=failure_type_choices,
+                        value="all",
+                        label="Failure type",
+                    )
+
+            quick_cases = gr.Dataframe(
+                headers=FAILURE_CASE_COLUMNS,
+                value=[],
+                label="Failed cases",
+                interactive=False,
+                wrap=True,
+                elem_classes="dashboard-table",
+            )
+            quick_case = gr.Dropdown(
+                choices=[],
+                label="Failure case",
+            )
+            quick_detail = gr.Markdown(
+                "Select a failed case to inspect its diagnosis.",
+                elem_classes="dashboard-detail",
+            )
+
+            smoke_button.click(
+                fn=lambda: question_selection(question_options, "smoke"),
+                outputs=questions,
+                queue=False,
+            )
+            all_button.click(
+                fn=lambda: question_selection(question_options, "all"),
+                outputs=questions,
+                queue=False,
+            )
+            run_event = run_button.click(
+                fn=lambda: (
+                    gr.update(interactive=False),
+                    "Evaluation is running. A 36-question run may take several minutes.",
+                ),
+                outputs=[run_button, quick_status],
+                queue=False,
+            )
+            run_event.then(
+                fn=lambda mode, ids, state: run_dashboard_evaluation(
+                    mode,
+                    ids,
+                    state,
+                    service=service,
+                ),
+                inputs=[system_mode, questions, quick_state],
+                outputs=[
+                    quick_state,
+                    quick_status,
+                    quick_metrics,
+                    quick_counts,
+                    quick_cases,
+                    quick_case,
+                ],
+            ).then(
+                fn=lambda: gr.update(interactive=True),
+                outputs=run_button,
+                queue=False,
+            )
+            for component in (quick_system_filter, quick_type_filter):
+                component.change(
+                    fn=lambda state, system, failure: filter_dashboard_failures(
+                        state,
+                        system,
+                        failure,
+                        service=service,
+                    ),
+                    inputs=[
+                        quick_state,
+                        quick_system_filter,
+                        quick_type_filter,
+                    ],
+                    outputs=[quick_counts, quick_cases, quick_case],
+                    queue=False,
+                )
+            quick_case.change(
+                fn=lambda state, key: format_failure_detail(
+                    state,
+                    key,
+                    service=service,
+                ),
+                inputs=[quick_state, quick_case],
+                outputs=quick_detail,
+                queue=False,
+            )
+
+        with gr.Tab("Ablation Snapshot"):
+            gr.Markdown(
+                "This view reads the saved V0-V6 artifact and does not rerun models."
+            )
+            refresh_snapshot = gr.Button("Refresh Snapshot", variant="primary")
+            snapshot_status = gr.Markdown(
+                "Load the saved ablation artifact.",
+                elem_classes="dashboard-status",
+            )
+            snapshot_metrics = gr.Dataframe(
+                headers=METRIC_COLUMNS,
+                value=[],
+                label="Ablation reliability metrics",
+                interactive=False,
+                wrap=True,
+            )
+            with gr.Row():
+                snapshot_variant = gr.Dropdown(
+                    choices=[("All variants", "all")],
+                    value="all",
+                    label="Ablation variant",
+                )
+                snapshot_type_filter = gr.Dropdown(
+                    choices=failure_type_choices,
+                    value="all",
+                    label="Ablation failure type",
+                )
+
+            snapshot_config = gr.JSON(label="Runtime configuration")
+            snapshot_counts = gr.Dataframe(
+                headers=FAILURE_COUNT_COLUMNS,
+                value=[],
+                label="Ablation failure type counts",
+                interactive=False,
+            )
+            snapshot_cases = gr.Dataframe(
+                headers=FAILURE_CASE_COLUMNS,
+                value=[],
+                label="Ablation failed cases",
+                interactive=False,
+                wrap=True,
+                elem_classes="dashboard-table",
+            )
+            snapshot_case = gr.Dropdown(
+                choices=[],
+                label="Ablation failure case",
+            )
+            snapshot_detail = gr.Markdown(
+                "Select a failed case to inspect stored or derived diagnostics.",
+                elem_classes="dashboard-detail",
+            )
+
+            refresh_snapshot.click(
+                fn=lambda state: load_ablation_dashboard(
+                    state,
+                    service=service,
+                ),
+                inputs=snapshot_state,
+                outputs=[
+                    snapshot_state,
+                    snapshot_status,
+                    snapshot_metrics,
+                    snapshot_counts,
+                    snapshot_cases,
+                    snapshot_case,
+                    snapshot_variant,
+                ],
+            )
+            snapshot_variant.change(
+                fn=lambda state, variant: format_variant_runtime_config(
+                    state,
+                    variant,
+                    service=service,
+                ),
+                inputs=[snapshot_state, snapshot_variant],
+                outputs=snapshot_config,
+                queue=False,
+            )
+            for component in (snapshot_variant, snapshot_type_filter):
+                component.change(
+                    fn=lambda state, variant, failure: filter_dashboard_failures(
+                        state,
+                        variant,
+                        failure,
+                        service=service,
+                    ),
+                    inputs=[
+                        snapshot_state,
+                        snapshot_variant,
+                        snapshot_type_filter,
+                    ],
+                    outputs=[
+                        snapshot_counts,
+                        snapshot_cases,
+                        snapshot_case,
+                    ],
+                    queue=False,
+                )
+            snapshot_case.change(
+                fn=lambda state, key: format_failure_detail(
+                    state,
+                    key,
+                    service=service,
+                ),
+                inputs=[snapshot_state, snapshot_case],
+                outputs=snapshot_detail,
+                queue=False,
+            )
+
+            gr.Markdown(
+                "Future upgrade: background live V0-V6 runs with progress, "
+                "cancel, checkpoint recovery, shared run IDs, and trace linkage."
+            )
 
 
 def _normalize_uploaded_files(uploaded_files: list[Any] | None) -> list[str]:
