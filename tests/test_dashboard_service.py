@@ -598,6 +598,7 @@ def test_run_quick_evaluation_rejects_invalid_requests_before_runner_calls(
     view = service.run_quick_evaluation(question_ids, system_mode)
 
     assert view["status"] == "failed"
+    assert view["run_id"] == ""
     assert message in view["message"]
     assert runner_calls == []
     assert view["summary_rows"] == []
@@ -644,13 +645,31 @@ def test_run_quick_evaluation_returns_failed_view_for_loader_errors():
 
     assert view == {
         "status": "failed",
-        "run_id": "quick-loader-error",
+        "run_id": "",
         "summary_rows": [],
         "failure_count_rows": [],
         "failure_cases": [],
         "raw_report": {},
         "message": "Quick evaluation failed: RuntimeError: dataset unavailable",
     }
+
+
+def test_run_quick_evaluation_contains_id_factory_errors():
+    def failing_id_factory(prefix):
+        raise RuntimeError("id generation failed")
+
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        agentic_runner=_runner_result,
+        id_factory=failing_id_factory,
+    )
+
+    view = service.run_quick_evaluation(["q001"], "agentic")
+
+    assert view["status"] == "failed"
+    assert view["run_id"] == ""
+    assert view["raw_report"] == {}
+    assert "id generation failed" in view["message"]
 
 
 def test_service_filters_and_selects_failure_cases_without_mutating_view():
@@ -690,10 +709,13 @@ def test_service_filters_and_selects_failure_cases_without_mutating_view():
 
 
 def test_default_id_factory_generates_unique_prefixed_run_ids():
-    service = EvaluationDashboardService()
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        agentic_runner=_runner_result,
+    )
 
-    first = service.run_quick_evaluation([], "agentic")
-    second = service.run_quick_evaluation([], "agentic")
+    first = service.run_quick_evaluation(["q001"], "agentic")
+    second = service.run_quick_evaluation(["q001"], "agentic")
 
     assert first["run_id"].startswith("quick-")
     assert second["run_id"].startswith("quick-")

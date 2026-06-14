@@ -235,7 +235,7 @@ class EvaluationDashboardService:
     ) -> DashboardView:
         return {
             "status": status,
-            "run_id": self._id_factory("quick"),
+            "run_id": "",
             "summary_rows": [],
             "failure_count_rows": [],
             "failure_cases": [],
