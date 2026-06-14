@@ -75,7 +75,7 @@ def build_failure_cases(
                     case = _failure_case(result, system, diagnostics_source)
                     if case is not None:
                         cases.append(case)
-        return cases
+        return _assign_unique_case_keys(cases)
 
     for result in _sequence(report.get("results")):
         if not isinstance(result, Mapping):
@@ -83,7 +83,7 @@ def build_failure_cases(
         case = _failure_case(result, default_system, diagnostics_source)
         if case is not None:
             cases.append(case)
-    return cases
+    return _assign_unique_case_keys(cases)
 
 
 def build_ablation_failure_cases(
@@ -109,7 +109,7 @@ def build_ablation_failure_cases(
             )
             if case is not None:
                 cases.append(case)
-    return cases
+    return _assign_unique_case_keys(cases)
 
 
 def build_failure_count_rows(
@@ -228,7 +228,7 @@ def _failure_case(
         return None
     question_id = str(result.get("question_id") or analysis.get("question_id") or "")
     return {
-        "case_key": f"{system}:{question_id}",
+        "case_key": "",
         "system": system,
         "system_label": system_label or _system_label(system),
         "question_id": question_id,
@@ -239,6 +239,45 @@ def _failure_case(
         "suggestion": str(analysis.get("suggestion") or ""),
         "diagnostics_source": _diagnostics_source(diagnostics_source),
     }
+
+
+def _assign_unique_case_keys(
+    cases: list[FailureCaseRow],
+) -> list[FailureCaseRow]:
+    exact_keys = {
+        f"{case['system']}:{case['question_id']}"
+        for case in cases
+        if case["question_id"]
+    }
+    occurrences: Counter[str] = Counter()
+    used_keys: set[str] = set()
+
+    for row_number, case in enumerate(cases, start=1):
+        question_id = case["question_id"]
+        if question_id:
+            base_key = f"{case['system']}:{question_id}"
+            occurrences[base_key] += 1
+            occurrence = occurrences[base_key]
+            if occurrence == 1:
+                case_key = base_key
+            else:
+                case_key = f"{base_key}:{occurrence}"
+                while case_key in exact_keys or case_key in used_keys:
+                    occurrence += 1
+                    case_key = f"{base_key}:{occurrence}"
+                occurrences[base_key] = occurrence
+        else:
+            base_key = f"{case['system']}:row-{row_number}"
+            case_key = base_key
+            suffix = 1
+            while case_key in exact_keys or case_key in used_keys:
+                suffix += 1
+                case_key = f"{base_key}:{suffix}"
+
+        case["case_key"] = case_key
+        used_keys.add(case_key)
+
+    return cases
 
 
 def _system_label(system: str) -> str:
@@ -256,4 +295,9 @@ def _mapping(value: Any) -> Mapping[str, Any]:
 
 
 def _sequence(value: Any) -> Sequence[Any]:
-    return value if isinstance(value, list) else []
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        (str, bytes, bytearray),
+    ):
+        return value
+    return []

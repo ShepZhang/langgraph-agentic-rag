@@ -171,6 +171,49 @@ def test_build_failure_cases_flattens_comparison_in_system_order():
     ]
 
 
+def test_build_failure_cases_assigns_stable_unique_keys_to_duplicate_and_empty_ids():
+    duplicate_first = _result("dup", "retrieval_failure")
+    duplicate_first["failure_analysis"]["reason"] = "First duplicate"
+    duplicate_second = _result("dup", "citation_failure")
+    duplicate_second["failure_analysis"]["reason"] = "Second duplicate"
+    empty_first = _result("", "generation_failure")
+    empty_first["failure_analysis"]["reason"] = "First empty ID"
+    empty_second = _result("", "tool_failure")
+    empty_second["failure_analysis"]["reason"] = "Second empty ID"
+    report = {
+        "summary": _summary(),
+        "results": [
+            duplicate_first,
+            duplicate_second,
+            empty_first,
+            empty_second,
+        ],
+    }
+
+    cases = build_failure_cases(report, default_system="agentic")
+
+    assert [case["case_key"] for case in cases] == [
+        "agentic:dup",
+        "agentic:dup:2",
+        "agentic:row-3",
+        "agentic:row-4",
+    ]
+    assert [
+        get_failure_detail(cases, case_key)["reason"]
+        for case_key in (
+            "agentic:dup",
+            "agentic:dup:2",
+            "agentic:row-3",
+            "agentic:row-4",
+        )
+    ] == [
+        "First duplicate",
+        "Second duplicate",
+        "First empty ID",
+        "Second empty ID",
+    ]
+
+
 def test_failure_rows_can_be_counted_filtered_and_selected():
     report = {
         "summary": {"mode": "comparison"},
@@ -298,3 +341,68 @@ def test_ablation_formatters_runtime_config_and_table_conversion():
     }
     assert get_runtime_config(payload, "missing") == {}
     assert get_runtime_config(payload, None) == {}
+
+
+def test_ablation_failure_cases_assign_stable_unique_keys_per_full_output():
+    duplicate_first = _result("dup", "retrieval_failure")
+    duplicate_first["failure_analysis"]["reason"] = "Ablation duplicate one"
+    duplicate_second = _result("dup", "citation_failure")
+    duplicate_second["failure_analysis"]["reason"] = "Ablation duplicate two"
+    empty_id = _result("", "tool_failure")
+    empty_id["failure_analysis"]["reason"] = "Ablation empty ID"
+    payload = {
+        "runs": [
+            {
+                "id": "v1",
+                "method": "Variant One",
+                "results": (
+                    duplicate_first,
+                    duplicate_second,
+                    empty_id,
+                ),
+            }
+        ]
+    }
+
+    cases = build_ablation_failure_cases(payload)
+
+    assert [case["case_key"] for case in cases] == [
+        "v1:dup",
+        "v1:dup:2",
+        "v1:row-3",
+    ]
+    assert get_failure_detail(cases, "v1:dup:2")["reason"] == (
+        "Ablation duplicate two"
+    )
+    assert get_failure_detail(cases, "v1:row-3")["reason"] == (
+        "Ablation empty ID"
+    )
+
+
+def test_formatter_sequences_accept_tuples_without_expanding_strings():
+    tuple_report = {
+        "summary": _summary(),
+        "results": (_result("q007", "retrieval_failure"),),
+    }
+    tuple_payload = {
+        "runs": (
+            {
+                "id": "v2",
+                "method": "Variant Two",
+                "summary": _summary(),
+            },
+        )
+    }
+
+    assert [case["case_key"] for case in build_failure_cases(tuple_report)] == [
+        "agentic:q007"
+    ]
+    assert [row[0] for row in build_ablation_summary_rows(tuple_payload)] == [
+        "v2 Variant Two"
+    ]
+    assert build_failure_cases({"summary": _summary(), "results": "q007"}) == []
+    assert build_failure_cases({"summary": _summary(), "results": b"q007"}) == []
+    assert build_failure_cases(
+        {"summary": _summary(), "results": bytearray(b"q007")}
+    ) == []
+    assert build_ablation_summary_rows({"runs": "v2"}) == []
