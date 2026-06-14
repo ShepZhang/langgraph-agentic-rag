@@ -608,6 +608,21 @@ def test_run_quick_evaluation_rejects_invalid_requests_before_runner_calls(
     json.dumps(view)
 
 
+def test_run_quick_evaluation_sorts_and_deduplicates_unknown_ids():
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+    )
+
+    view = service.run_quick_evaluation(
+        ["q999", "q998", "q999"],
+        "agentic",
+    )
+
+    assert view["status"] == "failed"
+    assert view["message"].count("q999") == 1
+    assert view["message"].index("q998") < view["message"].index("q999")
+
+
 def test_run_quick_evaluation_keeps_per_case_runner_errors_completed():
     def failing_runner(question):
         raise RuntimeError(f"runner failed for {question}")

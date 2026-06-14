@@ -22,6 +22,7 @@ from evaluation.dashboard_models import (
     DEFAULT_ABLATION_RESULT_PATH,
     AblationResultProvider,
     DashboardStatus,
+    DashboardSystemMode,
     DashboardView,
     FailureCaseDetail,
     FailureCaseRow,
@@ -97,7 +98,7 @@ class EvaluationDashboardService:
     def run_quick_evaluation(
         self,
         question_ids: list[str],
-        system_mode: str,
+        system_mode: DashboardSystemMode,
     ) -> DashboardView:
         """Run selected questions through the requested evaluation mode."""
 
@@ -114,15 +115,12 @@ class EvaluationDashboardService:
 
         try:
             questions = self._question_loader()
+            requested_ids = set(question_ids)
             known_ids = {
                 str(question.get("id") or "")
                 for question in questions
             }
-            unknown_ids = [
-                question_id
-                for question_id in question_ids
-                if question_id not in known_ids
-            ]
+            unknown_ids = sorted(requested_ids - known_ids)
             if unknown_ids:
                 return self._empty_view(
                     status="failed",
@@ -132,11 +130,10 @@ class EvaluationDashboardService:
                     ),
                 )
 
-            selected_ids = set(question_ids)
             selected_questions = [
                 question
                 for question in questions
-                if str(question.get("id") or "") in selected_ids
+                if str(question.get("id") or "") in requested_ids
             ]
             report, default_system = self._evaluate(
                 selected_questions,
@@ -199,7 +196,7 @@ class EvaluationDashboardService:
     def _evaluate(
         self,
         questions: list[dict[str, Any]],
-        system_mode: str,
+        system_mode: DashboardSystemMode,
     ) -> tuple[dict[str, Any], str]:
         if system_mode == "naive":
             return (
