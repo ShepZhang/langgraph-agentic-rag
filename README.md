@@ -2,7 +2,7 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, typed internal tools, answer revision, baseline comparison, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, typed internal tools, answer revision, baseline comparison, an Evaluation Dashboard, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
 
 The project is production-oriented as an architecture and evaluation exercise, but it is not a complete production deployment. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
@@ -35,7 +35,7 @@ The system keeps a strict distinction between the original user question and the
 
 ```text
 UI Layer
-  Gradio document upload, indexing, QA, citations, retrieved chunks, diagnostics
+  Gradio Document QA and Evaluation tabs with QA, comparison, and diagnostics
 
 RAG Layer
   loader -> chunker -> embeddings -> Chroma vector store
@@ -157,7 +157,7 @@ Key state fields:
 - Citation-aware grounded answer generation using only selected evidence chunks.
 - Citation safety: normal answers without valid supporting citation indices or matching answer citation markers fall back instead of returning unsupported answers.
 - Claim-level citation verification: normal cited answers are split into atomic claims, verified against cited chunks, revised once if unsupported, and otherwise sent to fallback.
-- Gradio UI for upload, indexing, question answering, citations, retrieved chunks, and retry diagnostics.
+- Gradio UI with Document QA and Evaluation tabs for upload, indexing, question answering, quick comparison, saved ablation inspection, citations, retrieved chunks, and failure diagnostics.
 - Naive RAG baseline package and CLI for retrieve-once comparison.
 - Reliability evaluation runner comparing naive RAG and Agentic RAG on shared documents and a shared structured question set.
 - JSON evaluation artifacts for baseline, agentic, comparison, and ablation runs.
@@ -252,7 +252,14 @@ Open the interactive API docs at `http://127.0.0.1:8000/docs`.
 
 ## Usage
 
-1. Open the Gradio URL printed by `app.py`.
+The Gradio app has two main tabs:
+
+- `Document QA`: upload and index documents, ask questions, and inspect answers, citations, retrieved chunks, rewritten queries, retries, and retrieval diagnostics.
+- `Evaluation`: run a selected-question Quick Compare or inspect the saved V0-V6 Ablation Snapshot.
+
+For document QA:
+
+1. Open the Gradio URL printed by `app.py` and select `Document QA`.
 2. Upload one or more `.pdf`, `.md`, `.markdown`, or `.txt` files.
 3. Click `Build Index`.
 4. Ask a question about the indexed documents.
@@ -470,6 +477,17 @@ Metric fields include:
 - `error_count`
 - `failure_type_counts`
 
+### Evaluation Dashboard
+
+P4b adds an `Evaluation` tab with two views:
+
+- `Quick Compare` runs the same selected question records in `Naive RAG`, `Agentic RAG`, or `Compare Both` mode. It reports correctness, context relevance, citation accuracy, fallback accuracy, unsupported claims, latency, retry metrics, failure counts, filterable failed cases, and selected-case diagnostic details.
+- `Ablation Snapshot` reads `experiments/results/ablation_result.json` and displays the saved V0-V6 metrics, failed cases, diagnostics source, and runtime configuration. It is read-only and does not run V0-V6 from the browser.
+
+The default smoke selection is `q001`, `q016`, `q027`, `q030`, and `q033`. The dashboard can also select all 36 questions. Quick evaluation runs synchronously, so a full selection can be slow and may incur model cost.
+
+For pre-P4a ablation artifacts that do not contain stored failure analysis, the dashboard enriches complete records with deterministic diagnostics in memory. The UI labels diagnostics as `stored`, `derived`, or unavailable, and never writes the derived data back to the source JSON artifact.
+
 ### Failed Case Analysis
 
 Each question result includes a `failure_analysis` object with `failure_type`, `reason`, and `suggestion` fields. The taxonomy covers `retrieval_failure`, `reranking_failure`, `query_rewrite_failure`, `generation_failure`, `citation_failure`, `fallback_failure`, `tool_failure`, and `no_failure`.
@@ -610,8 +628,12 @@ agentic-rag-document-qa/
 │   └── run_baseline.py
 ├── evaluation/
 │   ├── baselines.py
+│   ├── dashboard_models.py
+│   ├── dashboard_formatters.py
+│   ├── dashboard_service.py
 │   ├── eval_questions.json
 │   ├── evaluate.py
+│   ├── failure_analyzer.py
 │   └── runtime_config.py
 ├── experiments/
 │   ├── run_ablation.py
@@ -651,7 +673,8 @@ agentic-rag-document-qa/
 - Added a FastAPI backend for chat, trace lookup, document upload/index/delete, and evaluation run retrieval.
 - Added workspace-aware retrieval isolation for dense, BM25, hybrid, retriever, and Agent default retrieval paths.
 - Added deterministic failed-case analysis with rule-based failure attribution, per-question reasons and suggestions, summary counts, and representative ablation cases.
-- Preserved a modular roadmap toward the Approach B typed evaluator, dynamic retrieval adjustment, per-workspace collection hardening, prompt versioning, and an interactive evaluation dashboard.
+- Added a Gradio Evaluation Dashboard for synchronous selected-record comparison, filterable failure diagnostics, and read-only inspection of saved V0-V6 artifacts and runtime configuration.
+- Preserved a modular roadmap toward background execution, shared run IDs, trace drill-down, prompt regression tracking, and historical evaluation trends.
 
 ## Current Limitations
 
@@ -668,6 +691,9 @@ agentic-rag-document-qa/
 - Workspace isolation currently uses metadata filtering inside a shared Chroma collection. It does not yet create separate collections per workspace or migrate historical unscoped chunks.
 - Token usage and estimated cost are recorded only when the active model client exposes usage metadata.
 - The Gradio `Build Index` workflow intentionally rebuilds the active collection for a clean uploaded knowledge base. The lower-level vectorstore API also supports incremental `add_documents` with deterministic IDs.
+- Quick evaluation in the Gradio Evaluation Dashboard is synchronous. Selecting all 36 questions may be slow and may incur model cost.
+- The Ablation Snapshot is read-only and only loads the existing artifact; it cannot launch V0-V6 runs from the browser.
+- Dashboard failure diagnostics use deterministic heuristics for debugging and regression triage, not benchmark-grade causal attribution.
 - The project is not a complete production deployment without authentication, authorization, deployment hardening, durable trace storage, and operational monitoring.
 
 ## Roadmap
@@ -695,6 +721,7 @@ agentic-rag-document-qa/
 - P3c workspace-aware retrieval implemented: API-indexed documents carry workspace metadata, and Agent retrieval can filter dense, BM25, and hybrid candidates by workspace.
 - P3d typed internal Tool Registry implemented: retriever, citation verifier, document summary, and safe calculator tools share validated inputs, normalized results, stable errors, and compact trace diagnostics.
 - P4a deterministic failed-case analysis implemented: evaluation results include primary failure types, reasons, and suggestions, while summaries and ablation reports include failure counts and representative cases.
+- P4b Evaluation Dashboard implemented: Gradio supports synchronous smoke or manually selected quick comparisons, filterable failed-case inspection, and a read-only V0-V6 ablation snapshot with runtime configuration and transparent stored or derived diagnostics.
 
 ### Next Milestones
 
@@ -702,7 +729,11 @@ agentic-rag-document-qa/
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
 - Add decomposition sub-question retrieval for multi-hop workflows.
 - Harden workspace isolation with optional per-workspace Chroma collections and authorization checks.
-- Add prompt versioning under `prompts/` and record prompt versions in evaluation artifacts.
-- Add an interactive Evaluation Dashboard in Gradio for running evaluations, comparing baseline vs agentic results, inspecting failed cases, and later linking rows to trace IDs.
+- Implement `BackgroundAblationRunner` behind the dashboard runner protocol.
+- Add background run status, progress, cancellation, and checkpoint recovery.
+- Share evaluation run IDs across Gradio and FastAPI.
+- Link failed cases to `trace_id` and a node-level trace viewer.
+- Add prompt version tracking and prompt regression checks.
+- Persist historical runs and expose trend views.
 - Add model-specific prompt tuning and cost/latency evaluation for local and remote models.
 - Add human-reviewed claim labels for stricter citation validation.
