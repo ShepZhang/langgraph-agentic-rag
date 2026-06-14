@@ -173,6 +173,23 @@ def _component_labels(config: dict) -> set[str]:
     return labels
 
 
+def _component_props_by_label(config: dict, label: str) -> dict:
+    for component in config.get("components", []):
+        props = component.get("props", {})
+        if props.get("label") == label:
+            return props
+    return {}
+
+
+def _component_values(config: dict) -> list[str]:
+    values = []
+    for component in config.get("components", []):
+        value = component.get("props", {}).get("value")
+        if isinstance(value, str):
+            values.append(value)
+    return values
+
+
 def test_create_app_contains_document_and_evaluation_tabs():
     from ui.gradio_app import create_app
 
@@ -199,6 +216,35 @@ def test_create_app_contains_dashboard_tables_and_filters():
     assert "Ablation reliability metrics" in labels
     assert "Ablation variant" in labels
     assert "Runtime configuration" in labels
+
+
+def test_create_app_survives_question_loading_failure(monkeypatch):
+    import gradio as gr
+    import ui.gradio_app as gradio_app
+
+    class BrokenDashboardService:
+        def list_questions(self):
+            raise RuntimeError("questions unavailable")
+
+    monkeypatch.setattr(
+        gradio_app,
+        "EvaluationDashboardService",
+        BrokenDashboardService,
+    )
+
+    app = gradio_app.create_app()
+    config = app.get_config_file()
+    labels = _component_labels(config)
+    question_props = _component_props_by_label(config, "Evaluation questions")
+
+    assert isinstance(app, gr.Blocks)
+    assert "Document QA" in labels
+    assert "Evaluation" in labels
+    assert question_props.get("choices") == []
+    assert any(
+        "questions unavailable" in value
+        for value in _component_values(config)
+    )
 
 
 class FakeDashboardService:
@@ -306,7 +352,18 @@ def test_run_dashboard_evaluation_returns_visible_rows_and_state():
         service=service,
     )
 
-    state, status, metrics, counts, cases, case_update = result
+    assert len(result) == 9
+    (
+        state,
+        status,
+        metrics,
+        counts,
+        cases,
+        case_update,
+        system_update,
+        type_update,
+        detail,
+    ) = result
     assert state == view
     assert "completed" in status.lower()
     assert metrics == view["summary_rows"]
@@ -315,6 +372,9 @@ def test_run_dashboard_evaluation_returns_visible_rows_and_state():
     assert case_update["choices"] == [
         ("q001 / retrieval_failure", "agentic:q001")
     ]
+    assert system_update["value"] == "all"
+    assert type_update["value"] == "all"
+    assert detail == "Select a failed case to inspect its diagnosis."
     assert service.run_calls == [(["q001"], "agentic")]
 
 
@@ -327,7 +387,17 @@ def test_failed_run_preserves_previous_successful_state():
     failed["failure_cases"] = []
     service = FakeDashboardService(failed)
 
-    state, status, metrics, counts, cases, choices = run_dashboard_evaluation(
+    (
+        state,
+        status,
+        metrics,
+        counts,
+        cases,
+        choices,
+        system_update,
+        type_update,
+        detail,
+    ) = run_dashboard_evaluation(
         "Agentic RAG",
         ["q001"],
         previous,
@@ -342,6 +412,9 @@ def test_failed_run_preserves_previous_successful_state():
     assert choices["choices"] == [
         ("q001 / retrieval_failure", "agentic:q001")
     ]
+    assert system_update["value"] == "all"
+    assert type_update["value"] == "all"
+    assert detail == "Select a failed case to inspect its diagnosis."
 
 
 def test_failed_run_ignores_non_mapping_previous_state():
@@ -352,7 +425,17 @@ def test_failed_run_ignores_non_mapping_previous_state():
     failed["failure_cases"] = []
     service = FakeDashboardService(failed)
 
-    state, status, metrics, counts, cases, choices = run_dashboard_evaluation(
+    (
+        state,
+        status,
+        metrics,
+        counts,
+        cases,
+        choices,
+        system_update,
+        type_update,
+        detail,
+    ) = run_dashboard_evaluation(
         "Agentic RAG",
         ["q001"],
         ["bad"],
@@ -365,6 +448,9 @@ def test_failed_run_ignores_non_mapping_previous_state():
     assert counts == []
     assert cases == []
     assert choices["choices"] == []
+    assert system_update["value"] == "all"
+    assert type_update["value"] == "all"
+    assert detail == "Select a failed case to inspect its diagnosis."
 
 
 def test_filter_and_detail_helpers_do_not_run_evaluation_again():
@@ -446,7 +532,19 @@ def test_snapshot_helpers_return_dropdown_updates_and_runtime_config():
     service = FakeDashboardService(view)
 
     result = load_ablation_dashboard({}, service=service)
-    state, status, metrics, counts, cases, case_update, variant_update = result
+    assert len(result) == 10
+    (
+        state,
+        status,
+        metrics,
+        counts,
+        cases,
+        case_update,
+        variant_update,
+        type_update,
+        runtime_config,
+        detail,
+    ) = result
 
     assert state == view
     assert "completed" in status.lower()
@@ -458,6 +556,10 @@ def test_snapshot_helpers_return_dropdown_updates_and_runtime_config():
         ("All variants", "all"),
         ("v0_naive Naive RAG", "v0_naive"),
     ]
+    assert variant_update["value"] == "all"
+    assert type_update["value"] == "all"
+    assert runtime_config == {}
+    assert detail == "Select a failed case to inspect its diagnosis."
     assert format_variant_runtime_config(
         view,
         "v0_naive",
@@ -477,9 +579,18 @@ def test_snapshot_helper_preserves_previous_state_when_refresh_is_unavailable():
     unavailable["failure_cases"] = []
     service = FakeDashboardService(unavailable)
 
-    state, status, metrics, counts, cases, case_update, variant_update = (
-        load_ablation_dashboard(previous, service=service)
-    )
+    (
+        state,
+        status,
+        metrics,
+        counts,
+        cases,
+        case_update,
+        variant_update,
+        type_update,
+        runtime_config,
+        detail,
+    ) = load_ablation_dashboard(previous, service=service)
 
     assert state == previous
     assert "unavailable" in status.lower()
@@ -488,3 +599,7 @@ def test_snapshot_helper_preserves_previous_state_when_refresh_is_unavailable():
     assert cases[0][0] == "agentic:q001"
     assert case_update["choices"][0][1] == "agentic:q001"
     assert variant_update["choices"][0] == ("All variants", "all")
+    assert variant_update["value"] == "all"
+    assert type_update["value"] == "all"
+    assert runtime_config == {}
+    assert detail == "Select a failed case to inspect its diagnosis."

@@ -31,6 +31,8 @@ SYSTEM_MODE_VALUES = {
     "Agentic RAG": "agentic",
     "Compare Both": "comparison",
 }
+DEFAULT_FAILURE_DETAIL = "Select a failed case to inspect its diagnosis."
+DEFAULT_QUICK_STATUS = "Select a system mode and questions."
 
 
 def build_document_index(
@@ -160,6 +162,9 @@ def run_dashboard_evaluation(
     list[list[Any]],
     list[list[str]],
     dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    str,
 ]:
     """Run quick evaluation and preserve the last successful view on failure."""
 
@@ -179,6 +184,9 @@ def run_dashboard_evaluation(
         list(active_view.get("failure_count_rows", [])),
         failure_cases_to_table(cases),
         gr.update(choices=_failure_choices(cases), value=None),
+        gr.update(value="all"),
+        gr.update(value="all"),
+        DEFAULT_FAILURE_DETAIL,
     )
 
 
@@ -218,11 +226,11 @@ def format_failure_detail(
     resolved_service = service or EvaluationDashboardService()
     state = _dashboard_state(dashboard_state)
     if not state:
-        return "Select a failed case to inspect its diagnosis."
+        return DEFAULT_FAILURE_DETAIL
 
     detail = resolved_service.get_failure_detail(state, case_key)
     if not detail["case_key"]:
-        return "Select a failed case to inspect its diagnosis."
+        return DEFAULT_FAILURE_DETAIL
 
     return (
         f"### {detail['title']}\n\n"
@@ -243,6 +251,9 @@ def load_ablation_dashboard(
     list[list[str]],
     dict[str, Any],
     dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    str,
 ]:
     """Load the saved ablation snapshot and preserve the last valid view."""
 
@@ -263,6 +274,9 @@ def load_ablation_dashboard(
         failure_cases_to_table(cases),
         gr.update(choices=_failure_choices(cases), value=None),
         gr.update(choices=variant_choices, value="all"),
+        gr.update(value="all"),
+        {},
+        DEFAULT_FAILURE_DETAIL,
     )
 
 
@@ -285,7 +299,15 @@ def create_app() -> gr.Blocks:
 
     settings = get_settings()
     dashboard_service = EvaluationDashboardService()
-    question_options = dashboard_service.list_questions()
+    evaluation_initial_status = DEFAULT_QUICK_STATUS
+    try:
+        question_options = dashboard_service.list_questions()
+    except Exception as exc:
+        question_options = []
+        evaluation_initial_status = (
+            "Unable to load evaluation questions: "
+            f"{type(exc).__name__}: {exc}"
+        )
     question_choices = [
         (option["label"], option["id"])
         for option in question_options
@@ -305,6 +327,7 @@ def create_app() -> gr.Blocks:
                     question_options,
                     question_choices,
                     smoke_ids,
+                    evaluation_initial_status,
                 )
 
     return demo
@@ -402,6 +425,7 @@ def _build_evaluation_tab(
     question_options: Sequence[Mapping[str, Any]],
     question_choices: list[tuple[str, str]],
     smoke_ids: list[str],
+    initial_status: str = DEFAULT_QUICK_STATUS,
 ) -> None:
     """Build quick evaluation and saved ablation views."""
 
@@ -439,7 +463,7 @@ def _build_evaluation_tab(
                 run_button = gr.Button("Run Evaluation", variant="primary")
 
             quick_status = gr.Markdown(
-                "Select a system mode and questions.",
+                initial_status,
                 elem_classes="dashboard-status",
             )
             quick_metrics = gr.Dataframe(
@@ -486,7 +510,7 @@ def _build_evaluation_tab(
                 label="Failure case",
             )
             quick_detail = gr.Markdown(
-                "Select a failed case to inspect its diagnosis.",
+                DEFAULT_FAILURE_DETAIL,
                 elem_classes="dashboard-detail",
             )
 
@@ -523,6 +547,9 @@ def _build_evaluation_tab(
                     quick_counts,
                     quick_cases,
                     quick_case,
+                    quick_system_filter,
+                    quick_type_filter,
+                    quick_detail,
                 ],
             ).then(
                 fn=lambda: gr.update(interactive=True),
@@ -622,6 +649,9 @@ def _build_evaluation_tab(
                     snapshot_cases,
                     snapshot_case,
                     snapshot_variant,
+                    snapshot_type_filter,
+                    snapshot_config,
+                    snapshot_detail,
                 ],
             )
             snapshot_variant.change(
