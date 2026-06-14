@@ -558,6 +558,25 @@ def test_load_ablation_snapshot_uses_stored_analysis_and_runtime_config():
     assert service.get_runtime_config(view, "all") == {}
 
 
+def test_load_ablation_snapshot_does_not_require_metadata_for_stored_analysis():
+    def failing_loader():
+        raise RuntimeError("question metadata unavailable")
+
+    payload = _ablation_payload(_result("q001", "citation_failure"))
+    service = EvaluationDashboardService(
+        question_loader=failing_loader,
+        ablation_provider=StaticAblationProvider(payload),
+        id_factory=lambda prefix: f"{prefix}-stored-only",
+    )
+
+    view = service.load_ablation_snapshot()
+
+    assert view["status"] == "completed"
+    assert view["run_id"] == "snapshot-stored-only"
+    assert view["failure_cases"][0]["diagnostics_source"] == "stored"
+    assert "question metadata unavailable" not in view["message"]
+
+
 def test_load_ablation_snapshot_derives_legacy_diagnostics_without_mutation():
     legacy_result = {
         "question_id": "q001",
@@ -612,6 +631,16 @@ def test_load_ablation_snapshot_marks_missing_metadata_diagnostics_unavailable()
         "question_type": "single_doc",
         "question": "Unknown question",
         "correct": False,
+        "source_hit": False,
+        "context_relevant": False,
+        "citation_hit": False,
+        "fallback_correct": True,
+        "fallback_triggered": False,
+        "answer_returned": True,
+        "retrieved_documents": [{"source": "other.md"}],
+        "relevant_documents": [],
+        "citations": [],
+        "error": None,
     }
     payload = _ablation_payload(result)
     original = deepcopy(payload)
@@ -630,7 +659,107 @@ def test_load_ablation_snapshot_marks_missing_metadata_diagnostics_unavailable()
     assert view["failure_count_rows"] == []
     assert enriched_result["_diagnostics_source"] == "unavailable"
     assert "failure_analysis" not in enriched_result
+    assert "unavailable diagnostics: 1" in view["message"].lower()
     assert payload == original
+
+
+def test_load_ablation_snapshot_rejects_incomplete_stored_analysis():
+    result = {
+        "question_id": "q001",
+        "question_type": "single_doc",
+        "question": "Question q001",
+        "correct": False,
+        "failure_analysis": {},
+    }
+    payload = _ablation_payload(result)
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        ablation_provider=StaticAblationProvider(payload),
+        id_factory=lambda prefix: f"{prefix}-invalid-analysis",
+    )
+
+    view = service.load_ablation_snapshot()
+
+    enriched_result = view["raw_report"]["runs"][0]["results"][0]
+    assert view["status"] == "completed"
+    assert view["failure_cases"] == []
+    assert view["failure_count_rows"] == []
+    assert enriched_result["_diagnostics_source"] == "unavailable"
+    assert enriched_result["failure_analysis"] == {}
+    assert "unavailable diagnostics: 1" in view["message"].lower()
+
+
+def test_load_ablation_snapshot_does_not_derive_incomplete_legacy_result():
+    result = {
+        "question_id": "q001",
+        "question_type": "single_doc",
+        "question": "Question q001",
+        "correct": True,
+    }
+    payload = _ablation_payload(result)
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        ablation_provider=StaticAblationProvider(payload),
+        id_factory=lambda prefix: f"{prefix}-incomplete-legacy",
+    )
+
+    view = service.load_ablation_snapshot()
+
+    enriched_result = view["raw_report"]["runs"][0]["results"][0]
+    assert view["status"] == "completed"
+    assert view["failure_cases"] == []
+    assert enriched_result["_diagnostics_source"] == "unavailable"
+    assert "failure_analysis" not in enriched_result
+    assert "retrieval_failure" not in view["message"]
+    assert "unavailable diagnostics: 1" in view["message"].lower()
+
+
+def test_load_ablation_snapshot_degrades_when_metadata_unavailable_for_legacy():
+    legacy_result = {
+        "question_id": "q001",
+        "question_type": "single_doc",
+        "question": "Question q001",
+        "correct": False,
+        "source_hit": False,
+        "context_relevant": False,
+        "citation_hit": False,
+        "fallback_correct": True,
+        "fallback_triggered": False,
+        "answer_returned": True,
+        "retrieved_documents": [{"source": "other.md"}],
+        "relevant_documents": [],
+        "citations": [],
+        "error": None,
+    }
+    stored_result = _result("q002", "citation_failure")
+    payload = {
+        "runs": [
+            {
+                **_ablation_payload(stored_result)["runs"][0],
+                "results": [stored_result, legacy_result],
+            }
+        ]
+    }
+
+    def failing_loader():
+        raise RuntimeError("question metadata unavailable")
+
+    service = EvaluationDashboardService(
+        question_loader=failing_loader,
+        ablation_provider=StaticAblationProvider(payload),
+        id_factory=lambda prefix: f"{prefix}-degraded",
+    )
+
+    view = service.load_ablation_snapshot()
+
+    enriched_results = view["raw_report"]["runs"][0]["results"]
+    assert view["status"] == "completed"
+    assert [case["question_id"] for case in view["failure_cases"]] == ["q002"]
+    assert enriched_results[0]["_diagnostics_source"] == "stored"
+    assert enriched_results[1]["_diagnostics_source"] == "unavailable"
+    assert "failure_analysis" not in enriched_results[1]
+    assert "degraded" in view["message"].lower()
+    assert "unavailable diagnostics: 1" in view["message"].lower()
 
 
 def test_load_ablation_snapshot_keeps_metric_rows_and_reports_partial_payload():
@@ -717,7 +846,7 @@ def test_load_ablation_snapshot_returns_unavailable_for_malformed_top_level(
     assert "ablation" in view["message"].lower()
 
 
-def test_load_ablation_snapshot_contains_question_loader_errors():
+def test_load_ablation_snapshot_does_not_load_metadata_for_empty_runs():
     def failing_loader():
         raise RuntimeError("question metadata unavailable")
 
@@ -728,10 +857,29 @@ def test_load_ablation_snapshot_contains_question_loader_errors():
 
     view = service.load_ablation_snapshot()
 
-    assert view["status"] == "unavailable"
-    assert view["run_id"] == ""
-    assert view["raw_report"] == {}
-    assert "question metadata unavailable" in view["message"]
+    assert view["status"] == "completed"
+    assert view["run_id"].startswith("snapshot-")
+    assert view["raw_report"] == {"runs": []}
+    assert "question metadata unavailable" not in view["message"]
+
+
+def test_load_ablation_snapshot_does_not_rewrite_json_artifact(tmp_path):
+    result_path = tmp_path / "ablation.json"
+    payload = _ablation_payload(_result("q001", "retrieval_failure"))
+    result_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    before = result_path.read_bytes()
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        ablation_provider=JsonAblationResultProvider(result_path),
+    )
+
+    view = service.load_ablation_snapshot()
+
+    assert view["status"] == "completed"
+    assert result_path.read_bytes() == before
 
 
 def test_load_ablation_snapshot_contains_id_factory_errors():
@@ -771,6 +919,35 @@ def test_load_ablation_snapshot_contains_formatter_errors(monkeypatch):
     assert view["run_id"] == ""
     assert view["raw_report"] == {}
     assert "snapshot formatting failed" in view["message"]
+
+
+def test_service_runtime_config_is_safe_for_empty_views_and_deep_copied():
+    payload = _ablation_payload(_result("q001", "retrieval_failure"))
+    service = EvaluationDashboardService(
+        question_loader=lambda: [_question("q001")],
+        ablation_provider=StaticAblationProvider(payload),
+    )
+    view = service.load_ablation_snapshot()
+
+    runtime_config = service.get_runtime_config(view, "v0_naive")
+    runtime_config["llm"]["model"] = "mutated"
+
+    assert service.get_runtime_config({}, "v0_naive") == {}
+    assert service.get_runtime_config(
+        {
+            "status": "completed",
+            "run_id": "empty",
+            "summary_rows": [],
+            "failure_count_rows": [],
+            "failure_cases": [],
+            "raw_report": {},
+            "message": "",
+        },
+        "v0_naive",
+    ) == {}
+    assert view["raw_report"]["runs"][0]["runtime_config"]["llm"][
+        "model"
+    ] == "test-model"
 
 
 @pytest.mark.parametrize(

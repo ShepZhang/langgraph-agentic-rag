@@ -39,6 +39,23 @@ from evaluation.failure_analyzer import analyze_failure
 QuestionLoader = Callable[[], list[dict[str, Any]]]
 EvaluationRunner = Callable[..., dict[str, Any]]
 IdFactory = Callable[[str], str]
+_STORED_ANALYSIS_FIELDS = ("failure_type", "reason", "suggestion")
+_DERIVABLE_RESULT_FIELDS = frozenset(
+    (
+        "question_id",
+        "correct",
+        "fallback_correct",
+        "fallback_triggered",
+        "answer_returned",
+        "source_hit",
+        "context_relevant",
+        "citation_hit",
+        "retrieved_documents",
+        "relevant_documents",
+        "citations",
+        "error",
+    )
+)
 
 
 class JsonAblationResultProvider:
@@ -182,13 +199,14 @@ class EvaluationDashboardService:
 
         try:
             payload = self._ablation_provider.load()
-            questions_by_id = {
-                str(question.get("id") or ""): question
-                for question in self._question_loader()
-            }
-            enriched, skipped = _enrich_ablation_payload(
+            (
+                enriched,
+                skipped,
+                unavailable_diagnostics,
+                metadata_error,
+            ) = _enrich_ablation_payload(
                 payload,
-                questions_by_id,
+                self._question_loader,
             )
             failure_cases = build_ablation_failure_cases(enriched)
             variant_count = len(enriched["runs"])
@@ -202,6 +220,14 @@ class EvaluationDashboardService:
                     " Snapshot is partial; "
                     f"skipped {skipped} malformed item(s)."
                 )
+            if unavailable_diagnostics:
+                message += (
+                    " Snapshot is degraded; "
+                    "unavailable diagnostics: "
+                    f"{unavailable_diagnostics}."
+                )
+                if metadata_error:
+                    message += f" Metadata unavailable: {metadata_error}."
             return {
                 "status": "completed",
                 "run_id": self._id_factory("snapshot"),
@@ -231,7 +257,10 @@ class EvaluationDashboardService:
 
         if not variant_id or variant_id == "all":
             return {}
-        return select_runtime_config(view["raw_report"], variant_id)
+        raw_report = view.get("raw_report") if isinstance(view, Mapping) else {}
+        if not isinstance(raw_report, Mapping):
+            return {}
+        return deepcopy(select_runtime_config(raw_report, variant_id))
 
     def filter_failure_cases(
         self,
@@ -311,8 +340,8 @@ def _default_id_factory(prefix: str) -> str:
 
 def _enrich_ablation_payload(
     payload: Mapping[str, Any],
-    questions_by_id: Mapping[str, dict[str, Any]],
-) -> tuple[dict[str, Any], int]:
+    question_loader: QuestionLoader,
+) -> tuple[dict[str, Any], int, int, str | None]:
     if not isinstance(payload, Mapping):
         raise ValueError("ablation result payload must be an object")
 
@@ -323,6 +352,28 @@ def _enrich_ablation_payload(
 
     valid_runs: list[dict[str, Any]] = []
     skipped = 0
+    unavailable_diagnostics = 0
+    questions_by_id: dict[str, dict[str, Any]] | None = None
+    metadata_error: str | None = None
+
+    def question_for_result(result: Mapping[str, Any]) -> dict[str, Any] | None:
+        nonlocal questions_by_id, metadata_error
+        question_id = _clean_text(result.get("question_id"))
+        if not question_id or metadata_error is not None:
+            return None
+        if questions_by_id is None:
+            try:
+                questions_by_id = {
+                    str(question.get("id") or ""): question
+                    for question in question_loader()
+                    if isinstance(question, dict)
+                }
+            except Exception as exc:  # noqa: BLE001 - degrade per row.
+                metadata_error = f"{type(exc).__name__}: {exc}"
+                questions_by_id = {}
+                return None
+        return questions_by_id.get(question_id)
+
     for raw_run in runs:
         if not isinstance(raw_run, dict):
             skipped += 1
@@ -344,13 +395,16 @@ def _enrich_ablation_payload(
 
             result = raw_result
             analysis = result.get("failure_analysis")
-            if isinstance(analysis, Mapping):
+            if _is_stored_failure_analysis(analysis):
                 result["_diagnostics_source"] = "stored"
+            elif not _is_derivable_legacy_result(result):
+                result["_diagnostics_source"] = "unavailable"
+                unavailable_diagnostics += 1
             else:
-                question_id = str(result.get("question_id") or "")
-                question = questions_by_id.get(question_id)
+                question = question_for_result(result)
                 if question is None:
                     result["_diagnostics_source"] = "unavailable"
+                    unavailable_diagnostics += 1
                 else:
                     result["failure_analysis"] = analyze_failure(
                         question,
@@ -363,4 +417,24 @@ def _enrich_ablation_payload(
         valid_runs.append(run)
 
     enriched["runs"] = valid_runs
-    return enriched, skipped
+    return enriched, skipped, unavailable_diagnostics, metadata_error
+
+
+def _is_stored_failure_analysis(analysis: Any) -> bool:
+    return isinstance(analysis, Mapping) and all(
+        _clean_text(analysis.get(field))
+        for field in _STORED_ANALYSIS_FIELDS
+    )
+
+
+def _is_derivable_legacy_result(result: Mapping[str, Any]) -> bool:
+    return (
+        _DERIVABLE_RESULT_FIELDS.issubset(result.keys())
+        and bool(_clean_text(result.get("question_id")))
+    )
+
+
+def _clean_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
