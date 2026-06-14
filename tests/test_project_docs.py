@@ -8,7 +8,6 @@ from PIL import Image
 from evaluation.evaluate import load_eval_questions
 from rag.loader import load_documents
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_DOCS = [
     PROJECT_ROOT / "sample_docs/agentic_rag_notes.md",

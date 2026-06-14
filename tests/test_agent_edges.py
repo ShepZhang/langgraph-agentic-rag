@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from config import get_settings
 from agent.edges import route_after_grading
 from agent.state import create_initial_state
+from config import get_settings
 
 
 def test_route_after_grading_generates_when_relevant_documents_exist_without_settings_lookup(

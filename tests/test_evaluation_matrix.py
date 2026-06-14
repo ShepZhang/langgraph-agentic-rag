@@ -5,8 +5,9 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+from collections.abc import Callable
 from dataclasses import replace
-from typing import Any, Callable, get_type_hints
+from typing import Any, get_type_hints
 
 import pytest
 

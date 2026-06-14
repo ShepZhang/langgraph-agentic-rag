@@ -9,7 +9,6 @@ from langchain_core.tools import StructuredTool
 
 from rag.retriever import retrieve
 
-
 RetrieverFn = Callable[[str], list[dict[str, Any]]]
 
 

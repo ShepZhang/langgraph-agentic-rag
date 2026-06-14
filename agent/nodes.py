@@ -13,14 +13,13 @@ from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
     CLAIM_VERIFICATION_PROMPT,
     QUERY_REWRITE_PROMPT,
-    RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
+    RETRY_QUERY_REWRITE_PROMPT,
     format_chat_history,
     format_documents,
 )
 from agent.state import AgentState, Citation, RetrievedDocument
 from agent.tools import create_retriever_tool
-
 
 FALLBACK_ANSWER = "根据当前已索引文档，无法可靠回答这个问题。请补充相关文档，或换一种更具体的问法。"
 logger = logging.getLogger(__name__)

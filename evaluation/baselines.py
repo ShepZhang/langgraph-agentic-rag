@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from agent.llm import create_chat_model
 from agent.nodes import (
@@ -15,7 +16,6 @@ from agent.nodes import (
 from agent.prompts import ANSWER_GENERATION_PROMPT, format_documents
 from config import Settings, get_settings
 from rag.retriever import retrieve
-
 
 RetrieverFn = Callable[[str], list[dict[str, Any]]]
 

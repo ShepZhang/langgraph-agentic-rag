@@ -6,7 +6,12 @@ import json
 
 import pytest
 
-from evaluation.evaluate import evaluate_questions, format_report, load_eval_questions, main
+from evaluation.evaluate import (
+    evaluate_questions,
+    format_report,
+    load_eval_questions,
+    main,
+)
 
 
 def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):

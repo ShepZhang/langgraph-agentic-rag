@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from config import Settings, get_settings
 from agent.state import AgentState
+from config import Settings, get_settings
 
 AgentRoute = Literal["generate_answer", "rewrite_query", "fallback"]
 logger = logging.getLogger(__name__)

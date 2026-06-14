@@ -6,8 +6,8 @@ from agent.prompts import (
     ANSWER_GENERATION_PROMPT,
     CLAIM_VERIFICATION_PROMPT,
     QUERY_REWRITE_PROMPT,
-    RETRY_QUERY_REWRITE_PROMPT,
     RETRIEVAL_GRADING_PROMPT,
+    RETRY_QUERY_REWRITE_PROMPT,
     format_chat_history,
     format_documents,
 )

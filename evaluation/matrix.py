@@ -6,9 +6,10 @@ import argparse
 import copy
 import json
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from agent.graph import run_agent
 from config import Settings, get_settings
@@ -22,7 +23,6 @@ from evaluation.evaluate import (
 from rag.embeddings import get_embedding_model
 from rag.retriever import Retriever
 from rag.vectorstore import VectorStoreManager
-
 
 Runner = Callable[[str], dict[str, Any]]
 

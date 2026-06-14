@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from agent.state import ChatMessage, RetrievedDocument
 
-
 QUERY_REWRITE_PROMPT = """You are rewriting a user question for private knowledge-base retrieval.
 
 Use the chat history only to resolve references or missing context.
