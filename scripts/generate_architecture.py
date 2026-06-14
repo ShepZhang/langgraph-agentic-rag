@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
 from pathlib import Path
-from textwrap import wrap
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -24,22 +24,14 @@ ARROW = "#374151"
 LOOP = "#7b4f2a"
 
 
-def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    candidates = [
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/System/Library/Fonts/Supplemental/Helvetica Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Helvetica.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for candidate in candidates:
-        try:
-            return ImageFont.truetype(candidate, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
+def load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Load Pillow's bundled font at an explicit size for portable rendering."""
+
+    return ImageFont.load_default(size=size)
 
 
-TITLE_FONT = load_font(40, bold=True)
-BAND_FONT = load_font(30, bold=True)
+TITLE_FONT = load_font(42)
+BAND_FONT = load_font(30)
 BODY_FONT = load_font(26)
 SMALL_FONT = load_font(24)
 
@@ -55,31 +47,74 @@ def draw_centered_text(
     text: str,
     font: ImageFont.ImageFont,
     fill: str = TEXT,
-    max_chars: int = 18,
 ) -> None:
     lines: list[str] = []
     for part in text.split("\n"):
-        lines.extend(wrap(part, width=max_chars) or [""])
+        words = part.split()
+        current_line = ""
+        max_width = box[2] - box[0] - 24
+        for word in words:
+            candidate = f"{current_line} {word}".strip()
+            if current_line and text_size(draw, candidate, font)[0] > max_width:
+                lines.append(current_line)
+                current_line = word
+            else:
+                current_line = candidate
+        lines.append(current_line)
 
     line_heights = [text_size(draw, line, font)[1] for line in lines]
     total_height = sum(line_heights) + (len(lines) - 1) * 8
     y = box[1] + ((box[3] - box[1]) - total_height) / 2
 
-    for line, line_height in zip(lines, line_heights):
+    for line, line_height in zip(lines, line_heights, strict=True):
         line_width, _ = text_size(draw, line, font)
         x = box[0] + ((box[2] - box[0]) - line_width) / 2
         draw.text((x, y), line, font=font, fill=fill)
         y += line_height + 8
 
 
-def draw_arrow(draw: ImageDraw.ImageDraw, start: tuple[int, int], end: tuple[int, int], fill: str = ARROW) -> None:
-    draw.line([start, end], fill=fill, width=4)
-    x, y = end
-    if end[0] >= start[0]:
-        points = [(x, y), (x - 16, y - 9), (x - 16, y + 9)]
+def draw_path_arrow(
+    draw: ImageDraw.ImageDraw,
+    points: list[tuple[int, int]],
+    fill: str = ARROW,
+) -> None:
+    """Draw a directed line whose final segment determines the arrow direction."""
+
+    draw.line(points, fill=fill, width=4, joint="curve")
+    previous_x, previous_y = points[-2]
+    x, y = points[-1]
+    delta_x = x - previous_x
+    delta_y = y - previous_y
+
+    if abs(delta_x) >= abs(delta_y) and delta_x >= 0:
+        arrow = [(x, y), (x - 16, y - 9), (x - 16, y + 9)]
+    elif abs(delta_x) >= abs(delta_y):
+        arrow = [(x, y), (x + 16, y - 9), (x + 16, y + 9)]
+    elif delta_y >= 0:
+        arrow = [(x, y), (x - 9, y - 16), (x + 9, y - 16)]
     else:
-        points = [(x, y), (x + 16, y - 9), (x + 16, y + 9)]
-    draw.polygon(points, fill=fill)
+        arrow = [(x, y), (x - 9, y + 16), (x + 9, y + 16)]
+    draw.polygon(arrow, fill=fill)
+
+
+def draw_arrow(
+    draw: ImageDraw.ImageDraw,
+    start: tuple[int, int],
+    end: tuple[int, int],
+    fill: str = ARROW,
+) -> None:
+    draw_path_arrow(draw, [start, end], fill=fill)
+
+
+def draw_branch_label(
+    draw: ImageDraw.ImageDraw,
+    position: tuple[int, int],
+    label: str,
+) -> None:
+    bbox = draw.textbbox(position, label, font=SMALL_FONT)
+    padded = (bbox[0] - 6, bbox[1] - 3, bbox[2] + 6, bbox[3] + 3)
+    draw.rectangle(padded, fill=BAND_FILL)
+    draw.text(position, label, font=SMALL_FONT, fill=MUTED)
 
 
 def draw_box(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], label: str) -> None:
@@ -92,15 +127,14 @@ def draw_band(
     y: int,
     title: str,
     labels: list[str],
-    loop: tuple[int, int] | None = None,
+    band_h: int = 220,
 ) -> None:
     x0, x1 = 70, WIDTH - 70
-    band_h = 245
     draw.rounded_rectangle((x0, y, x1, y + band_h), radius=10, fill=BAND_FILL, outline=BAND_OUTLINE, width=3)
     draw.text((x0 + 28, y + 24), title, font=BAND_FONT, fill=TEXT)
 
-    box_top = y + 84
-    box_h = 118
+    box_top = y + 78
+    box_h = 105
     gap = 22
     usable_w = x1 - x0 - 56
     box_w = int((usable_w - gap * (len(labels) - 1)) / len(labels))
@@ -112,29 +146,119 @@ def draw_band(
         boxes.append(box)
         draw_box(draw, box, label)
 
-    for left_box, right_box in zip(boxes, boxes[1:]):
+    for left_box, right_box in pairwise(boxes):
         draw_arrow(
             draw,
             (left_box[2] + 2, (left_box[1] + left_box[3]) // 2),
             (right_box[0] - 2, (right_box[1] + right_box[3]) // 2),
         )
 
-    if loop:
-        from_index, to_index = loop
-        source = boxes[from_index]
-        target = boxes[to_index]
-        top_y = box_top - 25
-        source_x = (source[0] + source[2]) // 2
-        target_x = (target[0] + target[2]) // 2
-        draw.line(
-            [(source_x, source[1]), (source_x, top_y), (target_x, top_y), (target_x, target[1] - 2)],
-            fill=LOOP,
-            width=4,
-        )
-        draw.polygon(
-            [(target_x, target[1] - 2), (target_x - 9, target[1] - 18), (target_x + 9, target[1] - 18)],
-            fill=LOOP,
-        )
+
+def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
+    """Draw the graph as conditional routes instead of a sequential pipeline."""
+
+    x0, x1 = 70, WIDTH - 70
+    band_h = 300
+    draw.rounded_rectangle(
+        (x0, y, x1, y + band_h),
+        radius=10,
+        fill=BAND_FILL,
+        outline=BAND_OUTLINE,
+        width=3,
+    )
+    draw.text((x0 + 28, y + 22), "LangGraph", font=BAND_FONT, fill=TEXT)
+
+    grade = (98, y + 76, 305, y + 166)
+    generate = (430, y + 76, 665, y + 166)
+    citation = (750, y + 76, 1005, y + 166)
+    verification = (1090, y + 76, 1335, y + 166)
+    grounded = (1480, y + 76, 1702, y + 166)
+    retry = (110, y + 215, 390, y + 282)
+    fallback = (1145, y + 215, 1450, y + 282)
+
+    for box, label in [
+        (grade, "Grade Chunks"),
+        (generate, "Generate Answer"),
+        (citation, "Citation Marker Check"),
+        (verification, "Claim Verification"),
+        (grounded, "Answer / END"),
+        (retry, "Retry Rewrite loop"),
+        (fallback, "Fallback / END"),
+    ]:
+        draw_box(draw, box, label)
+
+    center_y = (grade[1] + grade[3]) // 2
+    draw_arrow(draw, (grade[2] + 2, center_y), (generate[0] - 2, center_y))
+    draw_branch_label(draw, (325, center_y - 36), "relevant")
+    draw_arrow(
+        draw,
+        (generate[2] + 2, center_y),
+        (citation[0] - 2, center_y),
+    )
+    draw_arrow(
+        draw,
+        (citation[2] + 2, center_y),
+        (verification[0] - 2, center_y),
+    )
+    draw_arrow(
+        draw,
+        (verification[2] + 2, center_y),
+        (grounded[0] - 2, center_y),
+    )
+    draw_branch_label(draw, (1360, center_y - 36), "verified")
+
+    draw_path_arrow(
+        draw,
+        [
+            ((grade[0] + grade[2]) // 2, grade[3] + 2),
+            ((grade[0] + grade[2]) // 2, retry[1] - 2),
+        ],
+        fill=LOOP,
+    )
+    draw_branch_label(draw, (215, y + 175), "retry available")
+    draw_path_arrow(
+        draw,
+        [
+            (retry[0] - 2, (retry[1] + retry[3]) // 2),
+            (82, (retry[1] + retry[3]) // 2),
+            (82, center_y),
+            (grade[0] - 2, center_y),
+        ],
+        fill=LOOP,
+    )
+
+    draw_path_arrow(
+        draw,
+        [
+            (grade[2] - 10, grade[3] + 2),
+            (fallback[0] - 2, (fallback[1] + fallback[3]) // 2),
+        ],
+        fill=LOOP,
+    )
+    draw_branch_label(draw, (595, y + 175), "no retries")
+
+    draw_path_arrow(
+        draw,
+        [
+            ((citation[0] + citation[2]) // 2, citation[3] + 2),
+            ((citation[0] + citation[2]) // 2, y + 190),
+            (1200, y + 190),
+            (1200, fallback[1] - 2),
+        ],
+        fill=LOOP,
+    )
+    draw_branch_label(draw, (885, y + 158), "invalid citation")
+
+    draw_path_arrow(
+        draw,
+        [
+            ((verification[0] + verification[2]) // 2, verification[3] + 2),
+            ((verification[0] + verification[2]) // 2, fallback[1] - 2),
+        ],
+        fill=LOOP,
+    )
+    draw_branch_label(draw, (1220, y + 175), "unsupported")
+
 
 def main() -> None:
     image = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
@@ -150,7 +274,7 @@ def main() -> None:
 
     bands = [
         (
-            145,
+            135,
             "Ingestion",
             [
                 "Gradio Upload",
@@ -159,10 +283,9 @@ def main() -> None:
                 "Local Embeddings",
                 "Deterministic Chroma Index",
             ],
-            None,
         ),
         (
-            415,
+            375,
             "Retrieval",
             [
                 "Query Rewrite",
@@ -170,35 +293,23 @@ def main() -> None:
                 "Optional Cross-Encoder Reranker",
                 "Retriever Tool",
             ],
-            None,
         ),
         (
-            685,
-            "LangGraph",
-            [
-                "Grade Chunks",
-                "Retry Rewrite loop",
-                "Generate Answer",
-                "Citation Marker Check",
-                "Claim Verification",
-                "Fallback",
-            ],
-            (1, 0),
-        ),
-        (
-            955,
+            950,
             "Providers and evaluation",
             [
                 "DeepSeek / OpenAI-compatible",
                 "Local Ollama",
                 "Naive vs Agentic vs Agentic + Reranker",
             ],
-            None,
+            210,
         ),
     ]
 
-    for band in bands:
-        draw_band(draw, *band)
+    draw_band(draw, *bands[0])
+    draw_band(draw, *bands[1])
+    draw_langgraph_band(draw, 615)
+    draw_band(draw, *bands[2])
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     image.save(OUTPUT_PATH)
