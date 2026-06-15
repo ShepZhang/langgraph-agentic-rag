@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-from agent.state import ChatMessage
+from agent.state import ChatMessage, Citation, RetrievedDocument
 
 
 JudgeStatus = Literal["disabled", "completed", "failed"]
@@ -26,21 +27,27 @@ class EvaluationQuestion:
     requires_rewrite: bool
     extra_fields: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "expected_sources", deepcopy(self.expected_sources))
+        object.__setattr__(self, "expected_keywords", deepcopy(self.expected_keywords))
+        object.__setattr__(self, "chat_history", deepcopy(self.chat_history))
+        object.__setattr__(self, "extra_fields", deepcopy(self.extra_fields))
+
     def to_compat_dict(self) -> dict[str, Any]:
-        payload = dict(self.extra_fields)
+        payload = deepcopy(self.extra_fields)
         payload.update(
             {
                 "id": self.id,
                 "question": self.question,
                 "question_type": self.question_type,
                 "gold_answer": self.gold_answer,
-                "expected_sources": list(self.expected_sources),
-                "expected_keywords": list(self.expected_keywords),
+                "expected_sources": deepcopy(self.expected_sources),
+                "expected_keywords": deepcopy(self.expected_keywords),
                 "source_match_mode": self.source_match_mode,
                 "answerable": self.answerable,
                 "should_answer": self.answerable,
                 "expected_behavior": self.expected_behavior,
-                "chat_history": [dict(message) for message in self.chat_history],
+                "chat_history": deepcopy(self.chat_history),
                 "requires_rewrite": self.requires_rewrite,
             }
         )
@@ -79,12 +86,21 @@ class EvaluationResult:
     latency: float = 0
     error: str | None = None
     answer: str = ""
-    citations: list[Any] = field(default_factory=list)
+    citations: list[Citation] = field(default_factory=list)
     claims: list[Any] = field(default_factory=list)
     claim_verification_results: list[Any] = field(default_factory=list)
-    retrieved_documents: list[Any] = field(default_factory=list)
-    relevant_documents: list[Any] = field(default_factory=list)
-    failure_analysis: dict[str, Any] = field(default_factory=dict)
+    retrieved_documents: list[RetrievedDocument] = field(default_factory=list)
+    relevant_documents: list[RetrievedDocument] = field(default_factory=list)
+    failure_analysis: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.token_usage = deepcopy(self.token_usage)
+        self.citations = deepcopy(self.citations)
+        self.claims = deepcopy(self.claims)
+        self.claim_verification_results = deepcopy(self.claim_verification_results)
+        self.retrieved_documents = deepcopy(self.retrieved_documents)
+        self.relevant_documents = deepcopy(self.relevant_documents)
+        self.failure_analysis = deepcopy(self.failure_analysis)
 
     @classmethod
     def empty(
@@ -132,6 +148,9 @@ class EvaluationSummary:
     error_count: int = 0
     failure_type_counts: dict[str, int] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self.failure_type_counts = deepcopy(self.failure_type_counts)
+
     @classmethod
     def empty(cls) -> EvaluationSummary:
         return cls()
@@ -162,7 +181,10 @@ class ComparisonEvaluationSummary:
     naive: EvaluationSummary
     agentic: EvaluationSummary
     comparison: dict[str, Any]
-    mode: str = "comparison"
+    mode: Literal["comparison"] = "comparison"
+
+    def __post_init__(self) -> None:
+        self.comparison = deepcopy(self.comparison)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -170,7 +192,7 @@ class ComparisonEvaluationSummary:
             "total_questions": self.total_questions,
             "naive": self.naive.to_dict(),
             "agentic": self.agentic.to_dict(),
-            "comparison": dict(self.comparison),
+            "comparison": deepcopy(self.comparison),
         }
 
 
@@ -178,6 +200,22 @@ class ComparisonEvaluationSummary:
 class EvaluationReport:
     summary: EvaluationSummary | ComparisonEvaluationSummary
     results: list[EvaluationResult] | list[PairedEvaluationResult]
+
+    def __post_init__(self) -> None:
+        self.results = deepcopy(self.results)
+        if isinstance(self.summary, ComparisonEvaluationSummary):
+            if not all(
+                isinstance(result, PairedEvaluationResult) for result in self.results
+            ):
+                raise ValueError(
+                    "comparison summary requires paired evaluation results"
+                )
+            return
+
+        if not all(isinstance(result, EvaluationResult) for result in self.results):
+            raise ValueError(
+                "single-system summary requires single-system evaluation results"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -192,11 +230,17 @@ class RuntimeMetadata:
     evaluator_version: str
     config: dict[str, Any]
 
+    def __post_init__(self) -> None:
+        config = deepcopy(self.config)
+        config.pop("schema_version", None)
+        config.pop("evaluator_version", None)
+        object.__setattr__(self, "config", config)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": self.schema_version,
             "evaluator_version": self.evaluator_version,
-            **self.config,
+            **deepcopy(self.config),
         }
 
 
@@ -206,6 +250,9 @@ class JudgeResult:
     scores: dict[str, float] = field(default_factory=dict)
     reason: str = ""
     error: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "scores", deepcopy(self.scores))
 
     @classmethod
     def disabled(cls) -> JudgeResult:
