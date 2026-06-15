@@ -179,6 +179,7 @@ def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
     verification = (1075, y + 100, 1348, y + 172)
     grounded = (1480, y + 86, 1702, y + 166)
     retry = (110, y + 215, 390, y + 282)
+    retry_retrieve = (475, y + 215, 755, y + 282)
     fallback = (1145, y + 215, 1450, y + 282)
 
     draw.rounded_rectangle(
@@ -202,6 +203,7 @@ def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
         (verification, "Claim Verification"),
         (grounded, "Answer / END"),
         (retry, "Retry Rewrite loop"),
+        (retry_retrieve, "Retriever Tool"),
         (fallback, "Fallback / END"),
     ]:
         draw_box(draw, box, label)
@@ -235,10 +237,17 @@ def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
         fill=LOOP,
     )
     draw_branch_label(draw, (215, y + 175), "retry available")
+    draw_arrow(
+        draw,
+        (retry[2] + 2, (retry[1] + retry[3]) // 2),
+        (retry_retrieve[0] - 2, (retry_retrieve[1] + retry_retrieve[3]) // 2),
+        fill=LOOP,
+    )
     draw_path_arrow(
         draw,
         [
-            (retry[0] - 2, (retry[1] + retry[3]) // 2),
+            (retry_retrieve[0] - 2, retry_retrieve[3] + 2),
+            (82, retry_retrieve[3] + 2),
             (82, (retry[1] + retry[3]) // 2),
             (82, center_y),
             (grade[0] - 2, center_y),
@@ -281,6 +290,60 @@ def draw_langgraph_band(draw: ImageDraw.ImageDraw, y: int) -> None:
     draw_branch_label(draw, (1285, y + 174), "unsupported")
 
 
+def draw_provider_band(draw: ImageDraw.ImageDraw, y: int) -> None:
+    """Draw alternative LLM providers and the shared evaluation interface."""
+
+    x0, x1 = 70, WIDTH - 70
+    band_h = 210
+    draw.rounded_rectangle(
+        (x0, y, x1, y + band_h),
+        radius=10,
+        fill=BAND_FILL,
+        outline=BAND_OUTLINE,
+        width=3,
+    )
+    draw.text(
+        (x0 + 28, y + 24),
+        "Providers and evaluation",
+        font=BAND_FONT,
+        fill=TEXT,
+    )
+
+    remote = (98, y + 78, 450, y + 183)
+    local = (500, y + 78, 852, y + 183)
+    interface = (955, y + 78, 1307, y + 183)
+    evaluation = (1370, y + 78, 1702, y + 183)
+
+    for box, label in [
+        (remote, "DeepSeek / OpenAI-compatible"),
+        (local, "Local Ollama"),
+        (interface, "Shared Chat Model Interface"),
+        (evaluation, "Naive vs Agentic vs Agentic + Reranker"),
+    ]:
+        draw_box(draw, box, label)
+
+    draw_branch_label(draw, (290, y + 48), "alternative providers")
+    draw_path_arrow(
+        draw,
+        [
+            (remote[2] + 2, (remote[1] + remote[3]) // 2),
+            (remote[2] + 2, y + 68),
+            ((interface[0] + interface[2]) // 2, y + 68),
+            ((interface[0] + interface[2]) // 2, interface[1] - 2),
+        ],
+    )
+    draw_arrow(
+        draw,
+        (local[2] + 2, (local[1] + local[3]) // 2),
+        (interface[0] - 2, (interface[1] + interface[3]) // 2),
+    )
+    draw_arrow(
+        draw,
+        (interface[2] + 2, (interface[1] + interface[3]) // 2),
+        (evaluation[0] - 2, (evaluation[1] + evaluation[3]) // 2),
+    )
+
+
 def main() -> None:
     image = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
     draw = ImageDraw.Draw(image)
@@ -315,22 +378,12 @@ def main() -> None:
                 "Optional Cross-Encoder Reranker",
             ],
         ),
-        (
-            950,
-            "Providers and evaluation",
-            [
-                "DeepSeek / OpenAI-compatible",
-                "Local Ollama",
-                "Naive vs Agentic vs Agentic + Reranker",
-            ],
-            210,
-        ),
     ]
 
     draw_band(draw, *bands[0])
     draw_band(draw, *bands[1])
     draw_langgraph_band(draw, 615)
-    draw_band(draw, *bands[2])
+    draw_provider_band(draw, 950)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     image.save(OUTPUT_PATH)

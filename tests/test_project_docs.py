@@ -182,6 +182,19 @@ def test_readme_links_portfolio_materials_and_interview_topics():
         or "Agentic + Reranker" in readme
     )
     assert readme.count("```") % 2 == 0
+    assert (
+        "If the LLM config or vector index is missing, evaluation records errors "
+        "per question and still prints a report."
+    ) not in readme
+
+
+def test_evaluation_docs_describe_retry_trigger_count_accurately():
+    evaluation_text = (PROJECT_ROOT / "docs/evaluation.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "triggered seven rewrites" not in evaluation_text
+    assert "seven questions triggered at least one retry rewrite" in evaluation_text
 
 
 def test_readme_deepseek_summary_matches_saved_result_artifact():

@@ -238,7 +238,7 @@ Current DeepSeek summary from that fixed run:
 | Fallback Correctness | 0.9706 | 0.9412 | 0.9706 |
 | Average Latency | 2.3173 | 13.1514 | 12.3881 |
 
-If the LLM config or vector index is missing, evaluation records errors per question and still prints a report.
+The matrix validates LLM and reranker configuration before evaluation and exits with a concise configuration error if runner construction fails. After runners are created, per-question retrieval or generation failures are recorded in the report instead of aborting the remaining questions.
 The current evaluation set is a lightweight local QA set for demonstration. It is useful for comparing behavior, but it is not a rigorous benchmark.
 
 ## Example Output

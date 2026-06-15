@@ -49,7 +49,7 @@ Adding the reranker to Agentic RAG improved keyword hit rate from `0.7143` to `0
 
 The agentic control flow had a substantial latency cost. Average latency increased from `2.3173` seconds for Naive RAG to `13.1514` seconds for Agentic RAG. Agentic + Reranker averaged `12.3881` seconds, which was `0.7633` seconds lower than Agentic RAG in this run but still `10.0708` seconds higher than Naive RAG. This single matrix cannot isolate cross-encoder cost from different retry, grading, generation, and verification paths, so the lower reranked average should not be interpreted as evidence that reranking itself is free or faster.
 
-Fallback and verification behavior was mixed rather than uniformly better. Both agentic variants triggered seven rewrites. Agentic + Reranker recovered Naive RAG's `0.9706` fallback correctness and raised verification to `0.7941`, but individual answerable questions still produced incorrect fallbacks or partial answers.
+Fallback and verification behavior was mixed rather than uniformly better. In both agentic variants, seven questions triggered at least one retry rewrite. The total retry counts were 14 for Agentic RAG and 13 for Agentic + Reranker; initial query normalization is not counted as a retry. Agentic + Reranker recovered Naive RAG's `0.9706` fallback correctness and raised verification to `0.7941`, but individual answerable questions still produced incorrect fallbacks or partial answers.
 
 ## Case Studies
 
