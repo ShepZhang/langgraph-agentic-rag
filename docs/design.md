@@ -10,10 +10,17 @@ Plain RAG usually follows one fixed path:
 question -> retrieve -> generate
 ```
 
-This project keeps retrieval under a LangGraph workflow:
+This project keeps retrieval and evidence validation under a LangGraph workflow:
 
 ```text
-question -> rewrite -> retrieve -> grade -> answer | retry | fallback
+question
+-> query transformation
+-> retrieve
+-> grade
+-> generate draft
+-> extract claims
+-> verify citations
+-> finalize | revise once | fallback
 ```
 
 The workflow can inspect retrieved chunks before answer generation. If the evidence is weak, it rewrites the retrieval query and tries again. If evidence remains insufficient, it returns an unable-to-answer fallback.
@@ -44,17 +51,32 @@ The most important semantic boundary is that `current_query` does not replace `q
 
 `rewrite_query_node` performs initial query normalization on the first pass. On retry, it receives failure context: previous query, previous queries, grading reason, and retrieved snippets. This makes retry rewrite more agentic than simply rephrasing the same question.
 
-`retrieve_node` calls the `retrieve_context` tool using `current_query`. When reranking is disabled, the retriever returns the top vector-search chunks directly. When reranking is enabled, it retrieves `RERANKER_CANDIDATE_TOP_K` vector candidates, reranks them with a local cross-encoder, and keeps the final `TOP_K` chunks.
+`retrieve_node` calls the typed `retrieve_context` tool using one or more
+retrieval queries. Depending on feature flags, retrieval can use dense search
+alone or combine dense and BM25 results with Reciprocal Rank Fusion. When
+reranking is enabled, it reranks the candidate pool with a local cross-encoder
+and keeps the final top chunks.
 
 `grade_documents_node` receives the original user question, the current retrieval query, and raw retrieved chunks. It asks whether the chunks can answer the original question, then returns `relevant_indices`.
 
-`generate_answer_node` receives the original user question, the current retrieval query, and `relevant_documents`. It answers the original question only.
+`generate_answer_node` receives the original user question, the current
+retrieval query, and `relevant_documents`. It produces a draft answer for the
+original question and validates citation markers against selected citation
+indices.
 
-The conditional edge routes based on evidence:
+`extract_claims_node`, `verify_citations_node`, `revise_answer_node`, and
+`finalize_answer_node` are separate LangGraph nodes. The verifier can request
+one evidence-bounded revision before the graph either finalizes or falls back.
+
+The conditional edges route based on evidence and verification state:
 
 - `relevant_documents` non-empty -> `generate_answer`
 - no relevant documents and `retry_count < max_retry_count` -> `rewrite_query`
 - no relevant documents and retry budget exhausted -> `fallback`
+- valid draft -> `extract_claims` -> `verify_citations`
+- supported claims -> `finalize_answer`
+- unsupported claims and revision budget remains -> `revise_answer`
+- unsupported claims after the revision budget -> `fallback`
 
 ## Citation Safety And Claim Verification
 
@@ -73,16 +95,22 @@ This reduces unsupported answers, but the verification is still LLM-based. It is
 
 ## Evaluation
 
-Evaluation compares two flows:
+The current evaluation layer supports two complementary views:
 
-- Naive RAG: `question -> retrieve -> generate`
-- Agentic RAG: `question -> rewrite -> retrieve -> grade -> retry or answer`
+- A 36-question cumulative V0-V6 ablation from naive dense RAG through query
+  transformation, grading, retry, hybrid retrieval, reranking, and citation
+  verification.
+- A historical 34-question portfolio matrix comparing Naive RAG, Agentic RAG,
+  and Agentic + Reranker on four fictional documents.
 
-The evaluation set includes direct questions, questions that benefit from rewrite, and questions that should not be answerable from the sample documents.
+Both sets include direct questions, questions that benefit from rewrite, and
+questions that should not be answerable from the sample documents.
 
 Metrics include source hit rate, keyword hit rate, citation rate, claim verification rate, fallback correctness, latency, retry count, retrieved document count, relevant document count, and relevant filtering rate.
 
-The evaluation is intentionally lightweight. It supports project explanation and regression checks, but it is not a rigorous benchmark.
+The evaluation is intentionally lightweight. It supports project explanation,
+regression checks, and module trade-off analysis, but it is not a rigorous
+public benchmark or an isolated causal study of every module interaction.
 
 ## LLM Provider Boundary
 

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Protocol
+from typing import Protocol
 
 from langchain_core.documents import Document
-
 
 SUPPORTED_EXTENSIONS = {".pdf", ".md", ".markdown", ".txt"}
 logger = logging.getLogger(__name__)

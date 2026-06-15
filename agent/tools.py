@@ -11,7 +11,6 @@ from tools import ToolContext, ToolRegistry
 from tools.retriever_tool import RetrieverArgs, RetrieverTool
 from rag.retriever import retrieve
 
-
 RetrieverFn = Callable[[str], list[dict[str, Any]]]
 
 

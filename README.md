@@ -33,6 +33,13 @@ The system keeps a strict distinction between the original user question and the
 
 ![Architecture](assets/architecture.png)
 
+### Portfolio Materials
+
+- [Reproducible demo guide](docs/demo.md)
+- [Historical DeepSeek three-variant benchmark](docs/evaluation.md)
+- [Design notes](docs/design.md)
+- [Generated architecture diagram](assets/architecture.png)
+
 ```text
 UI Layer
   Gradio Document QA and Evaluation tabs with QA, comparison, and diagnostics
@@ -178,16 +185,22 @@ Key state fields:
 - Gradio
 - FastAPI
 - Uvicorn
+- Pillow
 - python-dotenv
 - pytest
+- Ruff
 
 ## Quick Start
 
 Create a virtual environment:
 
 ```bash
-python3 -m venv .venv
+python3.11 --version
+python3.11 -m venv .venv
 ```
+
+Use any Python 3.11+ executable available on your machine. If `python3`
+points to an older interpreter, call the 3.11+ binary explicitly.
 
 Install dependencies:
 
@@ -506,6 +519,42 @@ Latest P0b single-run snapshot using `deepseek-v4-flash`:
 
 These numbers do not support a blanket claim that the complete Agentic workflow always outperforms naive RAG. They show module-specific trade-offs: reranking helped heuristic correctness in this run, while strict citation verification improved claim support diagnostics at the cost of answer acceptance and latency. See `experiments/report.md` and the generated JSON artifacts for the complete table and limitations.
 
+### Historical Portfolio Matrix
+
+Before the later P0b V0-V6 evaluation upgrades, a fixed 34-question fictional
+document corpus was evaluated with DeepSeek across three variants:
+
+- `Naive RAG`
+- `Agentic RAG`
+- `Agentic + Reranker`
+
+The saved artifact remains useful as a portfolio snapshot, but it should not be
+treated as a current benchmark of the newer hybrid retrieval, revision, tool
+registry, or dashboard workflow.
+
+```bash
+.venv/bin/python -m evaluation.matrix \
+  --questions evaluation/portfolio_questions.json \
+  --json-output evaluation/results/deepseek_matrix_YYYY-MM-DD.json
+```
+
+The committed June 7, 2026 snapshot is documented in
+[DeepSeek Evaluation Benchmark](docs/evaluation.md), with raw results in
+`evaluation/results/deepseek_matrix_2026-06-07.json`.
+
+| Metric | Naive RAG | Agentic RAG | Agentic + Reranker |
+|---|---:|---:|---:|
+| Retrieval Source Hit Rate | 1.0 | 1.0 | 1.0 |
+| Keyword Hit Rate | 0.7143 | 0.7143 | 0.75 |
+| Citation Rate | 0.8235 | 0.7647 | 0.7941 |
+| Claim Verification Rate | 0.0 | 0.7647 | 0.7941 |
+| Fallback Correctness | 0.9706 | 0.9412 | 0.9706 |
+| Average Latency | 2.3173 | 13.1514 | 12.3881 |
+
+Runner construction validates LLM and reranker configuration before evaluation.
+After runners are created, per-question retrieval or generation failures are
+recorded without aborting the remaining questions.
+
 ## Example Output
 
 Example answer payload:
@@ -529,22 +578,6 @@ Example answer payload:
   "trace_id": "trace_...",
   "latency_ms": 2812.4
 }
-```
-
-Example evaluation summary:
-
-```text
-Evaluation Report
-
-Comparison Summary
-
-| Metric | Naive RAG | Agentic RAG |
-|---|---:|---:|
-| Source Hit Rate | 0.6 | 0.8 |
-| Keyword Hit Rate | 0.5 | 0.7 |
-| Citation Rate | 0.55 | 0.75 |
-| Fallback Correctness | 0.7 | 0.85 |
-| Avg Latency | 2.1 | 4.8 |
 ```
 
 ## Environment Variables
@@ -632,7 +665,10 @@ agentic-rag-document-qa/
 │   ├── dashboard_formatters.py
 │   ├── dashboard_service.py
 │   ├── eval_questions.json
+│   ├── portfolio_questions.json
 │   ├── evaluate.py
+│   ├── matrix.py
+│   ├── results/
 │   ├── failure_analyzer.py
 │   └── runtime_config.py
 ├── experiments/
@@ -644,7 +680,9 @@ agentic-rag-document-qa/
 │   ├── storage.py
 │   └── logger.py
 ├── docs/
+│   ├── demo.md
 │   ├── design.md
+│   ├── evaluation.md
 │   └── resume_bullets.md
 ├── ui/
 │   └── gradio_app.py
@@ -655,7 +693,12 @@ agentic-rag-document-qa/
 │   ├── retrieval_pipeline_notes.md
 │   ├── citation_verification_notes.md
 │   ├── evaluation_notes.md
-│   └── distractor_company_policy.md
+│   ├── distractor_company_policy.md
+│   ├── employee_handbook.md
+│   ├── product_specs.md
+│   └── security_policy.md
+├── scripts/
+│   └── generate_architecture.py
 └── tests/
 ```
 
@@ -675,6 +718,16 @@ agentic-rag-document-qa/
 - Added deterministic failed-case analysis with rule-based failure attribution, per-question reasons and suggestions, summary counts, and representative ablation cases.
 - Added a Gradio Evaluation Dashboard for synchronous selected-record comparison, filterable failure diagnostics, and read-only inspection of saved V0-V6 artifacts and runtime configuration.
 - Preserved a modular roadmap toward background execution, shared run IDs, trace drill-down, prompt regression tracking, and historical evaluation trends.
+
+## Interview Talking Points
+
+- **Why this is not naive RAG**: The graph can transform queries, run multi-query or hybrid retrieval, grade evidence, retry, revise unsupported answers, or fall back.
+- **Original question vs retrieval query**: `current_query` is optimized for retrieval while `question` remains the target for grading and answer generation.
+- **Retriever vs reranker**: Retrieval gathers candidates; the cross-encoder reranker reorders and narrows those candidates before grading.
+- **Reranker vs retrieval grading**: Reranking estimates query-chunk fit, while grading decides whether evidence is sufficient for the original question.
+- **Citation-aware generation vs claim verification**: Generation selects evidence indices and citation markers; verification evaluates extracted claims against cited chunks.
+- **Reliability tradeoff**: More grading, retry, verification, and revision can reduce unsupported claims while increasing latency and conservative fallbacks.
+- **Evaluation limitation**: Both the 36-question P0b run and the historical 34-question portfolio matrix are local, single-run evaluations rather than broad public benchmarks.
 
 ## Current Limitations
 

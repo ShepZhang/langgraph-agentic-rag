@@ -8,7 +8,6 @@ from langchain_core.documents import Document
 
 from config import Settings, get_settings
 
-
 ScoredDocument = tuple[Document, float | None]
 RerankedDocument = tuple[Document, float | None, float]
 

@@ -8,8 +8,9 @@ import json
 import math
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from agent.graph import run_agent
 from agent.state import ChatMessage
@@ -63,6 +64,30 @@ def evaluate_questions(
         results.append(_evaluate_single_system(item, run_agent_fn, timer))
 
     return {"summary": _summarize(results, normalized_questions), "results": results}
+
+
+def evaluate_single_system(
+    item: dict[str, Any],
+    runner: Callable[[str], dict[str, Any]],
+    timer: Callable[[], float] = time.perf_counter,
+) -> dict[str, Any]:
+    """Evaluate one raw question record with one system."""
+
+    normalized_item = _normalize_eval_question(item, 0)
+    return _evaluate_single_system(normalized_item, runner, timer)
+
+
+def summarize_results(
+    results: list[dict[str, Any]],
+    questions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Summarize results after normalizing raw question records."""
+
+    normalized_questions = [
+        _normalize_eval_question(item, index)
+        for index, item in enumerate(questions)
+    ]
+    return _summarize(results, normalized_questions)
 
 
 def format_report(report: dict[str, Any]) -> str:
@@ -328,6 +353,7 @@ def _build_success_result(
     answer_returned = bool(answer.strip()) and not fallback_triggered
     expected_keywords = item.get("expected_keywords", [])
     expected_sources = item.get("expected_sources", [])
+    source_match_mode = item.get("source_match_mode", "any")
     citation_verification_applicable = bool(
         agent_result.get("citation_verification_enabled", True)
     )
@@ -374,8 +400,14 @@ def _build_success_result(
             expected_sources,
             relevant_documents,
             retrieved_documents,
+            source_match_mode,
         ),
-        "citation_hit": _has_expected_source(expected_sources, citations, []),
+        "citation_hit": _has_expected_source(
+            expected_sources,
+            citations,
+            [],
+            source_match_mode,
+        ),
         "citation_returned": bool(citations),
         "is_verified": bool(agent_result.get("is_verified", False)),
         "citation_verification_applicable": citation_verification_applicable,
@@ -383,8 +415,18 @@ def _build_success_result(
         "unsupported_claim_count": unsupported_claim_count,
         "supported_claim_count": supported_claim_count,
         "total_claim_count": total_claim_count,
-        "source_hit": _has_expected_source(expected_sources, citations, [])
-        or _has_expected_source(expected_sources, retrieved_documents, []),
+        "source_hit": _has_expected_source(
+            expected_sources,
+            citations,
+            [],
+            source_match_mode,
+        )
+        or _has_expected_source(
+            expected_sources,
+            retrieved_documents,
+            [],
+            source_match_mode,
+        ),
         "keyword_hit": (
             answer_returned and _has_expected_keywords(answer, expected_keywords)
         ),
@@ -654,6 +696,14 @@ def _normalize_eval_question(record: dict[str, Any], index: int) -> dict[str, An
         field_name="expected_keywords",
     )
     normalized["expected_sources"] = _normalize_expected_sources(record)
+    source_match_mode = record.get("source_match_mode", "any")
+    if source_match_mode not in {"any", "all"}:
+        raise ValueError("source_match_mode must be 'any' or 'all'")
+    if source_match_mode == "all" and len(normalized["expected_sources"]) < 2:
+        raise ValueError(
+            "source_match_mode 'all' requires at least two expected_sources"
+        )
+    normalized["source_match_mode"] = source_match_mode
 
     answerable = _get_answerable(record)
     normalized["answerable"] = answerable
@@ -837,17 +887,22 @@ def _has_expected_source(
     expected_sources: Any,
     citations: list[Any],
     retrieved_documents: list[Any],
+    source_match_mode: str = "any",
 ) -> bool:
     if not expected_sources:
         return False
 
     evidence = citations if citations else retrieved_documents
-    return any(
-        isinstance(document, dict)
-        and isinstance(document.get("source"), str)
-        and document["source"] in expected_sources
+    observed_sources = {
+        document["source"]
         for document in evidence
-    )
+        if isinstance(document, dict)
+        and isinstance(document.get("source"), str)
+    }
+    expected_source_set = set(expected_sources)
+    if source_match_mode == "all":
+        return expected_source_set.issubset(observed_sources)
+    return bool(expected_source_set.intersection(observed_sources))
 
 
 def _has_expected_keywords(answer: Any, expected_keywords: list[Any]) -> bool:

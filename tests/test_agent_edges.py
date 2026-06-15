@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from config import get_settings
 from agent.edges import route_after_grading
 from agent.features import AgentFeatureFlags
 from agent.state import create_initial_state
+from config import get_settings
 
 
 def test_agent_feature_flags_default_to_complete_workflow():
