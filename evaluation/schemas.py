@@ -87,8 +87,8 @@ class EvaluationResult:
     error: str | None = None
     answer: str = ""
     citations: list[Citation] = field(default_factory=list)
-    claims: list[Any] = field(default_factory=list)
-    claim_verification_results: list[Any] = field(default_factory=list)
+    claims: list[dict[str, object]] = field(default_factory=list)
+    claim_verification_results: list[dict[str, object]] = field(default_factory=list)
     retrieved_documents: list[RetrievedDocument] = field(default_factory=list)
     relevant_documents: list[RetrievedDocument] = field(default_factory=list)
     failure_analysis: dict[str, str] = field(default_factory=dict)
@@ -184,6 +184,8 @@ class ComparisonEvaluationSummary:
     mode: Literal["comparison"] = "comparison"
 
     def __post_init__(self) -> None:
+        self.naive = deepcopy(self.naive)
+        self.agentic = deepcopy(self.agentic)
         self.comparison = deepcopy(self.comparison)
 
     def to_dict(self) -> dict[str, Any]:
@@ -202,6 +204,7 @@ class EvaluationReport:
     results: list[EvaluationResult] | list[PairedEvaluationResult]
 
     def __post_init__(self) -> None:
+        self.summary = deepcopy(self.summary)
         self.results = deepcopy(self.results)
         if isinstance(self.summary, ComparisonEvaluationSummary):
             if not all(

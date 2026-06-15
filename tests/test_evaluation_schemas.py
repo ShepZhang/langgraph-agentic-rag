@@ -236,6 +236,24 @@ def test_comparison_summary_copies_nested_comparison_data():
     }
 
 
+def test_comparison_summary_copies_nested_system_summaries():
+    naive = EvaluationSummary(total_questions=1, answer_rate=0.5)
+    agentic = EvaluationSummary(total_questions=1, answer_rate=1.0)
+    comparison = ComparisonEvaluationSummary(
+        total_questions=1,
+        naive=naive,
+        agentic=agentic,
+        comparison={},
+    )
+
+    naive.answer_rate = 0.0
+    agentic.answer_rate = 0.0
+
+    payload = comparison.to_dict()
+    assert payload["naive"]["answer_rate"] == 0.5
+    assert payload["agentic"]["answer_rate"] == 1.0
+
+
 def test_report_rejects_single_summary_with_paired_results():
     result = EvaluationResult.empty("q001", "single_doc", "What is RAG?")
     paired = PairedEvaluationResult(
@@ -275,6 +293,23 @@ def test_report_copies_results_input_list():
 
     assert len(report.to_dict()["results"]) == 1
     assert report.to_dict()["results"][0]["answer"] == ""
+
+
+def test_single_report_copies_summary_snapshot():
+    summary = EvaluationSummary(
+        total_questions=1,
+        answer_rate=1.0,
+        failure_type_counts={"no_failure": 1},
+    )
+    report = EvaluationReport(summary=summary, results=[])
+
+    summary.answer_rate = 0.0
+    summary.failure_type_counts["no_failure"] = 2
+
+    assert report.to_dict()["summary"]["answer_rate"] == 1.0
+    assert report.to_dict()["summary"]["failure_type_counts"] == {
+        "no_failure": 1,
+    }
 
 
 def test_runtime_metadata_puts_versions_first_and_expands_config():
@@ -348,6 +383,8 @@ def test_result_uses_existing_document_contract_types():
     hints = get_type_hints(EvaluationResult)
 
     assert hints["citations"] == list[Citation]
+    assert hints["claims"] == list[dict[str, object]]
+    assert hints["claim_verification_results"] == list[dict[str, object]]
     assert hints["retrieved_documents"] == list[RetrievedDocument]
     assert hints["relevant_documents"] == list[RetrievedDocument]
     assert hints["failure_analysis"] == dict[str, str]
