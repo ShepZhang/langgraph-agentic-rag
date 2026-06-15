@@ -43,16 +43,18 @@
 
 - `api/services/evaluation.py`
 - `evaluation/dashboard_service.py`
+- `evaluation/matrix.py`
 - `experiments/run_ablation.py`
 
-These files continue importing `evaluate_questions` and `load_eval_questions`
-from `evaluation.evaluate`. Their existing tests prove facade compatibility.
+These files continue using the public compatibility facade. The matrix also
+imports `DEFAULT_EVAL_PATH`, `evaluate_single_system`, and `summarize_results`;
+its existing tests prove those additional contracts.
 
 ## Execution Prerequisite
 
 Before Task 1, use `superpowers:using-git-worktrees` to create an isolated
-`codex/p4c-modular-evaluation` worktree from commit `5fa6d99`. Do not copy or
-delete the untracked root `.superpowers/` directory.
+`codex/p4c-modular-evaluation` worktree and synchronize it with `main` commit
+`e59e8cd`. Do not copy or delete the untracked root `.superpowers/` directory.
 
 Run the baseline suite in the worktree:
 
@@ -60,7 +62,8 @@ Run the baseline suite in the worktree:
 .venv/bin/python -m pytest -q
 ```
 
-Expected: all existing tests pass before P4c changes.
+Expected: all existing tests pass before P4c changes. After synchronizing with
+the June 15 `main` baseline, the expected count is `408 passed`.
 
 ---
 
@@ -94,6 +97,7 @@ def test_question_preserves_legacy_and_unknown_fields_in_compatibility_dict():
         gold_answer="Retrieval augmented generation.",
         expected_sources=["notes.md"],
         expected_keywords=["retrieval"],
+        source_match_mode="any",
         answerable=True,
         expected_behavior="answer_with_citation",
         chat_history=[],
@@ -108,6 +112,7 @@ def test_question_preserves_legacy_and_unknown_fields_in_compatibility_dict():
     assert payload["answerable"] is True
     assert payload["should_answer"] is True
     assert payload["expected_sources"] == ["notes.md"]
+    assert payload["source_match_mode"] == "any"
 
 
 def test_unavailable_metrics_serialize_as_none():
@@ -193,6 +198,7 @@ class EvaluationQuestion:
     gold_answer: str
     expected_sources: list[str]
     expected_keywords: list[str]
+    source_match_mode: Literal["any", "all"]
     answerable: bool
     expected_behavior: str
     chat_history: list[ChatMessage]
@@ -209,6 +215,7 @@ class EvaluationQuestion:
                 "gold_answer": self.gold_answer,
                 "expected_sources": list(self.expected_sources),
                 "expected_keywords": list(self.expected_keywords),
+                "source_match_mode": self.source_match_mode,
                 "answerable": self.answerable,
                 "should_answer": self.answerable,
                 "expected_behavior": self.expected_behavior,
@@ -469,6 +476,27 @@ def test_normalize_question_rejects_conflicting_answerability():
         )
 
 
+def test_normalize_question_preserves_all_source_match_mode():
+    question = normalize_question(
+        {
+            "question": "Compare both documents.",
+            "expected_sources": ["product.md", "security.md"],
+            "source_match_mode": "all",
+        },
+        index=0,
+    )
+
+    assert question.source_match_mode == "all"
+
+
+def test_normalize_question_rejects_invalid_source_match_mode():
+    with pytest.raises(ValueError, match="source_match_mode"):
+        normalize_question(
+            {"question": "Invalid?", "source_match_mode": "some"},
+            index=0,
+        )
+
+
 @pytest.mark.parametrize(
     "chat_history",
     [["bad"], [{"role": "user"}], [{"role": "user", "content": 3}]],
@@ -561,6 +589,7 @@ def normalize_question(record: Any, index: int) -> EvaluationQuestion:
         "gold_answer",
         "expected_sources",
         "expected_keywords",
+        "source_match_mode",
         "answerable",
         "should_answer",
         "expected_behavior",
@@ -576,6 +605,9 @@ def normalize_question(record: Any, index: int) -> EvaluationQuestion:
         expected_keywords=_normalize_string_list(
             record.get("expected_keywords"),
             "expected_keywords",
+        ),
+        source_match_mode=_normalize_source_match_mode(
+            record.get("source_match_mode", "any")
         ),
         answerable=answerable,
         expected_behavior=expected_behavior,
@@ -594,6 +626,12 @@ def _normalize_expected_sources(record: dict[str, Any]) -> list[str]:
             "expected_sources",
         )
     return _normalize_string_list(record.get("expected_source"), "expected_source")
+
+
+def _normalize_source_match_mode(value: Any) -> str:
+    if value not in {"any", "all"}:
+        raise ValueError("source_match_mode must be 'any' or 'all'")
+    return value
 
 
 def _get_answerable(record: dict[str, Any]) -> bool:
@@ -786,6 +824,32 @@ def test_score_system_output_ignores_invalid_optional_cost():
     assert result.estimated_cost is None
 
 
+def test_score_system_output_honors_all_source_match_mode():
+    question = normalize_question(
+        {
+            "question": "Compare both documents.",
+            "expected_sources": ["product.md", "security.md"],
+            "source_match_mode": "all",
+        },
+        index=0,
+    )
+
+    result = score_system_output(
+        question,
+        {
+            "answer": "Combined answer.",
+            "citations": [{"source": "product.md"}],
+            "retrieved_documents": [
+                {"source": "product.md"},
+                {"source": "security.md"},
+            ],
+        },
+    )
+
+    assert result.source_hit is True
+    assert result.citation_hit is False
+
+
 def test_build_error_result_uses_question_identity_and_no_false_metrics():
     question = normalize_question(
         {"id": "q009", "question": "Broken?", "question_type": "unanswerable"},
@@ -899,11 +963,13 @@ def score_system_output(
             question.expected_sources,
             relevant,
             retrieved,
+            question.source_match_mode,
         ),
         citation_hit=_has_expected_source(
             question.expected_sources,
             citations,
             [],
+            question.source_match_mode,
         ),
         citation_returned=bool(citations),
         is_verified=bool(system_result.get("is_verified", False)),
@@ -913,8 +979,18 @@ def score_system_output(
         supported_claim_count=supported,
         total_claim_count=total,
         source_hit=(
-            _has_expected_source(question.expected_sources, citations, [])
-            or _has_expected_source(question.expected_sources, retrieved, [])
+            _has_expected_source(
+                question.expected_sources,
+                citations,
+                [],
+                question.source_match_mode,
+            )
+            or _has_expected_source(
+                question.expected_sources,
+                retrieved,
+                [],
+                question.source_match_mode,
+            )
         ),
         keyword_hit=(
             answer_returned
@@ -2238,6 +2314,8 @@ def test_evaluate_module_remains_public_compatibility_facade():
 
     assert callable(evaluate.load_eval_questions)
     assert callable(evaluate.evaluate_questions)
+    assert callable(evaluate.evaluate_single_system)
+    assert callable(evaluate.summarize_results)
     assert callable(evaluate.format_report)
     assert callable(evaluate.write_evaluation_artifacts)
     assert callable(evaluate.main)
@@ -2272,11 +2350,16 @@ from typing import Any
 
 from agent.graph import run_agent
 from evaluation.baselines import run_naive_rag
-from evaluation.comparison import evaluate_comparison, evaluate_single_system
+from evaluation.comparison import (
+    evaluate_comparison,
+    evaluate_single_system as evaluate_typed_system,
+)
 from evaluation.dataset import DEFAULT_EVAL_PATH, load_questions, normalize_questions
+from evaluation.metrics import summarize_results as summarize_typed_results
 from evaluation.reporting import format_evaluation_report
-from evaluation.runners import CallableRunnerAdapter
+from evaluation.runners import CallableRunnerAdapter, evaluate_question
 from evaluation.runtime_config import build_runtime_config_snapshot
+from evaluation.schemas import EvaluationResult
 from evaluation.storage import write_compatibility_artifacts
 
 
@@ -2301,11 +2384,33 @@ def evaluate_questions(
             naive_runner=CallableRunnerAdapter(run_naive_fn),
             timer=timer,
         ).to_dict()
-    return evaluate_single_system(
+    return evaluate_typed_system(
         typed_questions,
         runner=agentic,
         timer=timer,
     ).to_dict()
+
+
+def evaluate_single_system(
+    item: dict[str, Any],
+    runner: Callable[[str], dict[str, Any]],
+    timer: Callable[[], float] = time.perf_counter,
+) -> dict[str, Any]:
+    question = normalize_questions([item])[0]
+    return evaluate_question(
+        question,
+        CallableRunnerAdapter(runner),
+        timer,
+    ).to_dict()
+
+
+def summarize_results(
+    results: list[dict[str, Any]],
+    questions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    typed_questions = normalize_questions(questions)
+    typed_results = [EvaluationResult(**result) for result in results]
+    return summarize_typed_results(typed_results, typed_questions).to_dict()
 
 
 def format_report(report: dict[str, Any]) -> str:
@@ -2347,6 +2452,7 @@ Run:
 .venv/bin/python -m pytest \
   tests/test_dashboard_service.py \
   tests/test_fastapi_routes.py \
+  tests/test_evaluation_matrix.py \
   tests/test_ablation.py \
   tests/test_baseline.py \
   tests/test_baselines.py -q
@@ -2483,5 +2589,6 @@ chooses integration and the integration succeeds.
 | Optional judge isolation | `test_evaluation_judges.py` |
 | Dashboard compatibility | `test_dashboard_service.py` |
 | FastAPI compatibility | `test_fastapi_routes.py` |
+| Historical matrix compatibility | `test_evaluation_matrix.py` |
 | Ablation compatibility | `test_ablation.py` |
 | Whole-project regression | `.venv/bin/python -m pytest -q` |

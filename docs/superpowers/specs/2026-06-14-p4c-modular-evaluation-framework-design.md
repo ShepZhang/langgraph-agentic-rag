@@ -2,7 +2,7 @@
 
 Date: 2026-06-14
 
-Status: Approved interaction and architecture design; pending written-spec review
+Status: Approved; amended for the current evaluation-matrix baseline
 
 Target version: `v0.4.2-p4c`
 
@@ -64,6 +64,8 @@ The following functions remain importable from `evaluation.evaluate`:
 ```python
 load_eval_questions(...)
 evaluate_questions(...)
+evaluate_single_system(...)
+summarize_results(...)
 format_report(...)
 write_evaluation_artifacts(...)
 main(...)
@@ -160,6 +162,7 @@ This module owns:
 - validating that the root value is a list
 - normalizing IDs and question types
 - normalizing legacy `expected_source` into `expected_sources`
+- validating and preserving `source_match_mode` (`any` or `all`)
 - validating `answerable`, `should_answer`, and `expected_behavior`
 - validating and normalizing chat history
 - returning `EvaluationQuestion` records
@@ -215,6 +218,10 @@ analyzer remains a separate module and does not enter runner control flow.
 
 P4c must preserve the numerical output of the current deterministic metrics for
 the same inputs. Metric quality improvements are a separate milestone.
+
+`source_match_mode` remains part of the question contract. Source and citation
+matching must preserve the current evaluator behavior for both `any` and `all`;
+P4c does not reinterpret those metrics during the refactor.
 
 ### `evaluation/comparison.py`
 
@@ -421,6 +428,8 @@ P4c is accepted only if all of the following remain true:
 
 - current imports from `evaluation.evaluate` work
 - current public function signatures remain callable
+- `evaluation.matrix` can continue importing `DEFAULT_EVAL_PATH`,
+  `evaluate_single_system`, `load_eval_questions`, and `summarize_results`
 - current CLI flags remain valid
 - current single-system and comparison result keys remain present
 - current numerical deterministic metrics remain unchanged for fixture inputs
@@ -428,6 +437,8 @@ P4c is accepted only if all of the following remain true:
 - P4b dashboard formatting can consume current and newly generated artifacts
 - FastAPI evaluation routes continue returning their existing response schema
 - ablation variants continue using the same evaluator entrypoint
+- the three-variant matrix continues producing the same per-system results and
+  variant summaries
 
 The implementation may migrate consumers to narrower internal imports after
 the facade is stable, but such migration is not required for P4c completion.
@@ -494,6 +505,7 @@ Regression verification includes:
 - dashboard service and formatter tests
 - FastAPI evaluation route tests
 - ablation tests
+- evaluation matrix tests
 - the complete project test suite
 
 No live model call is required for the core P4c tests.
@@ -538,6 +550,8 @@ P4c is complete when:
   implementation center
 - deterministic metric results match the pre-P4c evaluator for the same inputs
 - existing CLI, API, Dashboard, and ablation consumers continue working
+- the historical three-variant matrix continues working through the
+  compatibility facade
 - JSON artifacts remain reproducible and compatible
 - optional Judge and ResultStore interfaces are testable and replaceable
 - runtime metadata includes additive evaluator and schema version fields
