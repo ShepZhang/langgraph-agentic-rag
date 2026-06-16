@@ -81,6 +81,18 @@ def test_normalize_question_rejects_invalid_source_match_mode():
         )
 
 
+def test_normalize_question_rejects_unhashable_source_match_mode():
+    with pytest.raises(ValueError, match="source_match_mode"):
+        normalize_question(
+            {
+                "question": "Bad mode type?",
+                "expected_sources": ["notes.md"],
+                "source_match_mode": [],
+            },
+            0,
+        )
+
+
 def test_normalize_question_rejects_all_mode_with_fewer_than_two_sources():
     with pytest.raises(ValueError, match="source_match_mode"):
         normalize_question(

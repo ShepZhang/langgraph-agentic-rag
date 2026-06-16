@@ -51,7 +51,10 @@ def normalize_question(record: dict[str, Any], index: int) -> EvaluationQuestion
 
     expected_sources = _normalize_expected_sources(record)
     source_match_mode = record.get("source_match_mode", "any")
-    if source_match_mode not in {"any", "all"}:
+    if (
+        not isinstance(source_match_mode, str)
+        or source_match_mode not in {"any", "all"}
+    ):
         raise ValueError("source_match_mode must be 'any' or 'all'")
     if source_match_mode == "all" and len(expected_sources) < 2:
         raise ValueError(

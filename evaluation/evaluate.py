@@ -82,13 +82,10 @@ def summarize_results(
     return _summarize(results, normalized_questions)
 
 
-def __getattr__(name: str) -> Any:
-    if name == "_normalize_eval_question":
-        return lambda record, index: normalize_question(
-            record,
-            index,
-        ).to_compat_dict()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+def _normalize_eval_question(record: dict[str, Any], index: int) -> dict[str, Any]:
+    """Compatibility facade for legacy evaluation callers."""
+
+    return normalize_question(record, index).to_compat_dict()
 
 
 def format_report(report: dict[str, Any]) -> str:
