@@ -15,6 +15,7 @@ from agent.graph import run_agent
 from agent.state import ChatMessage
 from config import Settings, get_settings
 from evaluation.baselines import run_naive_rag
+from evaluation.dataset import normalize_questions
 from evaluation.evaluate import (
     DEFAULT_EVAL_PATH,
     evaluate_single_system,
@@ -74,8 +75,12 @@ def evaluate_matrix(
         name: [] for name in VARIANT_ORDER
     }
     matrix_results = []
+    normalized_questions = [
+        question.to_compat_dict()
+        for question in normalize_questions(questions)
+    ]
 
-    for item in questions:
+    for item in normalized_questions:
         systems = {}
         for name in VARIANT_ORDER:
             runner = runners[name]
@@ -93,9 +98,9 @@ def evaluate_matrix(
     return {
         "summary": {
             "mode": "matrix",
-            "total_questions": len(questions),
+            "total_questions": len(normalized_questions),
             "variants": {
-                name: summarize_results(variant_results[name], questions)
+                name: summarize_results(variant_results[name], normalized_questions)
                 for name in VARIANT_ORDER
             },
         },

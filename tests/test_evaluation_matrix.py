@@ -182,6 +182,18 @@ def test_evaluate_matrix_uses_canonical_variant_order_with_isolated_results():
     assert (
         report["results"][0]["systems"]["agentic_reranker"]["source_hit"] is True
     )
+    assert [
+        result["systems"]["naive"]["question_id"]
+        for result in report["results"]
+    ] == ["q001", "q002"]
+    assert [
+        result["systems"]["agentic"]["question_id"]
+        for result in report["results"]
+    ] == ["q001", "q002"]
+    assert [
+        result["systems"]["agentic_reranker"]["question_id"]
+        for result in report["results"]
+    ] == ["q001", "q002"]
     assert report["summary"]["variants"]["agentic_reranker"]["source_hit_rate"] == 1.0
     assert report["summary"]["variants"]["naive"]["source_hit_rate"] == 0.0
 
