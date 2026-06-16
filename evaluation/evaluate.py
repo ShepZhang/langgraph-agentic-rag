@@ -27,6 +27,7 @@ from evaluation.reporting import format_evaluation_report
 from evaluation.runners import CallableRunnerAdapter
 from evaluation.runtime_config import build_runtime_config_snapshot
 from evaluation.schemas import EvaluationResult
+from evaluation.storage import write_compatibility_artifacts
 
 
 EvaluationRunner = Callable[[str, list[ChatMessage]], dict[str, Any]]
@@ -143,51 +144,10 @@ def main(
 def write_evaluation_artifacts(report: dict[str, Any], output_dir: str | Path) -> None:
     """Write structured JSON artifacts for downstream evaluation analysis."""
 
-    artifact_dir = Path(output_dir)
-    summary = report.get("summary", {})
-    runtime_config = build_runtime_config_snapshot()
-    if summary.get("mode") == "comparison":
-        paired_results = report.get("results", [])
-        _write_json(
-            artifact_dir / "baseline_result.json",
-            {
-                "system": "naive_rag",
-                "runtime_config": runtime_config,
-                "summary": summary.get("naive", {}),
-                "results": [paired.get("naive", {}) for paired in paired_results],
-            },
-        )
-        _write_json(
-            artifact_dir / "agentic_result.json",
-            {
-                "system": "agentic_rag",
-                "runtime_config": runtime_config,
-                "summary": summary.get("agentic", {}),
-                "results": [paired.get("agentic", {}) for paired in paired_results],
-            },
-        )
-        _write_json(
-            artifact_dir / "comparison_result.json",
-            {"runtime_config": runtime_config, **report},
-        )
-        return
-
-    _write_json(
-        artifact_dir / "agentic_result.json",
-        {
-            "system": "agentic_rag",
-            "runtime_config": runtime_config,
-            "summary": report.get("summary", {}),
-            "results": report.get("results", []),
-        },
-    )
-
-
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False),
-        encoding="utf-8",
+    write_compatibility_artifacts(
+        report,
+        output_dir,
+        runtime_config=build_runtime_config_snapshot(),
     )
 
 

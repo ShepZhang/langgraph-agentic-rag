@@ -1002,6 +1002,10 @@ def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
     assert baseline_payload["runtime_config"]["retriever"]["hybrid_retrieval_enabled"] is True
     assert agentic_payload["runtime_config"]["reranker"]["top_n"] == 6
     assert comparison_payload["runtime_config"]["reranker"]["candidate_top_k"] == 9
+    assert baseline_payload["runtime_config"]["schema_version"] == 1
+    assert agentic_payload["runtime_config"]["evaluator_version"] == "p4c"
+    assert comparison_payload["runtime_config"]["schema_version"] == 1
+    assert comparison_payload["runtime_config"]["evaluator_version"] == "p4c"
     serialized_payloads = json.dumps(
         [baseline_payload, agentic_payload, comparison_payload],
         ensure_ascii=False,
@@ -1051,6 +1055,8 @@ def test_main_writes_single_system_agentic_artifact_schema(tmp_path):
     assert agentic_path.exists()
     assert payload["system"] == "agentic_rag"
     assert "runtime_config" in payload
+    assert payload["runtime_config"]["schema_version"] == 1
+    assert payload["runtime_config"]["evaluator_version"] == "p4c"
     assert "llm" in payload["runtime_config"]
     assert "retriever" in payload["runtime_config"]
     assert "reranker" in payload["runtime_config"]
