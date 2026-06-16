@@ -39,16 +39,17 @@
 - `README.md`: document the Approach B module boundaries and honest limitations.
 - `docs/superpowers/plans/2026-06-14-p4c-modular-evaluation-framework.md`: mark completed tasks during execution.
 
-### Explicitly Unchanged Consumers
+### Facade-Based Consumers
 
 - `api/services/evaluation.py`
 - `evaluation/dashboard_service.py`
 - `evaluation/matrix.py`
 - `experiments/run_ablation.py`
 
-These files continue using the public compatibility facade. The matrix also
-imports `DEFAULT_EVAL_PATH`, `evaluate_single_system`, and `summarize_results`;
-its existing tests prove those additional contracts.
+These files continue using the public compatibility facade. `evaluation/matrix.py`
+also imports `DEFAULT_EVAL_PATH`, `evaluate_single_system`, and
+`summarize_results`; P4c includes a small compatibility fix there so raw
+multi-question matrix inputs keep stable generated question IDs across variants.
 
 ## Execution Prerequisite
 
@@ -2557,7 +2558,8 @@ Execution notes:
 
 - `../../.venv/bin/python -m compileall evaluation` passed.
 - Import smoke test printed `36`.
-- `../../.venv/bin/python -m pytest -q` passed with `466 passed in 4.17s`.
+- `../../.venv/bin/python -m pytest -q` passed with `469 passed in 5.11s`
+  after code-review compatibility fixes.
 - CLI compatibility smoke tests passed with `3 passed in 1.28s`.
 - `git diff --check` reported no whitespace errors.
 - `git status --short` showed only `README.md` and this plan document as
@@ -2575,11 +2577,21 @@ git add README.md \
 git commit -m "docs: publish p4c modular evaluation framework"
 ```
 
-- [ ] **Step 7: Request code review before integration**
+- [x] **Step 7: Request code review before integration**
 
 Invoke `superpowers:requesting-code-review` against the P4c branch. Address
 confirmed correctness, compatibility, or test findings before presenting
 merge options.
+
+Review notes:
+
+- Initial review found one public-compatibility issue in
+  `summarize_results()` and two minor surface/documentation concerns.
+- Fixed by adding `EvaluationResult.from_compat_dict()`, preserving unknown
+  additive result fields, restoring the legacy `EvaluationRunner` alias shape,
+  and clarifying the matrix compatibility fix in this plan.
+- Follow-up review reported no critical or important issues and assessed the
+  branch as ready to merge.
 
 - [ ] **Step 8: Finish the development branch**
 

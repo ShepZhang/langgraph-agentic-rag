@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.graph import run_agent
+from agent.state import ChatMessage
 from evaluation.baselines import run_naive_rag
 from evaluation.comparison import (
     evaluate_comparison as evaluate_typed_comparison,
@@ -27,6 +28,9 @@ from evaluation.runners import CallableRunnerAdapter
 from evaluation.runtime_config import build_runtime_config_snapshot
 from evaluation.schemas import EvaluationResult
 from evaluation.storage import write_compatibility_artifacts
+
+
+EvaluationRunner = Callable[[str, list[ChatMessage]], dict[str, Any]]
 
 
 def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, Any]]:
@@ -83,7 +87,7 @@ def summarize_results(
     """Summarize results after normalizing raw question records."""
 
     typed_questions = normalize_questions(questions)
-    typed_results = [EvaluationResult(**result) for result in results]
+    typed_results = [EvaluationResult.from_compat_dict(result) for result in results]
     return summarize_metric_results(typed_results, typed_questions).to_dict()
 
 

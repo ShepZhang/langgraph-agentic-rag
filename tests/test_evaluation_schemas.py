@@ -183,6 +183,22 @@ def test_result_copies_structured_inputs_and_serialized_payloads():
     assert fresh_payload["failure_analysis"]["failure_type"] == "no_failure"
 
 
+def test_result_from_compat_dict_ignores_additive_fields():
+    result = EvaluationResult.from_compat_dict(
+        {
+            "question_id": "q001",
+            "question_type": "single_doc",
+            "question": "What is RAG?",
+            "answer_returned": True,
+            "extra_metric": "external-diagnostic",
+        }
+    )
+
+    assert result.question_id == "q001"
+    assert result.answer_returned is True
+    assert "extra_metric" not in result.to_dict()
+
+
 def test_single_and_comparison_reports_keep_established_shapes():
     result = EvaluationResult.empty(
         question_id="q001",

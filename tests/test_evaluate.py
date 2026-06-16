@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections import Counter
 import json
 from pathlib import Path
+from typing import Any, get_args, get_origin
 
 import pytest
 
+from agent.state import ChatMessage
 import evaluation.evaluate as evaluator
 from evaluation.evaluate import evaluate_questions, format_report, load_eval_questions, main
 
@@ -25,6 +27,39 @@ def test_public_facade_exports_owned_callables():
 
     for name in public_names:
         assert callable(getattr(evaluator, name))
+
+
+def test_public_facade_reexports_legacy_runner_alias():
+    assert get_origin(evaluator.EvaluationRunner) is not None
+    assert get_args(evaluator.EvaluationRunner) == (
+        [str, list[ChatMessage]],
+        dict[str, Any],
+    )
+
+
+def test_summarize_results_ignores_unknown_result_fields_for_compatibility():
+    result = {
+        "question_id": "q001",
+        "question_type": "single_doc",
+        "question": "What is RAG?",
+        "answer_returned": True,
+        "correct": True,
+        "context_relevant": True,
+        "extra_metric": "external-diagnostic",
+    }
+    questions = [
+        {
+            "id": "q001",
+            "question": "What is RAG?",
+            "question_type": "single_doc",
+        }
+    ]
+
+    summary = evaluator.summarize_results([result], questions)
+
+    assert summary["total_questions"] == 1
+    assert summary["answer_rate"] == 1.0
+    assert summary["correctness_score"] == 1.0
 
 
 def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):

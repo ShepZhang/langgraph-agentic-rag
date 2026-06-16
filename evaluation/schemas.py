@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Literal
 
 from agent.state import ChatMessage, Citation, RetrievedDocument
@@ -113,6 +114,19 @@ class EvaluationResult:
             question_id=question_id,
             question_type=question_type,
             question=question,
+        )
+
+    @classmethod
+    def from_compat_dict(cls, payload: Mapping[str, Any]) -> EvaluationResult:
+        """Build a result from a public payload while ignoring additive fields."""
+
+        allowed_fields = {item.name for item in fields(cls)}
+        return cls(
+            **{
+                key: deepcopy(value)
+                for key, value in payload.items()
+                if key in allowed_fields
+            }
         )
 
     def to_dict(self) -> dict[str, Any]:
