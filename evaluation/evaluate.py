@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
-import math
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -20,13 +19,14 @@ from evaluation.dataset import (
     normalize_question,
     normalize_questions,
 )
-from evaluation.failure_analyzer import analyze_failure, summarize_failure_types
+from evaluation.failure_analyzer import analyze_failure
 from evaluation.metrics import (
-    _safe_cost,
     build_error_result,
     score_system_output,
+    summarize_results as summarize_metric_results,
 )
 from evaluation.runtime_config import build_runtime_config_snapshot
+from evaluation.schemas import EvaluationResult
 
 
 EvaluationRunner = Callable[[str, list[ChatMessage]], dict[str, Any]]
@@ -332,140 +332,9 @@ def _summarize(
     results: list[dict[str, Any]],
     questions: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    total_questions = len(results)
-    if total_questions == 0:
-        return {
-            "total_questions": 0,
-            "answer_rate": 0,
-            "fallback_rate": 0,
-            "citation_rate": 0,
-            "source_hit_rate": 0,
-            "keyword_hit_rate": 0,
-            "fallback_correctness_rate": 0,
-            "verification_rate": 0,
-            "average_claim_count": 0,
-            "correctness_score": 0,
-            "context_relevance_score": 0,
-            "citation_hit_rate": 0,
-            "fallback_accuracy": 0,
-            "unsupported_claim_count": None,
-            "supported_claim_ratio": None,
-            "citation_verification_pass_rate": None,
-            "average_token_usage": 0,
-            "estimated_cost": 0,
-            "average_retry_count": 0,
-            "average_retrieved_docs": 0,
-            "average_relevant_docs": 0,
-            "relevant_filtering_rate": 0,
-            "average_latency": 0,
-            "rewrite_triggered_count": 0,
-            "error_count": 0,
-            "failure_type_counts": {},
-        }
-
-    answer_count = sum(1 for result in results if result["answer_returned"])
-    fallback_count = sum(1 for result in results if result["fallback_triggered"])
-    citation_count = sum(1 for result in results if result["citation_returned"])
-    verified_count = sum(1 for result in results if result["is_verified"])
-    source_hit_count = sum(1 for result in results if result["source_hit"])
-    keyword_hit_count = sum(1 for result in results if result["keyword_hit"])
-    fallback_correct_count = sum(1 for result in results if result["fallback_correct"])
-    correct_count = sum(1 for result in results if result["correct"])
-    context_relevant_count = sum(1 for result in results if result["context_relevant"])
-    citation_hit_count = sum(1 for result in results if result["citation_hit"])
-    applicable_verification_results = [
-        result
-        for result in results
-        if result.get("citation_verification_applicable")
-    ]
-    if applicable_verification_results:
-        unsupported_claim_count: int | None = sum(
-            int(result.get("unsupported_claim_count") or 0)
-            for result in applicable_verification_results
-        )
-        supported_claim_count = sum(
-            int(result.get("supported_claim_count") or 0)
-            for result in applicable_verification_results
-        )
-        total_claim_count = sum(
-            int(result.get("total_claim_count") or 0)
-            for result in applicable_verification_results
-        )
-        verification_pass_count = sum(
-            1
-            for result in applicable_verification_results
-            if result["citation_verification_passed"]
-        )
-        supported_claim_ratio: float | None = _rate(
-            supported_claim_count,
-            total_claim_count,
-        )
-        citation_verification_pass_rate: float | None = _rate(
-            verification_pass_count,
-            len(applicable_verification_results),
-        )
-    else:
-        unsupported_claim_count = None
-        supported_claim_ratio = None
-        citation_verification_pass_rate = None
-    source_expected_count = sum(
-        1 for item in questions if item.get("expected_sources", [])
-    )
-    keyword_expected_count = sum(
-        1 for item in questions if item.get("expected_keywords", [])
-    )
-    rewrite_triggered_count = sum(1 for result in results if result["rewrite_triggered"])
-    error_count = sum(1 for result in results if result["error"])
-    retrieved_doc_count = sum(result["retrieved_doc_count"] for result in results)
-    relevant_doc_count = sum(result["relevant_doc_count"] for result in results)
-    token_values = [
-        _extract_total_tokens(result.get("token_usage")) or 0
-        for result in results
-    ]
-    estimated_cost = sum(
-        cost
-        for result in results
-        for cost in [_safe_cost(result.get("estimated_cost"))]
-        if cost is not None
-    )
-
-    return {
-        "total_questions": total_questions,
-        "answer_rate": _rate(answer_count, total_questions),
-        "fallback_rate": _rate(fallback_count, total_questions),
-        "citation_rate": _rate(citation_count, total_questions),
-        "verification_rate": _rate(verified_count, total_questions),
-        "average_claim_count": _average(result["claim_count"] for result in results),
-        "correctness_score": _rate(correct_count, total_questions),
-        "context_relevance_score": _rate(context_relevant_count, source_expected_count),
-        "citation_hit_rate": _rate(citation_hit_count, source_expected_count),
-        "fallback_accuracy": _rate(fallback_correct_count, total_questions),
-        "unsupported_claim_count": unsupported_claim_count,
-        "supported_claim_ratio": supported_claim_ratio,
-        "citation_verification_pass_rate": citation_verification_pass_rate,
-        "average_token_usage": _average(token_values),
-        "estimated_cost": round(estimated_cost, 6),
-        "source_hit_rate": _rate(source_hit_count, source_expected_count),
-        "keyword_hit_rate": _rate(keyword_hit_count, keyword_expected_count),
-        "fallback_correctness_rate": _rate(fallback_correct_count, total_questions),
-        "average_retry_count": _average(
-            result["retry_count"] for result in results
-        ),
-        "average_retrieved_docs": _average(
-            result["retrieved_doc_count"] for result in results
-        ),
-        "average_relevant_docs": _average(
-            result["relevant_doc_count"] for result in results
-        ),
-        "relevant_filtering_rate": _rate(
-            retrieved_doc_count - relevant_doc_count,
-            retrieved_doc_count,
-        ),
-        "average_latency": _average(result["latency"] for result in results),
-        "rewrite_triggered_count": rewrite_triggered_count,
-        "error_count": error_count,
-        "failure_type_counts": summarize_failure_types(results),
-    }
+    typed_questions = normalize_questions(questions)
+    typed_results = [EvaluationResult(**result) for result in results]
+    return summarize_metric_results(typed_results, typed_questions).to_dict()
 
 
 def _build_comparison_summary(
@@ -568,21 +437,6 @@ def _format_comparison_report(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _extract_total_tokens(token_usage: Any) -> int | None:
-    if not isinstance(token_usage, dict):
-        return None
-    value = token_usage.get("total_tokens")
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value) or not value.is_integer():
-            return None
-        return int(value)
-    return None
-
-
 def _format_error(exc: Exception) -> str:
     message = str(exc)
     if message:
@@ -592,19 +446,6 @@ def _format_error(exc: Exception) -> str:
 
 def _format_bool(value: Any) -> str:
     return "true" if value else "false"
-
-
-def _rate(count: int, denominator: int) -> float:
-    if denominator == 0:
-        return 0
-    return round(count / denominator, 4)
-
-
-def _average(values: Any) -> float:
-    values_list = list(values)
-    if not values_list:
-        return 0
-    return round(sum(values_list) / len(values_list), 4)
 
 
 if __name__ == "__main__":

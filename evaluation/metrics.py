@@ -4,10 +4,53 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
-from evaluation.failure_analyzer import analyze_failure
-from evaluation.schemas import EvaluationQuestion, EvaluationResult
+from evaluation.failure_analyzer import analyze_failure, summarize_failure_types
+from evaluation.schemas import EvaluationQuestion, EvaluationResult, EvaluationSummary
+
+
+@dataclass(frozen=True)
+class SummaryMetric:
+    name: str
+    compute: Callable[
+        [list[EvaluationResult], list[EvaluationQuestion]],
+        int | float | None,
+    ]
+
+
+DEFAULT_SUMMARY_METRICS = (
+    SummaryMetric(
+        "correctness_score",
+        lambda results, questions: _rate(
+            sum(1 for result in results if result.correct),
+            len(results),
+        ),
+    ),
+    SummaryMetric(
+        "context_relevance_score",
+        lambda results, questions: _rate(
+            sum(1 for result in results if result.context_relevant),
+            sum(1 for question in questions if question.expected_sources),
+        ),
+    ),
+    SummaryMetric(
+        "citation_hit_rate",
+        lambda results, questions: _rate(
+            sum(1 for result in results if result.citation_hit),
+            sum(1 for question in questions if question.expected_sources),
+        ),
+    ),
+    SummaryMetric(
+        "fallback_accuracy",
+        lambda results, questions: _rate(
+            sum(1 for result in results if result.fallback_correct),
+            len(results),
+        ),
+    ),
+)
 
 
 def score_system_output(
@@ -172,6 +215,118 @@ def attach_failure_analysis(
     return result
 
 
+def summarize_results(
+    results: list[EvaluationResult],
+    questions: list[EvaluationQuestion],
+) -> EvaluationSummary:
+    """Aggregate typed per-question results into the canonical summary."""
+
+    total_questions = len(results)
+    if total_questions == 0:
+        return EvaluationSummary.empty()
+
+    answer_count = sum(1 for result in results if result.answer_returned)
+    fallback_count = sum(1 for result in results if result.fallback_triggered)
+    citation_count = sum(1 for result in results if result.citation_returned)
+    verified_count = sum(1 for result in results if result.is_verified)
+    source_hit_count = sum(1 for result in results if result.source_hit)
+    keyword_hit_count = sum(1 for result in results if result.keyword_hit)
+    fallback_correct_count = sum(1 for result in results if result.fallback_correct)
+    applicable_verification_results = [
+        result for result in results if result.citation_verification_applicable
+    ]
+    if applicable_verification_results:
+        unsupported_claim_count: int | None = sum(
+            int(result.unsupported_claim_count or 0)
+            for result in applicable_verification_results
+        )
+        supported_claim_count = sum(
+            int(result.supported_claim_count or 0)
+            for result in applicable_verification_results
+        )
+        total_claim_count = sum(
+            int(result.total_claim_count or 0)
+            for result in applicable_verification_results
+        )
+        verification_pass_count = sum(
+            1
+            for result in applicable_verification_results
+            if result.citation_verification_passed
+        )
+        supported_claim_ratio: float | None = _rate(
+            supported_claim_count,
+            total_claim_count,
+        )
+        citation_verification_pass_rate: float | None = _rate(
+            verification_pass_count,
+            len(applicable_verification_results),
+        )
+    else:
+        unsupported_claim_count = None
+        supported_claim_ratio = None
+        citation_verification_pass_rate = None
+    source_expected_count = sum(1 for question in questions if question.expected_sources)
+    keyword_expected_count = sum(
+        1 for question in questions if question.expected_keywords
+    )
+    rewrite_triggered_count = sum(1 for result in results if result.rewrite_triggered)
+    error_count = sum(1 for result in results if result.error)
+    retrieved_doc_count = sum(result.retrieved_doc_count for result in results)
+    relevant_doc_count = sum(result.relevant_doc_count for result in results)
+    token_values = [
+        _extract_total_tokens(result.token_usage) or 0
+        for result in results
+    ]
+    estimated_cost = sum(
+        cost
+        for result in results
+        for cost in [_safe_cost(result.estimated_cost)]
+        if cost is not None
+    )
+    registered = {
+        metric.name: metric.compute(results, questions)
+        for metric in DEFAULT_SUMMARY_METRICS
+    }
+
+    return EvaluationSummary(
+        total_questions=total_questions,
+        answer_rate=_rate(answer_count, total_questions),
+        fallback_rate=_rate(fallback_count, total_questions),
+        citation_rate=_rate(citation_count, total_questions),
+        verification_rate=_rate(verified_count, total_questions),
+        average_claim_count=_average(result.claim_count for result in results),
+        correctness_score=registered["correctness_score"] or 0,
+        context_relevance_score=registered["context_relevance_score"] or 0,
+        citation_hit_rate=registered["citation_hit_rate"] or 0,
+        fallback_accuracy=registered["fallback_accuracy"] or 0,
+        unsupported_claim_count=unsupported_claim_count,
+        supported_claim_ratio=supported_claim_ratio,
+        citation_verification_pass_rate=citation_verification_pass_rate,
+        average_token_usage=_average(token_values),
+        estimated_cost=round(estimated_cost, 6),
+        source_hit_rate=_rate(source_hit_count, source_expected_count),
+        keyword_hit_rate=_rate(keyword_hit_count, keyword_expected_count),
+        fallback_correctness_rate=_rate(fallback_correct_count, total_questions),
+        average_retry_count=_average(result.retry_count for result in results),
+        average_retrieved_docs=_average(
+            result.retrieved_doc_count for result in results
+        ),
+        average_relevant_docs=_average(
+            result.relevant_doc_count for result in results
+        ),
+        relevant_filtering_rate=_rate(
+            retrieved_doc_count - relevant_doc_count,
+            retrieved_doc_count,
+        ),
+        average_latency=_average(result.latency for result in results),
+        rewrite_triggered_count=rewrite_triggered_count,
+        error_count=error_count,
+        failure_type_counts=summarize_failure_types(
+            [result.to_dict() for result in results]
+        ),
+    )
+
+
 def _safe_list(value: Any, field_name: str) -> list[Any]:
     if value is None:
         return []
@@ -289,6 +444,34 @@ def _safe_cost(value: Any) -> float | None:
     return cost
 
 
+def _extract_total_tokens(token_usage: Any) -> int | None:
+    if not isinstance(token_usage, dict):
+        return None
+    value = token_usage.get("total_tokens")
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            return None
+        return int(value)
+    return None
+
+
+def _rate(count: int, denominator: int) -> float:
+    if denominator == 0:
+        return 0
+    return round(count / denominator, 4)
+
+
+def _average(values: Any) -> float:
+    values_list = list(values)
+    if not values_list:
+        return 0
+    return round(sum(values_list) / len(values_list), 4)
+
+
 def _is_fallback_answer(answer: str) -> bool:
     lower_answer = answer.lower()
     fallback_markers = [
@@ -308,7 +491,10 @@ def _is_fallback_answer(answer: str) -> bool:
 
 
 __all__ = [
+    "DEFAULT_SUMMARY_METRICS",
+    "SummaryMetric",
     "attach_failure_analysis",
     "build_error_result",
     "score_system_output",
+    "summarize_results",
 ]

@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
-from evaluation.metrics import build_error_result, score_system_output
-from evaluation.schemas import EvaluationQuestion
+from evaluation.dataset import normalize_question
+from evaluation.metrics import (
+    DEFAULT_SUMMARY_METRICS,
+    build_error_result,
+    score_system_output,
+    summarize_results,
+)
+from evaluation.schemas import EvaluationQuestion, EvaluationResult
 
 
 def _question(**overrides: object) -> EvaluationQuestion:
@@ -152,3 +158,57 @@ def test_build_error_result_uses_question_identity_and_no_false_metrics():
     assert result.source_hit is False
     assert result.keyword_hit is False
     assert result.estimated_cost is None
+
+
+def test_summary_metric_registry_has_unique_stable_names():
+    names = [metric.name for metric in DEFAULT_SUMMARY_METRICS]
+
+    assert len(names) == len(set(names))
+    assert "correctness_score" in names
+    assert "context_relevance_score" in names
+    assert "citation_hit_rate" in names
+    assert "fallback_accuracy" in names
+
+
+def test_summarize_results_matches_expected_denominators():
+    question = normalize_question(
+        {
+            "question": "Supported?",
+            "expected_sources": ["notes.md"],
+            "expected_keywords": ["supported"],
+        },
+        index=0,
+    )
+    result = EvaluationResult.empty(
+        question_id=question.id,
+        question_type=question.question_type,
+        question=question.question,
+    )
+    result.answer_returned = True
+    result.correct = True
+    result.context_relevant = True
+    result.citation_hit = True
+    result.source_hit = True
+    result.keyword_hit = True
+
+    summary = summarize_results([result], [question])
+
+    assert summary.correctness_score == 1.0
+    assert summary.context_relevance_score == 1.0
+    assert summary.citation_hit_rate == 1.0
+    assert summary.source_hit_rate == 1.0
+
+
+def test_summarize_results_keeps_verification_metrics_unavailable():
+    question = normalize_question({"question": "No verifier?"}, index=0)
+    result = EvaluationResult.empty(
+        question_id=question.id,
+        question_type=question.question_type,
+        question=question.question,
+    )
+
+    summary = summarize_results([result], [question])
+
+    assert summary.unsupported_claim_count is None
+    assert summary.supported_claim_ratio is None
+    assert summary.citation_verification_pass_rate is None
