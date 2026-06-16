@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import json
+import re
+import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol
+
+_RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 class ResultStore(Protocol):
     """Persistence boundary for evaluation result payloads."""
 
-    def save(self, run_id: str, payload: dict[str, Any]) -> str:
+    def save(self, run_id: str, payload: Mapping[str, Any]) -> str:
         """Persist a result payload and return the final storage path."""
         ...
 
@@ -25,18 +30,29 @@ class JsonResultStore:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
 
-    def save(self, run_id: str, payload: dict[str, Any]) -> str:
-        if not isinstance(payload, dict):
+    def save(self, run_id: str, payload: Mapping[str, Any]) -> str:
+        if not isinstance(payload, Mapping):
             raise ValueError("result payload must be a JSON object")
 
+        materialized_payload = dict(payload)
         path = self._path_for(run_id)
-        tmp_path = path.with_suffix(f"{path.suffix}.tmp")
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        tmp_path.replace(path)
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                dir=path.parent,
+                prefix=f".{path.stem}.",
+                suffix=".tmp",
+                mode="w",
+                encoding="utf-8",
+            ) as tmp:
+                tmp_path = Path(tmp.name)
+                json.dump(materialized_payload, tmp, indent=2, ensure_ascii=False)
+            tmp_path.replace(path)
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink()
         return str(path)
 
     def load(self, run_id: str) -> dict[str, Any] | None:
@@ -50,6 +66,12 @@ class JsonResultStore:
         return payload
 
     def _path_for(self, run_id: str) -> Path:
+        if (
+            not run_id
+            or run_id in {".", ".."}
+            or _RUN_ID_PATTERN.fullmatch(run_id) is None
+        ):
+            raise ValueError("run_id must be a safe file stem")
         return self.root / f"{run_id}.json"
 
 
@@ -82,7 +104,7 @@ def write_compatibility_artifacts(
                 "results": [paired.get("agentic", {}) for paired in paired_results],
             },
         )
-        store.save("comparison_result", {"runtime_config": runtime_config, **report})
+        store.save("comparison_result", {**report, "runtime_config": runtime_config})
         return
 
     store.save(
