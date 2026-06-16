@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.4.2-p4c - Modular Evaluation Framework
+
+Date: 2026-06-16
+
+### Changed
+
+- Refactored `evaluation.evaluate` into a compatibility facade over focused
+  evaluator modules for typed schemas, dataset normalization, deterministic
+  metrics, runner execution, comparison orchestration, report rendering,
+  optional judge contracts, atomic JSON storage, and sanitized runtime metadata.
+- Preserved existing CLI, FastAPI, Gradio Evaluation Dashboard, ablation, and
+  JSON artifact contracts while moving implementation details behind typed
+  internal records and adapters.
+- Kept deterministic offline evaluation behavior as the default path.
+- Added extension boundaries for future semantic judges, historical result
+  storage, and a higher-level evaluation engine without claiming those roadmap
+  features as complete.
+
+### Fixed
+
+- Preserved stable generated question IDs for raw multi-question evaluation
+  matrix inputs across variants.
+- Preserved public `summarize_results()` compatibility with result dictionaries
+  that contain additive external diagnostic fields.
+- Restored the legacy `EvaluationRunner` callable alias shape from
+  `evaluation.evaluate`.
+
+### Verification
+
+- Full test suite: `469 passed`.
+- CLI compatibility smoke tests: `3 passed`.
+- Ablation, matrix, dashboard, and FastAPI compatibility tests: `82 passed`.
+
 ## v0.4.1-p4b - Evaluation Dashboard
 
 Date: 2026-06-14
