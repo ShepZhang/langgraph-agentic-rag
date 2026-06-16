@@ -472,6 +472,21 @@ Every variant is checkpointed before execution and finalized as `completed`, `co
 
 Evaluation artifacts include a sanitized `runtime_config` snapshot covering Agent feature flags, model name, temperature, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name. API keys, base URLs, local persistence paths, and other secrets are intentionally excluded.
 
+### Modular Evaluation Framework
+
+P4c keeps the stable `evaluation.evaluate` API while separating the evaluator
+into focused modules: typed schemas, dataset validation, deterministic metrics,
+runner adaptation, single-system and comparison orchestration, report rendering,
+optional judges, and atomic JSON result storage. Internal dataclasses provide
+typed records, while compatibility adapters preserve the existing CLI, FastAPI,
+Gradio Evaluation Dashboard, ablation, and JSON artifact contracts.
+
+The default evaluator remains deterministic and offline-testable. `Judge` and
+`ResultStore` protocols are extension boundaries for later semantic judging and
+historical storage. A configurable DeepSeek semantic judge, SQLite-backed trend
+storage, and a higher-level `EvaluationEngine` remain roadmap work rather than
+claimed completed features.
+
 Metric fields include:
 
 - `answer_rate`
@@ -661,16 +676,24 @@ agentic-rag-document-qa/
 │   └── run_baseline.py
 ├── evaluation/
 │   ├── baselines.py
+│   ├── comparison.py
 │   ├── dashboard_models.py
 │   ├── dashboard_formatters.py
 │   ├── dashboard_service.py
+│   ├── dataset.py
 │   ├── eval_questions.json
 │   ├── portfolio_questions.json
 │   ├── evaluate.py
+│   ├── judges.py
 │   ├── matrix.py
+│   ├── metrics.py
+│   ├── reporting.py
 │   ├── results/
 │   ├── failure_analyzer.py
-│   └── runtime_config.py
+│   ├── runners.py
+│   ├── runtime_config.py
+│   ├── schemas.py
+│   └── storage.py
 ├── experiments/
 │   ├── run_ablation.py
 │   ├── configs/
@@ -717,6 +740,7 @@ agentic-rag-document-qa/
 - Added workspace-aware retrieval isolation for dense, BM25, hybrid, retriever, and Agent default retrieval paths.
 - Added deterministic failed-case analysis with rule-based failure attribution, per-question reasons and suggestions, summary counts, and representative ablation cases.
 - Added a Gradio Evaluation Dashboard for synchronous selected-record comparison, filterable failure diagnostics, and read-only inspection of saved V0-V6 artifacts and runtime configuration.
+- Refactored the evaluator into a modular typed framework with focused dataset, schema, metrics, runner, comparison, reporting, judge, storage, and compatibility facade modules while preserving existing CLI, dashboard, FastAPI, ablation, and artifact contracts.
 - Preserved a modular roadmap toward background execution, shared run IDs, trace drill-down, prompt regression tracking, and historical evaluation trends.
 
 ## Interview Talking Points
@@ -775,10 +799,13 @@ agentic-rag-document-qa/
 - P3d typed internal Tool Registry implemented: retriever, citation verifier, document summary, and safe calculator tools share validated inputs, normalized results, stable errors, and compact trace diagnostics.
 - P4a deterministic failed-case analysis implemented: evaluation results include primary failure types, reasons, and suggestions, while summaries and ablation reports include failure counts and representative cases.
 - P4b Evaluation Dashboard implemented: Gradio supports synchronous smoke or manually selected quick comparisons, filterable failed-case inspection, and a read-only V0-V6 ablation snapshot with runtime configuration and transparent stored or derived diagnostics.
+- P4c modular evaluation framework implemented: `evaluation.evaluate` is now a compatibility facade over typed schemas, dataset normalization, deterministic metrics, runner execution, comparison orchestration, report rendering, optional judge contracts, atomic JSON storage, and sanitized runtime metadata.
 
 ### Next Milestones
 
-- Upgrade the current Approach A evaluator to Approach B: split dataset loading, schemas, metrics, runners, reporting, and result IO into dedicated modules with typed records, pluggable runners, optional judges, storage backends, and prompt/model config snapshots.
+- Implement a configurable DeepSeek semantic correctness and groundedness judge through the existing judge protocol.
+- Add SQLite-backed historical evaluation runs and trend comparison.
+- Introduce an `EvaluationEngine` that composes runners, metrics, judges, and stores.
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
 - Add decomposition sub-question retrieval for multi-hop workflows.
 - Harden workspace isolation with optional per-workspace Chroma collections and authorization checks.
@@ -787,6 +814,5 @@ agentic-rag-document-qa/
 - Share evaluation run IDs across Gradio and FastAPI.
 - Link failed cases to `trace_id` and a node-level trace viewer.
 - Add prompt version tracking and prompt regression checks.
-- Persist historical runs and expose trend views.
 - Add model-specific prompt tuning and cost/latency evaluation for local and remote models.
 - Add human-reviewed claim labels for stricter citation validation.

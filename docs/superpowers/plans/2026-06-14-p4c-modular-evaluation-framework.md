@@ -73,7 +73,7 @@ the June 15 `main` baseline, the expected count is `408 passed`.
 - Create: `evaluation/schemas.py`
 - Create: `tests/test_evaluation_schemas.py`
 
-- [ ] **Step 1: Write failing schema serialization tests**
+- [x] **Step 1: Write failing schema serialization tests**
 
 Create `tests/test_evaluation_schemas.py` with focused tests:
 
@@ -163,7 +163,7 @@ def test_judge_result_distinguishes_disabled_failed_and_completed_states():
     }
 ```
 
-- [ ] **Step 2: Run the tests and verify the module is missing**
+- [x] **Step 2: Run the tests and verify the module is missing**
 
 Run:
 
@@ -173,7 +173,7 @@ Run:
 
 Expected: collection fails with `ModuleNotFoundError: No module named 'evaluation.schemas'`.
 
-- [ ] **Step 3: Implement the typed records and compatibility serializers**
+- [x] **Step 3: Implement the typed records and compatibility serializers**
 
 Create `evaluation/schemas.py` with frozen dataclasses and explicit external
 serialization:
@@ -403,7 +403,7 @@ class JudgeResult:
         return cls(status="failed", error=error)
 ```
 
-- [ ] **Step 4: Run focused and existing evaluator tests**
+- [x] **Step 4: Run focused and existing evaluator tests**
 
 Run:
 
@@ -413,7 +413,7 @@ Run:
 
 Expected: all tests pass; the new module has not changed runtime behavior.
 
-- [ ] **Step 5: Commit the typed domain layer**
+- [x] **Step 5: Commit the typed domain layer**
 
 ```bash
 git add evaluation/schemas.py tests/test_evaluation_schemas.py
@@ -429,7 +429,7 @@ git commit -m "refactor: add typed evaluation domain records"
 - Create: `tests/test_evaluation_dataset.py`
 - Modify: `evaluation/evaluate.py`
 
-- [ ] **Step 1: Write focused dataset tests against the typed API**
+- [x] **Step 1: Write focused dataset tests against the typed API**
 
 Create `tests/test_evaluation_dataset.py`:
 
@@ -517,7 +517,7 @@ def test_load_questions_rejects_non_list_root(tmp_path):
         load_questions(path)
 ```
 
-- [ ] **Step 2: Verify the focused tests fail**
+- [x] **Step 2: Verify the focused tests fail**
 
 Run:
 
@@ -527,7 +527,7 @@ Run:
 
 Expected: collection fails because `evaluation.dataset` does not exist.
 
-- [ ] **Step 3: Implement dataset normalization with the current validation semantics**
+- [x] **Step 3: Implement dataset normalization with the current validation semantics**
 
 Create `evaluation/dataset.py` and move the current normalization behavior into
 these public typed functions:
@@ -708,7 +708,7 @@ def _normalize_string_list(value: Any, field_name: str) -> list[str]:
     raise ValueError(f"{field_name} must be a string or list of strings")
 ```
 
-- [ ] **Step 4: Replace only the facade loader and normalization entrypoints**
+- [x] **Step 4: Replace only the facade loader and normalization entrypoints**
 
 In `evaluation/evaluate.py`, import `DEFAULT_EVAL_PATH`, `load_questions`, and
 `normalize_questions`. Keep the public dictionary contract:
@@ -741,7 +741,7 @@ Continue passing `normalized_question_dicts` to the unchanged legacy evaluator
 for this task. Remove the duplicated dataset-only helpers from
 `evaluation/evaluate.py`.
 
-- [ ] **Step 5: Run dataset and facade regression tests**
+- [x] **Step 5: Run dataset and facade regression tests**
 
 Run:
 
@@ -753,7 +753,7 @@ Run:
 
 Expected: all tests pass with identical normalized dictionaries.
 
-- [ ] **Step 6: Commit the dataset extraction**
+- [x] **Step 6: Commit the dataset extraction**
 
 ```bash
 git add evaluation/dataset.py evaluation/evaluate.py \
@@ -770,7 +770,7 @@ git commit -m "refactor: extract evaluation dataset normalization"
 - Create: `tests/test_evaluation_metrics.py`
 - Modify: `evaluation/evaluate.py`
 
-- [ ] **Step 1: Write failing per-question scoring tests**
+- [x] **Step 1: Write failing per-question scoring tests**
 
 Create the first section of `tests/test_evaluation_metrics.py`:
 
@@ -863,7 +863,7 @@ def test_build_error_result_uses_question_identity_and_no_false_metrics():
     assert result.unsupported_claim_count is None
 ```
 
-- [ ] **Step 2: Verify the scoring tests fail**
+- [x] **Step 2: Verify the scoring tests fail**
 
 Run:
 
@@ -875,7 +875,7 @@ Run:
 
 Expected: collection fails because `evaluation.metrics` does not exist.
 
-- [ ] **Step 3: Implement result scoring by moving the current helpers**
+- [x] **Step 3: Implement result scoring by moving the current helpers**
 
 Create `evaluation/metrics.py` with:
 
@@ -1059,7 +1059,7 @@ _rate
 _average
 ```
 
-- [ ] **Step 4: Route legacy success/error builders through typed scoring**
+- [x] **Step 4: Route legacy success/error builders through typed scoring**
 
 In `evaluation/evaluate.py`, keep `_build_success_result` and
 `_build_error_result` temporarily as compatibility wrappers:
@@ -1088,7 +1088,7 @@ def _build_error_result(item: dict[str, Any]) -> dict[str, Any]:
 Remove only the duplicated scoring helpers after all references use the new
 module.
 
-- [ ] **Step 5: Run scoring and facade regression tests**
+- [x] **Step 5: Run scoring and facade regression tests**
 
 Run:
 
@@ -1101,7 +1101,7 @@ Run:
 Expected: all tests pass, including malformed payload, token, cost, fallback,
 claim, source-hit, and citation-hit cases.
 
-- [ ] **Step 6: Commit result scoring extraction**
+- [x] **Step 6: Commit result scoring extraction**
 
 ```bash
 git add evaluation/metrics.py evaluation/evaluate.py \
@@ -1118,7 +1118,7 @@ git commit -m "refactor: extract deterministic evaluation scoring"
 - Modify: `tests/test_evaluation_metrics.py`
 - Modify: `evaluation/evaluate.py`
 
-- [ ] **Step 1: Add failing registry and aggregation tests**
+- [x] **Step 1: Add failing registry and aggregation tests**
 
 Append to `tests/test_evaluation_metrics.py`:
 
@@ -1181,7 +1181,7 @@ def test_summarize_results_keeps_verification_metrics_unavailable():
     assert summary.citation_verification_pass_rate is None
 ```
 
-- [ ] **Step 2: Run the new tests and verify missing symbols**
+- [x] **Step 2: Run the new tests and verify missing symbols**
 
 Run:
 
@@ -1194,7 +1194,7 @@ Run:
 Expected: import fails because the registry and aggregation API are not
 implemented.
 
-- [ ] **Step 3: Implement the explicit registry and typed aggregation**
+- [x] **Step 3: Implement the explicit registry and typed aggregation**
 
 Add to `evaluation/metrics.py`:
 
@@ -1270,7 +1270,7 @@ failure_type_counts=summarize_failure_types(
 
 For zero results, return `EvaluationSummary.empty()`.
 
-- [ ] **Step 4: Replace legacy `_summarize` with a typed wrapper**
+- [x] **Step 4: Replace legacy `_summarize` with a typed wrapper**
 
 In `evaluation/evaluate.py`, temporarily retain the private wrapper needed by
 comparison code:
@@ -1293,7 +1293,7 @@ def _summarize(
 
 Import `EvaluationResult` from `evaluation.schemas`.
 
-- [ ] **Step 5: Run all metric and evaluator tests**
+- [x] **Step 5: Run all metric and evaluator tests**
 
 Run:
 
@@ -1305,7 +1305,7 @@ Run:
 
 Expected: all tests pass with the exact pre-P4c summary dictionaries.
 
-- [ ] **Step 6: Commit aggregation extraction**
+- [x] **Step 6: Commit aggregation extraction**
 
 ```bash
 git add evaluation/metrics.py evaluation/evaluate.py \
@@ -1322,7 +1322,7 @@ git commit -m "refactor: add evaluation metric registry"
 - Create: `tests/test_evaluation_runners.py`
 - Modify: `evaluation/evaluate.py`
 
-- [ ] **Step 1: Write failing runner adapter tests**
+- [x] **Step 1: Write failing runner adapter tests**
 
 Create `tests/test_evaluation_runners.py`:
 
@@ -1372,7 +1372,7 @@ def test_evaluate_question_records_runner_errors_and_latency():
     assert result.failure_analysis["failure_type"] == "tool_failure"
 ```
 
-- [ ] **Step 2: Verify runner tests fail**
+- [x] **Step 2: Verify runner tests fail**
 
 Run:
 
@@ -1382,7 +1382,7 @@ Run:
 
 Expected: collection fails because `evaluation.runners` does not exist.
 
-- [ ] **Step 3: Implement the runner protocol, adapter, and execution**
+- [x] **Step 3: Implement the runner protocol, adapter, and execution**
 
 Create `evaluation/runners.py`:
 
@@ -1466,7 +1466,7 @@ def _format_error(exc: Exception) -> str:
     return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
 ```
 
-- [ ] **Step 4: Route the facade's single-system evaluator through the adapter**
+- [x] **Step 4: Route the facade's single-system evaluator through the adapter**
 
 Update `_evaluate_single_system` in `evaluation/evaluate.py`:
 
@@ -1490,7 +1490,7 @@ def _evaluate_single_system(
 Delete `_invoke_evaluation_runner` and `_format_error` from the facade after
 all references use `evaluation.runners`.
 
-- [ ] **Step 5: Run runner, evaluator, and dashboard service tests**
+- [x] **Step 5: Run runner, evaluator, and dashboard service tests**
 
 Run:
 
@@ -1504,7 +1504,7 @@ Run:
 Expected: all tests pass, including per-case errors remaining completed
 dashboard runs.
 
-- [ ] **Step 6: Commit runner extraction**
+- [x] **Step 6: Commit runner extraction**
 
 ```bash
 git add evaluation/runners.py evaluation/evaluate.py \
@@ -1521,7 +1521,7 @@ git commit -m "refactor: extract evaluation runner execution"
 - Create: `tests/test_evaluation_comparison.py`
 - Modify: `evaluation/evaluate.py`
 
-- [ ] **Step 1: Write failing typed orchestration tests**
+- [x] **Step 1: Write failing typed orchestration tests**
 
 Create `tests/test_evaluation_comparison.py`:
 
@@ -1575,7 +1575,7 @@ def test_evaluate_comparison_preserves_dataset_order_and_paired_shape():
     assert payload["summary"]["mode"] == "comparison"
 ```
 
-- [ ] **Step 2: Verify orchestration tests fail**
+- [x] **Step 2: Verify orchestration tests fail**
 
 Run:
 
@@ -1585,7 +1585,7 @@ Run:
 
 Expected: collection fails because `evaluation.comparison` does not exist.
 
-- [ ] **Step 3: Implement typed orchestration**
+- [x] **Step 3: Implement typed orchestration**
 
 Create `evaluation/comparison.py`:
 
@@ -1680,7 +1680,7 @@ def build_comparison_summary(
     }
 ```
 
-- [ ] **Step 4: Make `evaluate_questions` delegate to typed orchestration**
+- [x] **Step 4: Make `evaluate_questions` delegate to typed orchestration**
 
 Replace the body of `evaluate_questions` in `evaluation/evaluate.py`:
 
@@ -1710,7 +1710,7 @@ def evaluate_questions(
 Remove `_evaluate_comparison`, `_evaluate_single_system`, `_summarize`, and
 `_build_comparison_summary` from the facade after all tests pass.
 
-- [ ] **Step 5: Run comparison, facade, dashboard, and ablation tests**
+- [x] **Step 5: Run comparison, facade, dashboard, and ablation tests**
 
 Run:
 
@@ -1724,7 +1724,7 @@ Run:
 
 Expected: all tests pass; ablation and dashboard still import the facade.
 
-- [ ] **Step 6: Commit orchestration extraction**
+- [x] **Step 6: Commit orchestration extraction**
 
 ```bash
 git add evaluation/comparison.py evaluation/evaluate.py \
@@ -1741,7 +1741,7 @@ git commit -m "refactor: extract evaluation comparison orchestration"
 - Create: `tests/test_evaluation_reporting.py`
 - Modify: `evaluation/evaluate.py`
 
-- [ ] **Step 1: Write failing pure renderer tests**
+- [x] **Step 1: Write failing pure renderer tests**
 
 Create `tests/test_evaluation_reporting.py`:
 
@@ -1793,7 +1793,7 @@ def test_format_comparison_report_keeps_metric_table():
     assert "| Source Hit Rate | 0.5 | 1.0 |" in text
 ```
 
-- [ ] **Step 2: Verify renderer tests fail**
+- [x] **Step 2: Verify renderer tests fail**
 
 Run:
 
@@ -1803,7 +1803,7 @@ Run:
 
 Expected: collection fails because `evaluation.reporting` does not exist.
 
-- [ ] **Step 3: Implement pure report rendering**
+- [x] **Step 3: Implement pure report rendering**
 
 Create `evaluation/reporting.py`. Move the existing `format_report`,
 `_format_comparison_report`, and `_format_bool` logic into:
@@ -1851,7 +1851,7 @@ Relocate the exact existing `_format_comparison_report` definition from
 field lookups, `N/A` defaults, and per-question row formatting byte-for-byte;
 its `_format_bool` reference resolves to the new local helper above.
 
-- [ ] **Step 4: Make the facade delegate report formatting**
+- [x] **Step 4: Make the facade delegate report formatting**
 
 In `evaluation/evaluate.py`:
 
@@ -1865,7 +1865,7 @@ def format_report(report: dict[str, Any]) -> str:
 
 Remove the old comparison and boolean formatting helpers from the facade.
 
-- [ ] **Step 5: Run renderer and facade report tests**
+- [x] **Step 5: Run renderer and facade report tests**
 
 Run:
 
@@ -1877,7 +1877,7 @@ Run:
 
 Expected: all tests pass with identical terminal output.
 
-- [ ] **Step 6: Commit reporting extraction**
+- [x] **Step 6: Commit reporting extraction**
 
 ```bash
 git add evaluation/reporting.py evaluation/evaluate.py \
@@ -1893,7 +1893,7 @@ git commit -m "refactor: extract evaluation report rendering"
 - Create: `evaluation/judges.py`
 - Create: `tests/test_evaluation_judges.py`
 
-- [ ] **Step 1: Write failing judge contract tests**
+- [x] **Step 1: Write failing judge contract tests**
 
 Create `tests/test_evaluation_judges.py`:
 
@@ -1930,7 +1930,7 @@ def test_invoke_judge_records_failure_without_raising():
     assert result.error == "RuntimeError: judge unavailable"
 ```
 
-- [ ] **Step 2: Verify judge tests fail**
+- [x] **Step 2: Verify judge tests fail**
 
 Run:
 
@@ -1940,7 +1940,7 @@ Run:
 
 Expected: collection fails because `evaluation.judges` does not exist.
 
-- [ ] **Step 3: Implement the protocol and conservative default**
+- [x] **Step 3: Implement the protocol and conservative default**
 
 Create `evaluation/judges.py`:
 
@@ -1991,7 +1991,7 @@ Do not call a network model and do not add judge fields to compatibility
 reports in P4c. The protocol is intentionally ready for a later
 `EvaluationEngine`.
 
-- [ ] **Step 4: Run judge and schema tests**
+- [x] **Step 4: Run judge and schema tests**
 
 Run:
 
@@ -2003,7 +2003,7 @@ Run:
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit judge contracts**
+- [x] **Step 5: Commit judge contracts**
 
 ```bash
 git add evaluation/judges.py tests/test_evaluation_judges.py
@@ -2021,7 +2021,7 @@ git commit -m "feat: add optional evaluation judge contract"
 - Modify: `evaluation/runtime_config.py`
 - Modify: `tests/test_evaluate.py`
 
-- [ ] **Step 1: Write failing result-store tests**
+- [x] **Step 1: Write failing result-store tests**
 
 Create `tests/test_evaluation_storage.py`:
 
@@ -2076,7 +2076,7 @@ def test_compatibility_writer_keeps_comparison_artifact_names(tmp_path):
     assert comparison["runtime_config"]["schema_version"] == 1
 ```
 
-- [ ] **Step 2: Verify storage tests fail**
+- [x] **Step 2: Verify storage tests fail**
 
 Run:
 
@@ -2086,7 +2086,7 @@ Run:
 
 Expected: collection fails because `evaluation.storage` does not exist.
 
-- [ ] **Step 3: Implement the result-store protocol and JSON backend**
+- [x] **Step 3: Implement the result-store protocol and JSON backend**
 
 Create `evaluation/storage.py`:
 
@@ -2185,7 +2185,7 @@ def write_compatibility_artifacts(
     )
 ```
 
-- [ ] **Step 4: Add additive evaluator metadata**
+- [x] **Step 4: Add additive evaluator metadata**
 
 At the top of `evaluation/runtime_config.py`, define:
 
@@ -2245,7 +2245,7 @@ def build_runtime_config_snapshot(
 
 Do not add secrets, base URLs, or local persistence paths.
 
-- [ ] **Step 5: Delegate the compatibility artifact writer**
+- [x] **Step 5: Delegate the compatibility artifact writer**
 
 Replace `write_evaluation_artifacts` in `evaluation/evaluate.py`:
 
@@ -2273,7 +2273,7 @@ assert comparison_payload["runtime_config"]["schema_version"] == 1
 assert comparison_payload["runtime_config"]["evaluator_version"] == "p4c"
 ```
 
-- [ ] **Step 6: Run storage, facade, ablation, and dashboard tests**
+- [x] **Step 6: Run storage, facade, ablation, and dashboard tests**
 
 Run:
 
@@ -2287,7 +2287,7 @@ Run:
 
 Expected: all tests pass; saved artifacts retain their old names and layouts.
 
-- [ ] **Step 7: Commit storage and metadata**
+- [x] **Step 7: Commit storage and metadata**
 
 ```bash
 git add evaluation/storage.py evaluation/runtime_config.py \
@@ -2304,7 +2304,7 @@ git commit -m "refactor: add atomic evaluation result storage"
 - Modify: `evaluation/evaluate.py`
 - Modify: `tests/test_evaluate.py`
 
-- [ ] **Step 1: Add a facade ownership regression test**
+- [x] **Step 1: Add a facade ownership regression test**
 
 Append to `tests/test_evaluate.py`:
 
@@ -2321,7 +2321,7 @@ def test_evaluate_module_remains_public_compatibility_facade():
     assert callable(evaluate.main)
 ```
 
-- [ ] **Step 2: Run the facade test before cleanup**
+- [x] **Step 2: Run the facade test before cleanup**
 
 Run:
 
@@ -2333,7 +2333,7 @@ Run:
 
 Expected: PASS before cleanup, establishing the public contract.
 
-- [ ] **Step 3: Reduce `evaluation/evaluate.py` to assembly and wrappers**
+- [x] **Step 3: Reduce `evaluation/evaluate.py` to assembly and wrappers**
 
 After prior tasks have moved implementation details, the facade must contain
 only:
@@ -2432,7 +2432,7 @@ Retain the existing `main` parser behavior and `if __name__ == "__main__"`
 entrypoint unchanged. Remove all private metric, normalization, rendering,
 comparison, and storage helpers.
 
-- [ ] **Step 4: Verify facade size and public regression tests**
+- [x] **Step 4: Verify facade size and public regression tests**
 
 Run:
 
@@ -2444,7 +2444,7 @@ wc -l evaluation/evaluate.py
 Expected: the facade is focused and approximately 150 lines; all legacy
 contract tests pass.
 
-- [ ] **Step 5: Run direct consumer regression tests**
+- [x] **Step 5: Run direct consumer regression tests**
 
 Run:
 
@@ -2460,7 +2460,7 @@ Run:
 
 Expected: all tests pass without changing consumer imports.
 
-- [ ] **Step 6: Commit the final facade cleanup**
+- [x] **Step 6: Commit the final facade cleanup**
 
 ```bash
 git add evaluation/evaluate.py tests/test_evaluate.py
@@ -2475,7 +2475,7 @@ git commit -m "refactor: reduce evaluator to compatibility facade"
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-06-14-p4c-modular-evaluation-framework.md`
 
-- [ ] **Step 1: Update the README completed work and architecture**
+- [x] **Step 1: Update the README completed work and architecture**
 
 Add a concise evaluation architecture section:
 
@@ -2504,7 +2504,7 @@ Move the modular Approach B evaluator from `Next Milestones` into
 - Add prompt version tracking and prompt regression checks.
 ```
 
-- [ ] **Step 2: Run formatting and import checks**
+- [x] **Step 2: Run formatting and import checks**
 
 Run:
 
@@ -2515,7 +2515,7 @@ Run:
 
 Expected: compilation succeeds and the import smoke test prints `36`.
 
-- [ ] **Step 3: Run the complete test suite**
+- [x] **Step 3: Run the complete test suite**
 
 Run:
 
@@ -2526,7 +2526,7 @@ Run:
 Expected: all project tests pass. Record the exact test count in the execution
 notes before claiming completion.
 
-- [ ] **Step 4: Run CLI compatibility smoke tests without live model calls**
+- [x] **Step 4: Run CLI compatibility smoke tests without live model calls**
 
 Run the injected-runner CLI contract through pytest:
 
@@ -2540,7 +2540,7 @@ Run the injected-runner CLI contract through pytest:
 
 Expected: three tests pass and artifact schemas include additive P4c metadata.
 
-- [ ] **Step 5: Inspect final diff and ensure no unrelated files are included**
+- [x] **Step 5: Inspect final diff and ensure no unrelated files are included**
 
 Run:
 
@@ -2553,7 +2553,19 @@ git diff --stat main...HEAD
 Expected: only P4c evaluation, tests, README, and plan files are changed. The
 root `.superpowers/` directory remains untouched and untracked.
 
-- [ ] **Step 6: Mark the implementation plan complete and commit documentation**
+Execution notes:
+
+- `../../.venv/bin/python -m compileall evaluation` passed.
+- Import smoke test printed `36`.
+- `../../.venv/bin/python -m pytest -q` passed with `466 passed in 4.17s`.
+- CLI compatibility smoke tests passed with `3 passed in 1.28s`.
+- `git diff --check` reported no whitespace errors.
+- `git status --short` showed only `README.md` and this plan document as
+  uncommitted documentation updates before the documentation commit.
+- `git diff --stat main...HEAD` showed P4c evaluation modules, evaluation tests,
+  and P4c plan/design documentation changes only.
+
+- [x] **Step 6: Mark the implementation plan complete and commit documentation**
 
 Mark all completed plan checkboxes, then run:
 
