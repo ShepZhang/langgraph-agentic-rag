@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import get_type_hints
+from typing import Any, cast, get_type_hints
 
 import pytest
 
@@ -278,6 +278,13 @@ def test_report_rejects_comparison_summary_with_single_results():
 
     with pytest.raises(ValueError, match="comparison"):
         EvaluationReport(summary=summary, results=[result])
+
+
+def test_report_rejects_unknown_summary_type_immediately():
+    result = EvaluationResult.empty("q001", "single_doc", "What is RAG?")
+
+    with pytest.raises(ValueError, match="evaluation summary"):
+        EvaluationReport(summary=cast(Any, object()), results=[result])
 
 
 def test_report_copies_results_input_list():

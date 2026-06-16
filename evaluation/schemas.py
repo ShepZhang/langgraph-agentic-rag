@@ -215,10 +215,14 @@ class EvaluationReport:
                 )
             return
 
-        if not all(isinstance(result, EvaluationResult) for result in self.results):
-            raise ValueError(
-                "single-system summary requires single-system evaluation results"
-            )
+        if isinstance(self.summary, EvaluationSummary):
+            if not all(isinstance(result, EvaluationResult) for result in self.results):
+                raise ValueError(
+                    "single-system summary requires single-system evaluation results"
+                )
+            return
+
+        raise ValueError("evaluation summary must be single-system or comparison")
 
     def to_dict(self) -> dict[str, Any]:
         return {
