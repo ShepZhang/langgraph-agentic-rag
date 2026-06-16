@@ -4,6 +4,8 @@ Use this checklist before publishing the repository or cutting a public version.
 
 ## Current Release Candidate
 
+- Repository: `ShepZhang/langgraph-agentic-rag`
+- URL: `https://github.com/ShepZhang/langgraph-agentic-rag`
 - Branch: `main`
 - Version label: `v0.4.2-p4c`
 - Positioning: reliability-oriented Agentic RAG document QA system
@@ -67,7 +69,7 @@ Recommended topics:
 git status --short
 git log --oneline --decorate --max-count=5
 git tag v0.4.2-p4c
-git remote add origin <your-github-repo-url>
+git remote add origin git@github.com:ShepZhang/langgraph-agentic-rag.git
 git push -u origin main
 git push origin v0.4.2-p4c
 ```

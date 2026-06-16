@@ -1,8 +1,8 @@
-# Reliability-oriented Agentic RAG Document QA System
+# langgraph-agentic-rag
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-Reliability-oriented Agentic RAG Document QA System is a LangGraph-based document question answering project that upgrades naive retrieve-generate RAG into a stateful Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, typed internal tools, answer revision, baseline comparison, an Evaluation Dashboard, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+`langgraph-agentic-rag` is a reliability-oriented Agentic RAG document QA system that upgrades naive retrieve-generate RAG into a stateful LangGraph Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, typed internal tools, answer revision, baseline comparison, an Evaluation Dashboard, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
 
 The project is production-oriented as an architecture and evaluation exercise, but it is not a complete production deployment. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
@@ -631,7 +631,7 @@ Example answer payload:
 ## Project Structure
 
 ```text
-agentic-rag-document-qa/
+langgraph-agentic-rag/
 ├── app.py
 ├── main.py
 ├── config.py
