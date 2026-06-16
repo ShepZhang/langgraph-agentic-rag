@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 import json
 import time
 from collections.abc import Callable
@@ -19,12 +18,8 @@ from evaluation.dataset import (
     normalize_question,
     normalize_questions,
 )
-from evaluation.failure_analyzer import analyze_failure
-from evaluation.metrics import (
-    build_error_result,
-    score_system_output,
-    summarize_results as summarize_metric_results,
-)
+from evaluation.metrics import summarize_results as summarize_metric_results
+from evaluation.runners import CallableRunnerAdapter, evaluate_question
 from evaluation.runtime_config import build_runtime_config_snapshot
 from evaluation.schemas import EvaluationResult
 
@@ -264,68 +259,12 @@ def _evaluate_single_system(
 ) -> dict[str, Any]:
     """Evaluate one system for one question and record errors as data."""
 
-    question = item["question"]
-    started_at = timer()
-    try:
-        system_result = _invoke_evaluation_runner(
-            runner,
-            question,
-            item.get("chat_history", []),
-        )
-        result = _build_success_result(item, system_result)
-        error = None
-    except Exception as exc:  # noqa: BLE001 - evaluation records system failures.
-        result = _build_error_result(item)
-        error = _format_error(exc)
-    latency = timer() - started_at
-
-    result["latency"] = latency
-    result["error"] = error
-    result["failure_analysis"] = analyze_failure(item, result)
-    return result
-
-
-def _invoke_evaluation_runner(
-    runner: Callable[..., dict[str, Any]],
-    question: str,
-    chat_history: list[ChatMessage],
-) -> dict[str, Any]:
-    """Invoke the history-aware runner while preserving injected legacy runners."""
-
-    try:
-        parameters = inspect.signature(runner).parameters.values()
-    except (TypeError, ValueError):
-        return runner(question, chat_history)
-
-    positional_parameters = [
-        parameter
-        for parameter in parameters
-        if parameter.kind
-        in {
-            inspect.Parameter.POSITIONAL_ONLY,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        }
-    ]
-    accepts_varargs = any(
-        parameter.kind is inspect.Parameter.VAR_POSITIONAL
-        for parameter in parameters
-    )
-    if accepts_varargs or len(positional_parameters) >= 2:
-        return runner(question, chat_history)
-    return runner(question)
-
-
-def _build_success_result(
-    item: dict[str, Any],
-    agent_result: dict[str, Any],
-) -> dict[str, Any]:
     question = normalize_question(item, 0)
-    return score_system_output(question, agent_result).to_dict()
-
-
-def _build_error_result(item: dict[str, Any]) -> dict[str, Any]:
-    question = normalize_question(item, 0)
-    return build_error_result(question).to_dict()
+    return evaluate_question(
+        question,
+        CallableRunnerAdapter(runner),
+        timer,
+    ).to_dict()
 
 
 def _summarize(
@@ -435,13 +374,6 @@ def _format_comparison_report(report: dict[str, Any]) -> str:
         )
 
     return "\n".join(lines)
-
-
-def _format_error(exc: Exception) -> str:
-    message = str(exc)
-    if message:
-        return f"{type(exc).__name__}: {message}"
-    return type(exc).__name__
 
 
 def _format_bool(value: Any) -> str:
