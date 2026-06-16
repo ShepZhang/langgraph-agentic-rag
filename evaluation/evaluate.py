@@ -12,6 +12,10 @@ from typing import Any
 from agent.graph import run_agent
 from agent.state import ChatMessage
 from evaluation.baselines import run_naive_rag
+from evaluation.comparison import (
+    evaluate_comparison as evaluate_typed_comparison,
+    evaluate_single_system as evaluate_typed_single_system,
+)
 from evaluation.dataset import (
     DEFAULT_EVAL_PATH,
     load_questions,
@@ -19,7 +23,7 @@ from evaluation.dataset import (
     normalize_questions,
 )
 from evaluation.metrics import summarize_results as summarize_metric_results
-from evaluation.runners import CallableRunnerAdapter, evaluate_question
+from evaluation.runners import CallableRunnerAdapter
 from evaluation.runtime_config import build_runtime_config_snapshot
 from evaluation.schemas import EvaluationResult
 
@@ -42,21 +46,21 @@ def evaluate_questions(
     """Evaluate questions and return per-question results plus summary metrics."""
 
     typed_questions = normalize_questions(questions)
-    normalized_questions = [question.to_compat_dict() for question in typed_questions]
+    agentic_runner = CallableRunnerAdapter(run_agent_fn)
 
     if run_naive_fn is not None:
-        return _evaluate_comparison(
-            questions=normalized_questions,
-            run_agent_fn=run_agent_fn,
-            run_naive_fn=run_naive_fn,
+        return evaluate_typed_comparison(
+            questions=typed_questions,
+            agentic_runner=agentic_runner,
+            naive_runner=CallableRunnerAdapter(run_naive_fn),
             timer=timer,
-        )
+        ).to_dict()
 
-    results: list[dict[str, Any]] = []
-    for item in normalized_questions:
-        results.append(_evaluate_single_system(item, run_agent_fn, timer))
-
-    return {"summary": _summarize(results, normalized_questions), "results": results}
+    return evaluate_typed_single_system(
+        typed_questions,
+        agentic_runner,
+        timer,
+    ).to_dict()
 
 
 def evaluate_single_system(
@@ -66,8 +70,12 @@ def evaluate_single_system(
 ) -> dict[str, Any]:
     """Evaluate one raw question record with one system."""
 
-    normalized_item = normalize_question(item, 0).to_compat_dict()
-    return _evaluate_single_system(normalized_item, runner, timer)
+    report = evaluate_typed_single_system(
+        [normalize_question(item, 0)],
+        CallableRunnerAdapter(runner),
+        timer,
+    )
+    return report.results[0].to_dict()
 
 
 def summarize_results(
@@ -77,8 +85,38 @@ def summarize_results(
     """Summarize results after normalizing raw question records."""
 
     typed_questions = normalize_questions(questions)
-    normalized_questions = [question.to_compat_dict() for question in typed_questions]
-    return _summarize(results, normalized_questions)
+    typed_results = [EvaluationResult(**result) for result in results]
+    return summarize_metric_results(typed_results, typed_questions).to_dict()
+
+
+def __getattr__(name: str) -> Any:
+    if name == "_evaluate_single_system":
+        return _legacy_evaluate_single_system
+    if name == "_summarize":
+        return _legacy_summarize
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _legacy_evaluate_single_system(
+    item: dict[str, Any],
+    runner: Callable[..., dict[str, Any]],
+    timer: Callable[[], float],
+) -> dict[str, Any]:
+    report = evaluate_typed_single_system(
+        [normalize_question(item, 0)],
+        CallableRunnerAdapter(runner),
+        timer,
+    )
+    return report.results[0].to_dict()
+
+
+def _legacy_summarize(
+    results: list[dict[str, Any]],
+    questions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    typed_questions = normalize_questions(questions)
+    typed_results = [EvaluationResult(**result) for result in results]
+    return summarize_metric_results(typed_results, typed_questions).to_dict()
 
 
 def _normalize_eval_question(record: dict[str, Any], index: int) -> dict[str, Any]:
@@ -207,101 +245,6 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
         json.dumps(payload, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-
-
-def _evaluate_comparison(
-    questions: list[dict[str, Any]],
-    run_agent_fn: Callable[[str], dict[str, Any]],
-    run_naive_fn: Callable[[str], dict[str, Any]],
-    timer: Callable[[], float],
-) -> dict[str, Any]:
-    """Evaluate naive and agentic RAG on the same questions."""
-
-    paired_results: list[dict[str, Any]] = []
-    naive_results: list[dict[str, Any]] = []
-    agentic_results: list[dict[str, Any]] = []
-
-    for item in questions:
-        naive_result = _evaluate_single_system(item, run_naive_fn, timer)
-        agentic_result = _evaluate_single_system(item, run_agent_fn, timer)
-        naive_results.append(naive_result)
-        agentic_results.append(agentic_result)
-        paired_results.append(
-            {
-                "question": item["question"],
-                "requires_rewrite": item.get("requires_rewrite", False),
-                "naive": naive_result,
-                "agentic": agentic_result,
-            }
-        )
-
-    naive_summary = _summarize(naive_results, questions)
-    agentic_summary = _summarize(agentic_results, questions)
-    return {
-        "summary": {
-            "mode": "comparison",
-            "total_questions": len(questions),
-            "naive": naive_summary,
-            "agentic": agentic_summary,
-            "comparison": _build_comparison_summary(
-                naive_summary=naive_summary,
-                agentic_summary=agentic_summary,
-            ),
-        },
-        "results": paired_results,
-    }
-
-
-def _evaluate_single_system(
-    item: dict[str, Any],
-    runner: Callable[..., dict[str, Any]],
-    timer: Callable[[], float],
-) -> dict[str, Any]:
-    """Evaluate one system for one question and record errors as data."""
-
-    question = normalize_question(item, 0)
-    return evaluate_question(
-        question,
-        CallableRunnerAdapter(runner),
-        timer,
-    ).to_dict()
-
-
-def _summarize(
-    results: list[dict[str, Any]],
-    questions: list[dict[str, Any]],
-) -> dict[str, Any]:
-    typed_questions = normalize_questions(questions)
-    typed_results = [EvaluationResult(**result) for result in results]
-    return summarize_metric_results(typed_results, typed_questions).to_dict()
-
-
-def _build_comparison_summary(
-    naive_summary: dict[str, Any],
-    agentic_summary: dict[str, Any],
-) -> dict[str, Any]:
-    """Flatten core comparison metrics for easy JSON/report consumption."""
-
-    return {
-        "naive_source_hit_rate": naive_summary.get("source_hit_rate", "N/A"),
-        "agentic_source_hit_rate": agentic_summary.get("source_hit_rate", "N/A"),
-        "naive_keyword_hit_rate": naive_summary.get("keyword_hit_rate", "N/A"),
-        "agentic_keyword_hit_rate": agentic_summary.get("keyword_hit_rate", "N/A"),
-        "naive_citation_rate": naive_summary.get("citation_rate", "N/A"),
-        "agentic_citation_rate": agentic_summary.get("citation_rate", "N/A"),
-        "naive_verification_rate": naive_summary.get("verification_rate", "N/A"),
-        "agentic_verification_rate": agentic_summary.get("verification_rate", "N/A"),
-        "naive_fallback_correctness_rate": naive_summary.get(
-            "fallback_correctness_rate",
-            "N/A",
-        ),
-        "agentic_fallback_correctness_rate": agentic_summary.get(
-            "fallback_correctness_rate",
-            "N/A",
-        ),
-        "naive_average_latency": naive_summary.get("average_latency", "N/A"),
-        "agentic_average_latency": agentic_summary.get("average_latency", "N/A"),
-    }
 
 
 def _format_comparison_report(report: dict[str, Any]) -> str:
