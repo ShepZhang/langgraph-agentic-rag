@@ -15,27 +15,23 @@ from typing import Any
 from agent.graph import run_agent
 from agent.state import ChatMessage
 from evaluation.baselines import run_naive_rag
+from evaluation.dataset import (
+    DEFAULT_EVAL_PATH,
+    load_questions,
+    normalize_question,
+    normalize_questions,
+)
 from evaluation.failure_analyzer import analyze_failure, summarize_failure_types
 from evaluation.runtime_config import build_runtime_config_snapshot
 
 
-DEFAULT_EVAL_PATH = Path(__file__).with_name("eval_questions.json")
 EvaluationRunner = Callable[[str, list[ChatMessage]], dict[str, Any]]
 
 
 def load_eval_questions(path: str | Path = DEFAULT_EVAL_PATH) -> list[dict[str, Any]]:
     """Load and validate evaluation questions."""
 
-    with Path(path).open(encoding="utf-8") as question_file:
-        records = json.load(question_file)
-
-    if not isinstance(records, list):
-        raise ValueError("evaluation questions must be a list")
-
-    return [
-        _normalize_eval_question(record, index)
-        for index, record in enumerate(records)
-    ]
+    return [question.to_compat_dict() for question in load_questions(path)]
 
 
 def evaluate_questions(
@@ -46,10 +42,8 @@ def evaluate_questions(
 ) -> dict[str, Any]:
     """Evaluate questions and return per-question results plus summary metrics."""
 
-    normalized_questions = [
-        _normalize_eval_question(item, index)
-        for index, item in enumerate(questions)
-    ]
+    typed_questions = normalize_questions(questions)
+    normalized_questions = [question.to_compat_dict() for question in typed_questions]
 
     if run_naive_fn is not None:
         return _evaluate_comparison(
@@ -73,7 +67,7 @@ def evaluate_single_system(
 ) -> dict[str, Any]:
     """Evaluate one raw question record with one system."""
 
-    normalized_item = _normalize_eval_question(item, 0)
+    normalized_item = normalize_question(item, 0).to_compat_dict()
     return _evaluate_single_system(normalized_item, runner, timer)
 
 
@@ -83,11 +77,18 @@ def summarize_results(
 ) -> dict[str, Any]:
     """Summarize results after normalizing raw question records."""
 
-    normalized_questions = [
-        _normalize_eval_question(item, index)
-        for index, item in enumerate(questions)
-    ]
+    typed_questions = normalize_questions(questions)
+    normalized_questions = [question.to_compat_dict() for question in typed_questions]
     return _summarize(results, normalized_questions)
+
+
+def __getattr__(name: str) -> Any:
+    if name == "_normalize_eval_question":
+        return lambda record, index: normalize_question(
+            record,
+            index,
+        ).to_compat_dict()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def format_report(report: dict[str, Any]) -> str:
@@ -349,7 +350,7 @@ def _build_success_result(
         raise ValueError("fallback_reason must be a string")
 
     fallback_triggered = bool(fallback_reason.strip()) or _is_fallback_answer(answer)
-    should_answer = _get_answerable(item)
+    should_answer = bool(item.get("answerable", item.get("should_answer", True)))
     answer_returned = bool(answer.strip()) and not fallback_triggered
     expected_keywords = item.get("expected_keywords", [])
     expected_sources = item.get("expected_sources", [])
@@ -661,125 +662,6 @@ def _build_comparison_summary(
     }
 
 
-def _normalize_expected_sources(record: dict[str, Any]) -> list[str]:
-    if "expected_sources" in record:
-        return _normalize_string_list(
-            record.get("expected_sources"),
-            field_name="expected_sources",
-        )
-    return _normalize_string_list(
-        record.get("expected_source"),
-        field_name="expected_source",
-    )
-
-
-def _normalize_eval_question(record: dict[str, Any], index: int) -> dict[str, Any]:
-    if not isinstance(record, dict):
-        raise ValueError(f"evaluation question at index {index} must be an object")
-
-    question = record.get("question")
-    if not isinstance(question, str) or not question.strip():
-        raise ValueError(f"evaluation question at index {index} requires question")
-
-    requires_rewrite = record.get("requires_rewrite", False)
-    if not isinstance(requires_rewrite, bool):
-        raise ValueError("requires_rewrite must be a boolean")
-
-    normalized = dict(record)
-    normalized["id"] = str(record.get("id") or f"q{index + 1:03d}")
-    normalized["question_type"] = str(
-        record.get("question_type") or "unspecified"
-    ).strip()
-    normalized["gold_answer"] = str(record.get("gold_answer") or "").strip()
-    normalized["expected_keywords"] = _normalize_string_list(
-        record.get("expected_keywords"),
-        field_name="expected_keywords",
-    )
-    normalized["expected_sources"] = _normalize_expected_sources(record)
-    source_match_mode = record.get("source_match_mode", "any")
-    if source_match_mode not in {"any", "all"}:
-        raise ValueError("source_match_mode must be 'any' or 'all'")
-    if source_match_mode == "all" and len(normalized["expected_sources"]) < 2:
-        raise ValueError(
-            "source_match_mode 'all' requires at least two expected_sources"
-        )
-    normalized["source_match_mode"] = source_match_mode
-
-    answerable = _get_answerable(record)
-    normalized["answerable"] = answerable
-    normalized["should_answer"] = answerable
-
-    expected_behavior = record.get("expected_behavior")
-    if expected_behavior is None:
-        expected_behavior = "answer_with_citation" if answerable else "fallback"
-    elif not isinstance(expected_behavior, str):
-        raise ValueError(
-            "expected_behavior must be one of answer_with_citation or fallback"
-        )
-    else:
-        expected_behavior = expected_behavior.strip()
-        if expected_behavior not in {"answer_with_citation", "fallback"}:
-            raise ValueError(
-                "expected_behavior must be one of answer_with_citation or fallback"
-            )
-        if answerable and expected_behavior == "fallback":
-            raise ValueError("expected_behavior must match answerable")
-        if not answerable and expected_behavior == "answer_with_citation":
-            raise ValueError("expected_behavior must match answerable")
-    normalized["expected_behavior"] = expected_behavior
-
-    chat_history = record.get("chat_history", [])
-    normalized["chat_history"] = _normalize_chat_history(chat_history)
-    normalized["requires_rewrite"] = requires_rewrite
-    return normalized
-
-
-def _get_answerable(item: dict[str, Any]) -> bool:
-    has_answerable = "answerable" in item
-    has_should_answer = "should_answer" in item
-
-    if has_answerable:
-        answerable = item.get("answerable")
-        if not isinstance(answerable, bool):
-            raise ValueError("answerable must be a boolean")
-        if has_should_answer:
-            should_answer = item.get("should_answer")
-            if not isinstance(should_answer, bool):
-                raise ValueError("should_answer must be a boolean")
-            if answerable != should_answer:
-                raise ValueError("answerable and should_answer must match")
-        return answerable
-
-    if has_should_answer:
-        should_answer = item.get("should_answer")
-        if not isinstance(should_answer, bool):
-            raise ValueError("should_answer must be a boolean")
-        return should_answer
-
-    return True
-
-
-def _normalize_chat_history(value: Any) -> list[dict[str, Any]]:
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise ValueError("chat_history must be a list")
-
-    normalized_history: list[dict[str, Any]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            raise ValueError("chat_history must contain dict entries with role and content")
-        role = item.get("role")
-        content = item.get("content")
-        if not isinstance(role, str) or not role.strip():
-            raise ValueError("chat_history entries require string role and content")
-        if not isinstance(content, str):
-            raise ValueError("chat_history entries require string role and content")
-        normalized_history.append(item)
-
-    return normalized_history
-
-
 def _format_comparison_report(report: dict[str, Any]) -> str:
     """Format a naive-vs-agentic report as readable markdown."""
 
@@ -850,18 +732,6 @@ def _format_comparison_report(report: dict[str, Any]) -> str:
         )
 
     return "\n".join(lines)
-
-
-def _normalize_string_list(value: Any, field_name: str) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, list):
-        if all(isinstance(item, str) for item in value):
-            return value
-        raise ValueError(f"{field_name} must contain only strings")
-    raise ValueError(f"{field_name} must be a string or list of strings")
 
 
 def _safe_list(value: Any, field_name: str) -> list[Any]:
