@@ -89,36 +89,6 @@ def summarize_results(
     return summarize_metric_results(typed_results, typed_questions).to_dict()
 
 
-def __getattr__(name: str) -> Any:
-    if name == "_evaluate_single_system":
-        return _legacy_evaluate_single_system
-    if name == "_summarize":
-        return _legacy_summarize
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-def _legacy_evaluate_single_system(
-    item: dict[str, Any],
-    runner: Callable[..., dict[str, Any]],
-    timer: Callable[[], float],
-) -> dict[str, Any]:
-    report = evaluate_typed_single_system(
-        [normalize_question(item, 0)],
-        CallableRunnerAdapter(runner),
-        timer,
-    )
-    return report.results[0].to_dict()
-
-
-def _legacy_summarize(
-    results: list[dict[str, Any]],
-    questions: list[dict[str, Any]],
-) -> dict[str, Any]:
-    typed_questions = normalize_questions(questions)
-    typed_results = [EvaluationResult(**result) for result in results]
-    return summarize_metric_results(typed_results, typed_questions).to_dict()
-
-
 def _normalize_eval_question(record: dict[str, Any], index: int) -> dict[str, Any]:
     """Compatibility facade for legacy evaluation callers."""
 

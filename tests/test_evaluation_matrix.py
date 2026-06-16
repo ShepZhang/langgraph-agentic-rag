@@ -13,6 +13,11 @@ import pytest
 
 from config import get_settings
 from evaluation import evaluate as evaluator
+from evaluation.comparison import evaluate_single_system as evaluate_typed_single_system
+from evaluation.dataset import normalize_question
+from evaluation.metrics import summarize_results as summarize_metric_results
+from evaluation.runners import CallableRunnerAdapter
+from evaluation.schemas import EvaluationResult
 
 
 def _matrix_module():
@@ -71,18 +76,25 @@ def test_public_wrappers_match_existing_evaluator_behavior():
         return _system_result("Retrieval augments generation.")
 
     public_result = evaluate_single_system(item, runner, StepTimer())
-    normalized_item = evaluator._normalize_eval_question(item, 0)
-    private_result = evaluator._evaluate_single_system(
-        normalized_item,
-        runner,
+    normalized_item = normalize_question(item, 0)
+    typed_result = evaluate_typed_single_system(
+        [normalized_item],
+        CallableRunnerAdapter(runner),
         StepTimer(),
-    )
+    ).results[0].to_dict()
 
-    assert public_result == private_result
-    assert summarize_results([public_result], [item]) == evaluator._summarize(
-        [private_result],
-        [item],
-    )
+    assert public_result == typed_result
+    assert summarize_results([public_result], [item]) == summarize_metric_results(
+        [EvaluationResult(**public_result)],
+        [normalized_item],
+    ).to_dict()
+
+
+def test_legacy_private_orchestration_helpers_are_not_exposed():
+    assert not hasattr(evaluator, "_evaluate_single_system")
+    assert not hasattr(evaluator, "_summarize")
+    assert not hasattr(evaluator, "_evaluate_comparison")
+    assert not hasattr(evaluator, "_build_comparison_summary")
 
 
 def test_public_wrappers_have_typed_signatures_and_docstrings():
