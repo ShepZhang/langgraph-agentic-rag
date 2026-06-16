@@ -37,4 +37,11 @@ def invoke_judge(
     try:
         return judge.evaluate(question, result)
     except Exception as exc:
-        return JudgeResult.failed(f"{type(exc).__name__}: {exc}")
+        return JudgeResult.failed(_format_error(exc))
+
+
+def _format_error(exc: Exception) -> str:
+    message = str(exc)
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return type(exc).__name__

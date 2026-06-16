@@ -55,3 +55,19 @@ def test_invoke_judge_records_failure_without_raising():
     assert result.status == "failed"
     assert result.error == "RuntimeError: judge unavailable"
     assert result.scores == {}
+
+
+def test_invoke_judge_formats_empty_exception_message_as_class_name():
+    class BrokenJudge:
+        def evaluate(
+            self,
+            question: EvaluationQuestion,
+            result: EvaluationResult,
+        ):
+            raise RuntimeError()
+
+    result = invoke_judge(BrokenJudge(), _question(), _result())
+
+    assert result.status == "failed"
+    assert result.error == "RuntimeError"
+    assert result.scores == {}
