@@ -8,7 +8,23 @@ from pathlib import Path
 
 import pytest
 
+import evaluation.evaluate as evaluator
 from evaluation.evaluate import evaluate_questions, format_report, load_eval_questions, main
+
+
+def test_public_facade_exports_owned_callables():
+    public_names = [
+        "load_eval_questions",
+        "evaluate_questions",
+        "evaluate_single_system",
+        "summarize_results",
+        "format_report",
+        "write_evaluation_artifacts",
+        "main",
+    ]
+
+    for name in public_names:
+        assert callable(getattr(evaluator, name))
 
 
 def test_load_eval_questions_reads_new_schema_and_legacy_source(tmp_path):
