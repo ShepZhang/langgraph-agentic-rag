@@ -7,7 +7,9 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from agent.features import AgentFeatureFlags
 from agent.nodes import AgentNodes
+from agent.prompts import format_documents
 from agent.state import create_initial_state
 from tools import ToolContext, ToolRegistry
 from tools.base import BaseTool
@@ -1883,3 +1885,48 @@ def test_fallback_node_returns_clear_message():
     assert "无法可靠回答" in update["answer"]
     assert update["citations"] == []
     assert update["fallback_reason"]
+
+
+def test_generate_answer_uses_registered_answer_prompt(monkeypatch):
+    captured = {}
+
+    def fake_render_prompt(prompt_id, **variables):
+        captured["prompt_id"] = prompt_id
+        captured["variables"] = variables
+        return "registered answer prompt"
+
+    monkeypatch.setattr("agent.nodes.render_prompt", fake_render_prompt)
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Agentic RAG uses retrieval grading [1].", '
+                '"used_citation_indices": [1]}'
+            )
+        ]
+    )
+    document = {
+        "content": "Agentic RAG uses retrieval grading.",
+        "source": "paper.pdf",
+        "chunk_id": "chunk-1",
+    }
+    nodes = AgentNodes(
+        llm=llm,
+        retriever_fn=lambda query: [],
+        features=AgentFeatureFlags(citation_verification_enabled=False),
+    )
+    state = create_initial_state("What does Agentic RAG use?")
+    state["current_query"] = "agentic rag controls"
+    state["relevant_documents"] = [document]
+
+    update = nodes.generate_answer_node(state)
+
+    assert captured == {
+        "prompt_id": "agent.answer_generation",
+        "variables": {
+            "question": "What does Agentic RAG use?",
+            "current_query": "agentic rag controls",
+            "documents": format_documents([document]),
+        },
+    }
+    assert llm.prompts == ["registered answer prompt"]
+    assert update["draft_answer"] == "Agentic RAG uses retrieval grading [1]."

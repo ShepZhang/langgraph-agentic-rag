@@ -8,6 +8,7 @@ from typing import Any, Literal, TypedDict
 
 from agent.prompts import format_chat_history
 from agent.state import ChatMessage
+from prompting import render_prompt
 
 
 QueryTransformStrategy = Literal["rewrite", "multi_query", "decomposition"]
@@ -30,31 +31,11 @@ def build_query_transform_prompt(
 ) -> str:
     """Build the initial query transformation prompt."""
 
-    return f"""You transform user questions for private knowledge-base retrieval.
-
-Use chat history only to resolve references or missing context.
-Choose exactly one strategy:
-- rewrite: for simple factual questions that only need a standalone retrieval query.
-- multi_query: for ambiguous or context-dependent questions that benefit from equivalent or complementary retrieval queries.
-- decomposition: for complex comparison or multi-hop questions that benefit from sub-questions.
-
-Return JSON only in this shape:
-{{"strategy": "rewrite", "rewritten_query": "standalone retrieval query", "expanded_queries": [], "sub_questions": [], "reason": "short reason"}}
-
-Rules:
-- rewritten_query must be a standalone question suitable for retrieval.
-- Do not use decomposition for simple factual questions.
-- expanded_queries should be empty unless strategy is multi_query.
-- sub_questions should be empty unless strategy is decomposition.
-- Return JSON only. No markdown fences.
-
-Chat history:
-{format_chat_history(chat_history)}
-
-Original question:
-{question}
-
-JSON:"""
+    return render_prompt(
+        "agent.query_transform",
+        chat_history=format_chat_history(chat_history),
+        question=question,
+    )
 
 
 def fallback_query_transform(

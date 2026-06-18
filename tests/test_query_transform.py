@@ -112,3 +112,28 @@ def test_build_query_transform_prompt_contains_router_contract():
     assert "Return JSON only" in prompt
     assert "Discuss Agentic RAG." in prompt
     assert "How does it compare?" in prompt
+
+
+def test_build_query_transform_prompt_uses_registered_prompt(monkeypatch):
+    captured = {}
+
+    def fake_render_prompt(prompt_id, **variables):
+        captured["prompt_id"] = prompt_id
+        captured["variables"] = variables
+        return "registered query transform"
+
+    monkeypatch.setattr("agent.query_transform.render_prompt", fake_render_prompt)
+
+    result = build_query_transform_prompt(
+        question="How does it compare?",
+        chat_history=[{"role": "user", "content": "Discuss Agentic RAG."}],
+    )
+
+    assert result == "registered query transform"
+    assert captured == {
+        "prompt_id": "agent.query_transform",
+        "variables": {
+            "chat_history": "user: Discuss Agentic RAG.",
+            "question": "How does it compare?",
+        },
+    }

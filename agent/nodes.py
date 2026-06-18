@@ -12,14 +12,7 @@ from langchain_core.messages import BaseMessage
 
 from agent.features import AgentFeatureFlags
 from agent.multi_query import build_retrieval_queries, merge_retrieved_documents
-from agent.prompts import (
-    ANSWER_GENERATION_PROMPT,
-    ANSWER_REVISION_PROMPT,
-    CLAIM_EXTRACTION_PROMPT,
-    RETRY_QUERY_REWRITE_PROMPT,
-    RETRIEVAL_GRADING_PROMPT,
-    format_documents,
-)
+from agent.prompts import format_documents
 from agent.citation_verification import (
     build_claim_verification_summary,
     parse_claim_extraction_response,
@@ -31,6 +24,7 @@ from agent.query_transform import (
 )
 from agent.retrieval_grading import parse_retrieval_grading_response
 from agent.state import AgentState, Citation, RetrievedDocument
+from prompting import render_prompt
 from tools import ToolRegistry, create_default_tool_registry
 
 
@@ -70,7 +64,8 @@ class AgentNodes:
 
         is_retry = state.get("retrieval_attempt", 0) > 0
         if is_retry:
-            prompt = RETRY_QUERY_REWRITE_PROMPT.format(
+            prompt = render_prompt(
+                "agent.retry_query_rewrite",
                 question=state["question"],
                 current_query=state.get("current_query") or state["question"],
                 previous_queries=_format_previous_queries(
@@ -231,7 +226,8 @@ class AgentNodes:
                 "route": "rewrite_query",
             }
 
-        prompt = RETRIEVAL_GRADING_PROMPT.format(
+        prompt = render_prompt(
+            "agent.retrieval_grading",
             question=state["question"],
             current_query=state.get("current_query") or state["question"],
             documents=format_documents(documents),
@@ -279,7 +275,8 @@ class AgentNodes:
             logger.info("Answer generation skipped: %s", reason)
             return _fallback_update(reason)
 
-        prompt = ANSWER_GENERATION_PROMPT.format(
+        prompt = render_prompt(
+            "agent.answer_generation",
             question=state["question"],
             current_query=state.get("current_query") or state["question"],
             documents=format_documents(documents),
@@ -405,7 +402,8 @@ class AgentNodes:
 
         cited_documents = state.get("cited_documents", [])
         valid_chunk_ids = _selected_citation_chunk_ids(cited_documents)
-        prompt = CLAIM_EXTRACTION_PROMPT.format(
+        prompt = render_prompt(
+            "agent.claim_extraction",
             question=state["question"],
             answer=draft_answer,
             documents=format_documents(cited_documents),
@@ -501,7 +499,8 @@ class AgentNodes:
         """Revise unsupported draft-answer claims using verifier feedback."""
 
         cited_documents = state.get("cited_documents", [])
-        prompt = ANSWER_REVISION_PROMPT.format(
+        prompt = render_prompt(
+            "agent.answer_revision",
             question=state["question"],
             answer=state.get("draft_answer", ""),
             unsupported_claims=json.dumps(
