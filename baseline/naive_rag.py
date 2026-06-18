@@ -12,9 +12,10 @@ from agent.nodes import (
     build_citations,
     is_unable_to_answer,
 )
-from agent.prompts import ANSWER_GENERATION_PROMPT, format_documents
+from agent.prompts import format_documents
 from agent.state import ChatMessage
 from config import Settings, get_settings
+from prompting import render_prompt
 from rag.retriever import retrieve
 
 
@@ -42,7 +43,8 @@ def run_naive_rag(
             reason="Naive RAG retrieved no documents.",
         )
 
-    prompt = ANSWER_GENERATION_PROMPT.format(
+    prompt = render_prompt(
+        "agent.answer_generation",
         question=question,
         current_query=question,
         documents=format_documents(documents),

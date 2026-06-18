@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from agent.prompts import format_documents
+import baseline.naive_rag as naive_rag_module
 from evaluation.baselines import run_naive_rag
 
 
@@ -61,6 +63,50 @@ def test_run_naive_rag_returns_agent_compatible_payload():
     assert result["fallback_reason"] == ""
     assert "Original user question:\nWhat is naive RAG?" in llm.prompts[0]
     assert "Retrieval query:\nWhat is naive RAG?" in llm.prompts[0]
+
+
+def test_run_naive_rag_uses_registered_answer_prompt(monkeypatch):
+    captured = {}
+
+    def fake_render_prompt(prompt_id, **variables):
+        captured["prompt_id"] = prompt_id
+        captured["variables"] = variables
+        return "registered answer prompt"
+
+    monkeypatch.setattr(naive_rag_module, "render_prompt", fake_render_prompt)
+    llm = FakeLLM(
+        [
+            (
+                '{"answer": "Naive RAG retrieves once and answers [1].", '
+                '"used_citation_indices": [1]}'
+            )
+        ]
+    )
+    question = "What is naive RAG?"
+    documents = [
+        {
+            "content": "Naive RAG retrieves once and answers.",
+            "source": "notes.md",
+            "chunk_id": "chunk-1",
+        }
+    ]
+
+    result = run_naive_rag(
+        question,
+        retriever_fn=lambda query: documents,
+        llm=llm,
+    )
+
+    assert captured == {
+        "prompt_id": "agent.answer_generation",
+        "variables": {
+            "question": question,
+            "current_query": question,
+            "documents": format_documents(documents),
+        },
+    }
+    assert llm.prompts == ["registered answer prompt"]
+    assert result["answer"] == "Naive RAG retrieves once and answers [1]."
 
 
 def test_run_naive_rag_falls_back_when_answer_lacks_citations():

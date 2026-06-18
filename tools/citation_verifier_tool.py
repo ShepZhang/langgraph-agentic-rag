@@ -8,7 +8,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent.citation_verification import parse_citation_verification_response
-from agent.prompts import CITATION_VERIFICATION_PROMPT, format_documents
+from agent.prompts import format_documents
+from prompting import render_prompt
 from tools.base import BaseTool, ToolExecutionError, coerce_llm_text
 
 
@@ -37,7 +38,8 @@ class CitationVerifierTool(BaseTool[CitationVerifierArgs, dict[str, Any]]):
             if chunk_id:
                 valid_chunk_ids.append(str(chunk_id))
 
-        prompt = CITATION_VERIFICATION_PROMPT.format(
+        prompt = render_prompt(
+            "agent.citation_verification",
             question=arguments.question,
             answer=arguments.answer,
             claims=json.dumps(arguments.claims, ensure_ascii=False),

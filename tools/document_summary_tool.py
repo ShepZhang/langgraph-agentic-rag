@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from prompting import render_prompt
 from tools.base import BaseTool, ToolExecutionError, coerce_llm_text
 
 
@@ -28,11 +29,11 @@ class DocumentSummaryTool(BaseTool[DocumentSummaryArgs, str]):
             raise ToolExecutionError("Document summary requires an LLM.")
 
         title = arguments.title or "Untitled document"
-        prompt = (
-            "Summarize the document using only the supplied text. "
-            f"Return at most {arguments.max_points} concise bullet points. "
-            "Do not add unsupported facts.\n\n"
-            f"Title: {title}\n\nDocument:\n{arguments.content}"
+        prompt = render_prompt(
+            "tool.document_summary",
+            max_points=arguments.max_points,
+            title=title,
+            content=arguments.content,
         )
         summary = coerce_llm_text(self.context.llm.invoke(prompt)).strip()
         if not summary:

@@ -4,7 +4,9 @@ import json
 
 import pytest
 
+from agent.prompts import format_documents
 from tools import ToolContext, ToolRegistry
+import tools.citation_verifier_tool as citation_verifier_module
 from tools.citation_verifier_tool import CitationVerifierTool
 
 
@@ -84,6 +86,46 @@ def test_citation_verifier_returns_normalized_results_and_metadata():
     assert "The document says one fact." in prompt
     assert json.dumps(arguments["claims"], ensure_ascii=False) in prompt
     assert "verify each extracted claim" in prompt.lower()
+
+
+def test_citation_verifier_uses_registered_prompt(monkeypatch):
+    captured = {}
+
+    def fake_render_prompt(prompt_id, **variables):
+        captured["prompt_id"] = prompt_id
+        captured["variables"] = variables
+        return "registered citation verifier prompt"
+
+    monkeypatch.setattr(citation_verifier_module, "render_prompt", fake_render_prompt)
+    llm = FakeLLM(
+        [
+            (
+                '{"results": ['
+                '{"claim_id": "c001", "claim": "The answer cites one fact.", '
+                '"cited_chunk_ids": ["chunk-1"], '
+                '"verification_label": "supported", "confidence": 0.95, '
+                '"reason": "Direct support."}'
+                '], "reason": "All claims supported."}'
+            )
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(CitationVerifierTool(ToolContext(llm=llm)))
+    arguments = _base_arguments()
+
+    result = registry.invoke("verify_citations", arguments)
+
+    assert captured == {
+        "prompt_id": "agent.citation_verification",
+        "variables": {
+            "question": arguments["question"],
+            "answer": arguments["answer"],
+            "claims": json.dumps(arguments["claims"], ensure_ascii=False),
+            "documents": format_documents(arguments["documents"]),
+        },
+    }
+    assert llm.prompts == ["registered citation verifier prompt"]
+    assert result.success is True
 
 
 def test_citation_verifier_counts_partially_supported_and_unsupported_claims():
