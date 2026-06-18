@@ -3,7 +3,7 @@ from __future__ import annotations
 from prompting.registry import PromptDefinition, PromptRegistry
 
 
-QUERY_TRANSFORM_TEMPLATE = """You transform user questions for private knowledge-base retrieval.
+QUERY_TRANSFORM_V1 = """You transform user questions for private knowledge-base retrieval.
 
 Use chat history only to resolve references or missing context.
 Choose exactly one strategy:
@@ -30,7 +30,7 @@ Original question:
 JSON:"""
 
 
-QUERY_REWRITE_TEMPLATE = """You are rewriting a user question for private knowledge-base retrieval.
+QUERY_REWRITE_V1 = """You are rewriting a user question for private knowledge-base retrieval.
 
 Use the chat history only to resolve references or missing context.
 Return one standalone retrieval question.
@@ -45,7 +45,7 @@ Original question:
 Standalone retrieval question:"""
 
 
-RETRY_QUERY_REWRITE_TEMPLATE = """You are improving a failed private knowledge-base retrieval query.
+RETRY_QUERY_REWRITE_V1 = """You are improving a failed private knowledge-base retrieval query.
 
 The previous retrieval did not find enough relevant evidence. Rewrite the query to improve retrieval.
 Avoid repeating the same query. Keep it concise, specific, and search-oriented.
@@ -71,7 +71,7 @@ Previously retrieved chunks:
 Improved retrieval query:"""
 
 
-RETRIEVAL_GRADING_TEMPLATE = """You are grading whether retrieved chunks can answer a user's original question.
+RETRIEVAL_GRADING_V1 = """You are grading whether retrieved chunks can answer a user's original question.
 
 Do not mark chunks relevant just because they share keywords.
 Mark them relevant only if they contain enough factual information to answer the original user question.
@@ -102,7 +102,7 @@ Retrieved chunks:
 JSON:"""
 
 
-ANSWER_GENERATION_TEMPLATE = """You answer questions using only the retrieved chunks.
+ANSWER_GENERATION_V1 = """You answer questions using only the retrieved chunks.
 
 Rules:
 - You must answer the original user question.
@@ -131,7 +131,7 @@ Retrieved chunks:
 JSON:"""
 
 
-CLAIM_EXTRACTION_TEMPLATE = """You extract atomic factual claims from a draft answer.
+CLAIM_EXTRACTION_V1 = """You extract atomic factual claims from a draft answer.
 
 Return JSON only in this shape:
 {{"claims": [{{"claim_id": "c001", "claim": "short factual claim", "cited_chunk_ids": ["chunk_id"]}}], "reason": "short reason"}}
@@ -156,7 +156,7 @@ Selected citation chunks:
 JSON:"""
 
 
-CITATION_VERIFICATION_TEMPLATE = """You verify each extracted claim against its cited chunks.
+CITATION_VERIFICATION_V1 = """You verify each extracted claim against its cited chunks.
 
 Return JSON only in this shape:
 {{"results": [{{"claim_id": "c001", "claim": "short factual claim", "cited_chunk_ids": ["chunk_id"], "verification_label": "supported", "confidence": 0.91, "reason": "short reason"}}], "reason": "short overall reason"}}
@@ -185,7 +185,7 @@ Selected citation chunks:
 JSON:"""
 
 
-ANSWER_REVISION_TEMPLATE = """You revise an answer after claim-level citation verification found unsupported content.
+ANSWER_REVISION_V1 = """You revise an answer after claim-level citation verification found unsupported content.
 
 Return JSON only in this shape:
 {{"answer": "Revised answer with citation markers like [1].", "used_citation_indices": [1]}}
@@ -215,7 +215,7 @@ Selected citation chunks:
 JSON:"""
 
 
-CLAIM_VERIFICATION_TEMPLATE = """You are a claim-level citation verifier for private document QA.
+CLAIM_VERIFICATION_V1 = """You are a claim-level citation verifier for private document QA.
 
 Verify whether the answer is fully supported by the selected citation chunks.
 Return JSON only in this shape:
@@ -241,7 +241,7 @@ Selected citation chunks:
 JSON:"""
 
 
-DOCUMENT_SUMMARY_TEMPLATE = """Summarize the document using only the supplied text. Return at most {max_points} concise bullet points. Do not add unsupported facts.
+DOCUMENT_SUMMARY_V1 = """Summarize the document using only the supplied text. Return at most {max_points} concise bullet points. Do not add unsupported facts.
 
 Title: {title}
 
@@ -249,69 +249,72 @@ Document:
 {content}"""
 
 
+_PROJECT_PROMPT_DEFINITIONS = (
+    PromptDefinition(
+        prompt_id="agent.query_transform",
+        version="v1",
+        template=QUERY_TRANSFORM_V1,
+        description="Transform a user question into a retrieval strategy.",
+    ),
+    PromptDefinition(
+        prompt_id="agent.retry_query_rewrite",
+        version="v1",
+        template=RETRY_QUERY_REWRITE_V1,
+        description="Improve a failed retrieval query.",
+    ),
+    PromptDefinition(
+        prompt_id="agent.retrieval_grading",
+        version="v1",
+        template=RETRIEVAL_GRADING_V1,
+        description="Grade retrieved chunks against the user question.",
+    ),
+    PromptDefinition(
+        prompt_id="agent.answer_generation",
+        version="v1",
+        template=ANSWER_GENERATION_V1,
+        description="Generate a grounded answer from retrieved chunks.",
+    ),
+    PromptDefinition(
+        prompt_id="agent.claim_extraction",
+        version="v1",
+        template=CLAIM_EXTRACTION_V1,
+        description="Extract citation-requiring claims from an answer.",
+    ),
+    PromptDefinition(
+        prompt_id="agent.citation_verification",
+        version="v1",
+        template=CITATION_VERIFICATION_V1,
+        description="Verify extracted claims against cited chunks.",
+    ),
+    PromptDefinition(
+        prompt_id="agent.answer_revision",
+        version="v1",
+        template=ANSWER_REVISION_V1,
+        description="Revise an answer after citation verification.",
+    ),
+    PromptDefinition(
+        prompt_id="tool.document_summary",
+        version="v1",
+        template=DOCUMENT_SUMMARY_V1,
+        description="Summarize supplied document text.",
+    ),
+    PromptDefinition(
+        prompt_id="agent.query_rewrite",
+        version="v1",
+        template=QUERY_REWRITE_V1,
+        description="Compatibility prompt for standalone query rewriting.",
+    ),
+    PromptDefinition(
+        prompt_id="agent.claim_verification",
+        version="v1",
+        template=CLAIM_VERIFICATION_V1,
+        description="Compatibility prompt for answer-level claim verification.",
+    ),
+)
+
+
 PROJECT_PROMPT_REGISTRY = PromptRegistry(
-    [
-        PromptDefinition(
-            prompt_id="agent.query_transform",
-            version="v1",
-            template=QUERY_TRANSFORM_TEMPLATE,
-            description="Transform a user question into a retrieval strategy.",
-        ),
-        PromptDefinition(
-            prompt_id="agent.retry_query_rewrite",
-            version="v1",
-            template=RETRY_QUERY_REWRITE_TEMPLATE,
-            description="Improve a failed retrieval query.",
-        ),
-        PromptDefinition(
-            prompt_id="agent.retrieval_grading",
-            version="v1",
-            template=RETRIEVAL_GRADING_TEMPLATE,
-            description="Grade retrieved chunks against the user question.",
-        ),
-        PromptDefinition(
-            prompt_id="agent.answer_generation",
-            version="v1",
-            template=ANSWER_GENERATION_TEMPLATE,
-            description="Generate a grounded answer from retrieved chunks.",
-        ),
-        PromptDefinition(
-            prompt_id="agent.claim_extraction",
-            version="v1",
-            template=CLAIM_EXTRACTION_TEMPLATE,
-            description="Extract citation-requiring claims from an answer.",
-        ),
-        PromptDefinition(
-            prompt_id="agent.citation_verification",
-            version="v1",
-            template=CITATION_VERIFICATION_TEMPLATE,
-            description="Verify extracted claims against cited chunks.",
-        ),
-        PromptDefinition(
-            prompt_id="agent.answer_revision",
-            version="v1",
-            template=ANSWER_REVISION_TEMPLATE,
-            description="Revise an answer after citation verification.",
-        ),
-        PromptDefinition(
-            prompt_id="tool.document_summary",
-            version="v1",
-            template=DOCUMENT_SUMMARY_TEMPLATE,
-            description="Summarize supplied document text.",
-        ),
-        PromptDefinition(
-            prompt_id="agent.query_rewrite",
-            version="v1",
-            template=QUERY_REWRITE_TEMPLATE,
-            description="Compatibility prompt for standalone query rewriting.",
-        ),
-        PromptDefinition(
-            prompt_id="agent.claim_verification",
-            version="v1",
-            template=CLAIM_VERIFICATION_TEMPLATE,
-            description="Compatibility prompt for answer-level claim verification.",
-        ),
-    ],
+    _PROJECT_PROMPT_DEFINITIONS,
     active_versions={
         "agent.query_transform": "v1",
         "agent.retry_query_rewrite": "v1",

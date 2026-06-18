@@ -16,6 +16,7 @@ from prompting import (
     get_prompt_template,
     render_prompt,
 )
+from prompting.catalog import _PROJECT_PROMPT_DEFINITIONS
 
 
 EXPECTED_PROMPTS = {
@@ -80,7 +81,13 @@ ACTIVE_PROMPT_IDS = {
 }
 
 
-def test_project_catalog_pins_v1_metadata_and_active_manifest():
+def test_catalog_pins_prompt_ids_versions_variables_and_fingerprints():
+    assert isinstance(_PROJECT_PROMPT_DEFINITIONS, tuple)
+    assert {
+        (definition.prompt_id, definition.version)
+        for definition in _PROJECT_PROMPT_DEFINITIONS
+    } == {(prompt_id, "v1") for prompt_id in EXPECTED_PROMPTS}
+
     for prompt_id, (variables, fingerprint) in EXPECTED_PROMPTS.items():
         definition = get_prompt_definition(prompt_id, version="v1")
 
