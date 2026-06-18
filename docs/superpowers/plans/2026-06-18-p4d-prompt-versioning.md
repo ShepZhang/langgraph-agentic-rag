@@ -2323,11 +2323,24 @@ git add -f \
 git commit -m "docs: publish p4d prompt versioning"
 ```
 
-- [ ] **Step 12: Request code review before integration**
+- [x] **Step 12: Request code review before integration**
 
 Invoke `superpowers:requesting-code-review` against the implementation branch.
 Address confirmed correctness, compatibility, metadata-safety, or test findings
 with focused commits and rerun the affected tests plus the full suite.
+
+Review notes:
+
+- Every implementation task passed an independent specification-compliance
+  review followed by a code-quality review.
+- Task 2 made prompt-version constant names explicit and added exact coverage
+  for inactive compatibility definitions.
+- Task 6 removed a redundant trace-manifest copy while preserving constructor
+  and output isolation.
+- Task 7 clarified manifest privacy scope, corrected the release flow, and
+  standardized the `10 registered / 8 active` wording.
+- The final whole-branch review reported no critical, important, or minor
+  findings and approved P4d for integration.
 
 - [ ] **Step 13: Finish the development branch**
 
