@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.4.3-p4d - Prompt Versioning
+
+Date: 2026-06-18
+
+### Added
+
+- Added a code-native prompt registry with stable prompt IDs, immutable versions,
+  strict rendering contracts, and deterministic SHA-256 fingerprints.
+- Registered all 10 current Agent, naive baseline, citation-verification, and
+  document-summary prompts as exact `v1` templates.
+- Added safe active prompt manifests to evaluation runtime metadata and local
+  Agent traces.
+
+### Changed
+
+- Routed all current runtime LLM prompt construction through the registry while
+  preserving prompt text, invocation order, parser contracts, and public
+  `agent.prompts` constants.
+- Advanced evaluation artifact metadata to schema version `2` and evaluator
+  version `p4d`.
+
+### Notes
+
+- P4d detects template drift and records reproducibility metadata. It does not
+  add dynamic prompt selection, online prompt editing, or LLM-based behavioral
+  prompt regression.
+- P5a DeepSeek semantic judging and P5b SQLite historical trends remain the next
+  evaluation milestones.
+
+### Verification
+
+- Full test suite: `489 passed`.
+- CLI compatibility smoke tests: `3 passed`.
+- Prompt registry and catalog tests: `13 passed`.
+- Ablation, matrix, dashboard, and FastAPI compatibility tests: `83 passed`.
+
 ## v0.4.2-p4c - Modular Evaluation Framework
 
 Date: 2026-06-16

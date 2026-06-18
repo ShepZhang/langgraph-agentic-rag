@@ -2593,12 +2593,16 @@ Review notes:
 - Follow-up review reported no critical or important issues and assessed the
   branch as ready to merge.
 
-- [ ] **Step 8: Finish the development branch**
+- [x] **Step 8: Finish the development branch**
 
 After review and fresh verification, invoke
 `superpowers:finishing-a-development-branch`. Offer merge, pull request, keep,
 or cleanup choices. Create tag `v0.4.2-p4c` only after the user explicitly
 chooses integration and the integration succeeds.
+
+Execution note:
+
+- P4c was merged to `main` and tagged `v0.4.2-p4c` before P4d work began.
 
 ## Final Verification Matrix
 

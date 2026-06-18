@@ -102,8 +102,8 @@ Agent capabilities:
 `ToolContext` injects runtime dependencies such as the active LLM, retriever,
 and `workspace_id`. Pydantic schemas validate arguments, while `ToolResult`
 normalizes success data, structured errors, metadata, and latency. Compact
-tool-call events are written into Agent traces without storing prompts,
-secrets, or full document bodies.
+tool-call events are written into Agent traces without storing rendered prompts
+or prompt inputs, secrets, or full document bodies.
 
 The primary LangGraph workflow uses `retrieve_context` and
 `verify_citations`. Summary and calculator are registered extension points and
@@ -331,8 +331,10 @@ verification results, retry count, latency, and error metadata.
 Trace records intentionally store compact document snippets and metadata rather
 than full document bodies or local source paths. Tool-call events store only
 allowlisted metadata such as workspace id, result count, claim count, latency,
-and sanitized errors. Database-backed trace retention and a Gradio trace
-dashboard remain later milestones.
+and sanitized errors. Each trace also carries the safe active prompt manifest
+of IDs, versions, and fingerprints without storing rendered prompts or prompt
+inputs. Database-backed trace retention and a Gradio trace dashboard remain
+later milestones.
 
 ## FastAPI Backend
 
@@ -470,7 +472,7 @@ Generated artifacts:
 
 Every variant is checkpointed before execution and finalized as `completed`, `completed_with_errors`, or `incomplete`. V0 and V6 canonical comparison artifacts are derived from those completed runs without repeating model calls.
 
-Evaluation artifacts include a sanitized `runtime_config` snapshot covering Agent feature flags, model name, temperature, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name. API keys, base URLs, local persistence paths, and other secrets are intentionally excluded.
+Evaluation artifacts include a sanitized `runtime_config` snapshot covering Agent feature flags, model name, temperature, active prompt versions and SHA-256 fingerprints, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name. API keys, base URLs, local persistence paths, prompt text, prompt inputs, and other secrets are intentionally excluded.
 
 ### Modular Evaluation Framework
 
@@ -486,6 +488,22 @@ The default evaluator remains deterministic and offline-testable. `Judge` and
 historical storage. A configurable DeepSeek semantic judge, SQLite-backed trend
 storage, and a higher-level `EvaluationEngine` remain roadmap work rather than
 claimed completed features.
+
+### Versioned Prompt Registry
+
+P4d moves Agent, baseline, and LLM-backed tool prompts into a code-native
+registry. Each template has a stable prompt ID, immutable version, strict input
+variables, and a deterministic SHA-256 fingerprint. Existing `agent.prompts`
+constants remain available as compatibility exports, while runtime call sites
+render active versions through the registry without changing prompt text or
+parser contracts.
+
+Evaluation artifacts and local Agent traces record a safe active prompt
+manifest containing only prompt IDs, versions, and fingerprints. The manifest
+does not contain full templates, rendered prompts, prompt inputs, user data, or
+secrets. It supports reproducibility and template-drift detection, but P4d does
+not add dynamic prompt selection, online prompt editing, or LLM-based behavioral
+prompt regression.
 
 Metric fields include:
 
@@ -656,6 +674,10 @@ langgraph-agentic-rag/
 │   ├── citation_verifier_tool.py
 │   ├── document_summary_tool.py
 │   └── calculator_tool.py
+├── prompting/
+│   ├── __init__.py
+│   ├── catalog.py
+│   └── registry.py
 ├── agent/
 │   ├── graph.py
 │   ├── state.py
@@ -741,7 +763,7 @@ langgraph-agentic-rag/
 - Added deterministic failed-case analysis with rule-based failure attribution, per-question reasons and suggestions, summary counts, and representative ablation cases.
 - Added a Gradio Evaluation Dashboard for synchronous selected-record comparison, filterable failure diagnostics, and read-only inspection of saved V0-V6 artifacts and runtime configuration.
 - Refactored the evaluator into a modular typed framework with focused dataset, schema, metrics, runner, comparison, reporting, judge, storage, and compatibility facade modules while preserving existing CLI, dashboard, FastAPI, ablation, and artifact contracts.
-- Preserved a modular roadmap toward background execution, shared run IDs, trace drill-down, prompt regression tracking, and historical evaluation trends.
+- Added code-native prompt identity and reproducibility metadata while preserving a roadmap toward behavioral prompt regression, background execution, trace drill-down, and historical evaluation trends.
 
 ## Interview Talking Points
 
@@ -771,6 +793,7 @@ langgraph-agentic-rag/
 - Quick evaluation in the Gradio Evaluation Dashboard is synchronous. Selecting all 36 questions may be slow and may incur model cost.
 - The Ablation Snapshot is read-only and only loads the existing artifact; it cannot launch V0-V6 runs from the browser.
 - Dashboard failure diagnostics use deterministic heuristics for debugging and regression triage, not benchmark-grade causal attribution.
+- Prompt fingerprints detect template drift, but they do not measure whether an LLM's behavior improved or regressed.
 - The project is not a complete production deployment without authentication, authorization, deployment hardening, durable trace storage, and operational monitoring.
 
 ## Roadmap
@@ -800,19 +823,16 @@ langgraph-agentic-rag/
 - P4a deterministic failed-case analysis implemented: evaluation results include primary failure types, reasons, and suggestions, while summaries and ablation reports include failure counts and representative cases.
 - P4b Evaluation Dashboard implemented: Gradio supports synchronous smoke or manually selected quick comparisons, filterable failed-case inspection, and a read-only V0-V6 ablation snapshot with runtime configuration and transparent stored or derived diagnostics.
 - P4c modular evaluation framework implemented: `evaluation.evaluate` is now a compatibility facade over typed schemas, dataset normalization, deterministic metrics, runner execution, comparison orchestration, report rendering, optional judge contracts, atomic JSON storage, and sanitized runtime metadata.
+- P4d prompt versioning implemented: all current Agent, baseline, and LLM-backed tool prompts have stable IDs, immutable `v1` definitions, strict rendering contracts, SHA-256 fingerprints, compatibility exports, and safe evaluation/trace manifests.
 
 ### Next Milestones
 
-- Implement a configurable DeepSeek semantic correctness and groundedness judge through the existing judge protocol.
-- Add SQLite-backed historical evaluation runs and trend comparison.
-- Introduce an `EvaluationEngine` that composes runners, metrics, judges, and stores.
+- P5a: implement a configurable DeepSeek semantic correctness and groundedness judge through the existing judge protocol, with its judge prompt registered and versioned.
+- P5b: add SQLite-backed historical evaluation runs, prompt-aware run comparison, and a trend dashboard.
+- Add background evaluation status, progress, cancellation, and checkpoint recovery.
+- Link failed evaluation cases to `trace_id` and a node-level trace drill-down view.
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
 - Add decomposition sub-question retrieval for multi-hop workflows.
 - Harden workspace isolation with optional per-workspace Chroma collections and authorization checks.
-- Implement `BackgroundAblationRunner` behind the dashboard runner protocol.
-- Add background run status, progress, cancellation, and checkpoint recovery.
-- Share evaluation run IDs across Gradio and FastAPI.
-- Link failed cases to `trace_id` and a node-level trace viewer.
-- Add prompt version tracking and prompt regression checks.
 - Add model-specific prompt tuning and cost/latency evaluation for local and remote models.
 - Add human-reviewed claim labels for stricter citation validation.

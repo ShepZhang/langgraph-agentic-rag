@@ -7,7 +7,7 @@ Use this checklist before publishing the repository or cutting a public version.
 - Repository: `ShepZhang/langgraph-agentic-rag`
 - URL: `https://github.com/ShepZhang/langgraph-agentic-rag`
 - Branch: `main`
-- Version label: `v0.4.2-p4c`
+- Version label: `v0.4.3-p4d`
 - Positioning: reliability-oriented Agentic RAG document QA system
 - Main entry points:
   - Gradio demo: `python app.py`
@@ -21,7 +21,7 @@ Run these before publishing:
 
 ```bash
 .venv/bin/python -m pytest -q
-.venv/bin/python -m compileall agent rag api evaluation experiments baseline tools observability
+.venv/bin/python -m compileall prompting agent rag api evaluation experiments baseline tools observability
 .venv/bin/python -m pytest \
   tests/test_evaluate.py::test_main_prints_report_with_injected_runner \
   tests/test_evaluate.py::test_main_writes_comparison_artifacts \
@@ -35,11 +35,11 @@ Run these before publishing:
   -q
 ```
 
-Expected baseline as of `v0.4.2-p4c`:
+Expected baseline as of `v0.4.3-p4d`:
 
-- Full test suite: `469 passed`
+- Full test suite: `489 passed`
 - CLI compatibility smoke tests: `3 passed`
-- Ablation, matrix, dashboard, and FastAPI compatibility tests: `82 passed`
+- Ablation, matrix, dashboard, and FastAPI compatibility tests: `83 passed`
 
 ## GitHub Project Narrative
 
@@ -47,8 +47,8 @@ Use this short description in the GitHub repository summary:
 
 > Reliability-oriented Agentic RAG document QA system built with LangGraph,
 > hybrid retrieval, reranking, retrieval grading, retry/fallback routing,
-> claim-level citation verification, trace logging, FastAPI, Gradio, and
-> evaluation/ablation tooling.
+> claim-level citation verification, versioned prompt fingerprints, trace
+> logging, FastAPI, Gradio, and evaluation/ablation tooling.
 
 Recommended topics:
 
@@ -68,10 +68,10 @@ Recommended topics:
 ```bash
 git status --short
 git log --oneline --decorate --max-count=5
-git tag v0.4.2-p4c
+git tag v0.4.3-p4d
 git remote add origin git@github.com:ShepZhang/langgraph-agentic-rag.git
 git push -u origin main
-git push origin v0.4.2-p4c
+git push origin v0.4.3-p4d
 ```
 
 Only create the tag once the final local verification matches the expected
@@ -85,5 +85,8 @@ baseline above.
   evaluation jobs, or tenant-level access control.
 - Evaluation metrics are deterministic heuristics unless a future semantic judge
   is configured.
+- Prompt versioning provides deterministic template fingerprints and safe
+  manifests; it does not provide dynamic prompt selection, online editing, or
+  behavioral LLM regression testing.
 - Claim-level citation verification reduces unsupported claims but is not a
   formal proof system.

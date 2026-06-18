@@ -98,7 +98,7 @@ Do not add, delete, or modify `.superpowers/`.
 - Create: `prompting/registry.py`
 - Create: `tests/test_prompt_registry.py`
 
-- [ ] **Step 1: Write the failing registry contract tests**
+- [x] **Step 1: Write the failing registry contract tests**
 
 Create `tests/test_prompt_registry.py`:
 
@@ -281,7 +281,7 @@ def test_active_manifest_is_sorted_excludes_inactive_versions_and_is_copied():
     assert registry.active_manifest()["agent.example"]["version"] == "v1"
 ```
 
-- [ ] **Step 2: Run the tests and verify the package is missing**
+- [x] **Step 2: Run the tests and verify the package is missing**
 
 Run:
 
@@ -292,7 +292,7 @@ Run:
 Expected: collection fails with
 `ModuleNotFoundError: No module named 'prompting'`.
 
-- [ ] **Step 3: Implement the immutable registry**
+- [x] **Step 3: Implement the immutable registry**
 
 Create `prompting/registry.py`:
 
@@ -450,7 +450,7 @@ def _parse_template_variables(template: str) -> tuple[str, ...]:
     return tuple(sorted(variables))
 ```
 
-- [ ] **Step 4: Run the focused registry tests**
+- [x] **Step 4: Run the focused registry tests**
 
 Run:
 
@@ -460,7 +460,7 @@ Run:
 
 Expected: `9 passed`.
 
-- [ ] **Step 5: Commit the registry foundation**
+- [x] **Step 5: Commit the registry foundation**
 
 ```bash
 git add prompting/registry.py tests/test_prompt_registry.py
@@ -477,7 +477,7 @@ git commit -m "feat: add versioned prompt registry"
 - Create: `tests/test_prompt_catalog.py`
 - Modify: `agent/prompts.py`
 
-- [ ] **Step 1: Write the failing project catalog regression tests**
+- [x] **Step 1: Write the failing project catalog regression tests**
 
 Create `tests/test_prompt_catalog.py`:
 
@@ -639,7 +639,7 @@ def test_document_summary_v1_renders_the_existing_text_contract():
     )
 ```
 
-- [ ] **Step 2: Run the tests and verify the catalog facade is missing**
+- [x] **Step 2: Run the tests and verify the catalog facade is missing**
 
 Run:
 
@@ -650,7 +650,7 @@ Run:
 Expected: collection fails because `prompting` does not yet export the catalog
 facade functions.
 
-- [ ] **Step 3: Create the exact project catalog**
+- [x] **Step 3: Create the exact project catalog**
 
 Create `prompting/catalog.py`. Copy every template exactly, including blank
 lines, doubled JSON braces, punctuation, and final labels:
@@ -976,7 +976,7 @@ PROJECT_PROMPT_REGISTRY = PromptRegistry(
 )
 ```
 
-- [ ] **Step 4: Add the stable prompting facade**
+- [x] **Step 4: Add the stable prompting facade**
 
 Create `prompting/__init__.py`:
 
@@ -1041,7 +1041,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 5: Convert `agent.prompts` into a compatibility facade**
+- [x] **Step 5: Convert `agent.prompts` into a compatibility facade**
 
 Replace the prompt bodies at the top of `agent/prompts.py` with exact registry
 lookups while preserving `format_chat_history()` and `format_documents()`
@@ -1131,7 +1131,7 @@ def format_documents(documents: list[RetrievedDocument]) -> str:
     return "\n\n".join(blocks)
 ```
 
-- [ ] **Step 6: Run catalog and compatibility tests**
+- [x] **Step 6: Run catalog and compatibility tests**
 
 Run:
 
@@ -1144,7 +1144,7 @@ Run:
 
 Expected: `18 passed`.
 
-- [ ] **Step 7: Verify no prompt text changed**
+- [x] **Step 7: Verify no prompt text changed**
 
 Run:
 
@@ -1171,7 +1171,7 @@ PY
 
 Expected: output matches the ten fingerprints in the pinned contract table.
 
-- [ ] **Step 8: Commit the catalog and compatibility layer**
+- [x] **Step 8: Commit the catalog and compatibility layer**
 
 ```bash
 git add \
@@ -1192,7 +1192,7 @@ git commit -m "feat: catalog versioned project prompts"
 - Modify: `tests/test_query_transform.py`
 - Modify: `tests/test_agent_nodes.py`
 
-- [ ] **Step 1: Add failing tests that observe registry prompt IDs**
+- [x] **Step 1: Add failing tests that observe registry prompt IDs**
 
 Append to `tests/test_query_transform.py`:
 
@@ -1283,7 +1283,7 @@ from agent.features import AgentFeatureFlags
 from agent.prompts import format_documents
 ```
 
-- [ ] **Step 2: Run both new tests and verify they fail**
+- [x] **Step 2: Run both new tests and verify they fail**
 
 Run:
 
@@ -1295,7 +1295,7 @@ Run:
 
 Expected: both tests fail because the modules do not expose `render_prompt`.
 
-- [ ] **Step 3: Route initial query transformation through the registry**
+- [x] **Step 3: Route initial query transformation through the registry**
 
 In `agent/query_transform.py`, add:
 
@@ -1319,7 +1319,7 @@ def build_query_transform_prompt(
     )
 ```
 
-- [ ] **Step 4: Route all Agent node prompts through the registry**
+- [x] **Step 4: Route all Agent node prompts through the registry**
 
 In `agent/nodes.py`, change prompt imports to:
 
@@ -1392,7 +1392,7 @@ prompt = render_prompt(
 )
 ```
 
-- [ ] **Step 5: Run Agent prompt and node tests**
+- [x] **Step 5: Run Agent prompt and node tests**
 
 Run:
 
@@ -1406,7 +1406,7 @@ Run:
 
 Expected: all tests pass, including the two new registry-observation tests.
 
-- [ ] **Step 6: Verify Agent runtime code no longer formats prompt constants**
+- [x] **Step 6: Verify Agent runtime code no longer formats prompt constants**
 
 Run:
 
@@ -1417,7 +1417,7 @@ rg -n '_PROMPT\.format|ANSWER_GENERATION_PROMPT|ANSWER_REVISION_PROMPT|CLAIM_EXT
 
 Expected: no matches.
 
-- [ ] **Step 7: Commit the Agent migration**
+- [x] **Step 7: Commit the Agent migration**
 
 ```bash
 git add \
@@ -1440,7 +1440,7 @@ git commit -m "refactor: render agent prompts through registry"
 - Modify: `tests/test_citation_verifier_tool.py`
 - Modify: `tests/test_document_summary_tool.py`
 
-- [ ] **Step 1: Add failing baseline and tool registry-observation tests**
+- [x] **Step 1: Add failing baseline and tool registry-observation tests**
 
 Append to `tests/test_baselines.py`:
 
@@ -1558,7 +1558,7 @@ def test_document_summary_uses_registered_prompt(monkeypatch):
     }
 ```
 
-- [ ] **Step 2: Run the new tests and verify they fail**
+- [x] **Step 2: Run the new tests and verify they fail**
 
 Run:
 
@@ -1572,7 +1572,7 @@ Run:
 
 Expected: three failures because the modules do not expose `render_prompt`.
 
-- [ ] **Step 3: Migrate the naive baseline**
+- [x] **Step 3: Migrate the naive baseline**
 
 In `baseline/naive_rag.py`, change imports to:
 
@@ -1592,7 +1592,7 @@ prompt = render_prompt(
 )
 ```
 
-- [ ] **Step 4: Migrate the citation verifier tool**
+- [x] **Step 4: Migrate the citation verifier tool**
 
 In `tools/citation_verifier_tool.py`, change imports to:
 
@@ -1613,7 +1613,7 @@ prompt = render_prompt(
 )
 ```
 
-- [ ] **Step 5: Migrate the document summary tool**
+- [x] **Step 5: Migrate the document summary tool**
 
 Add this import in `tools/document_summary_tool.py`:
 
@@ -1632,7 +1632,7 @@ prompt = render_prompt(
 )
 ```
 
-- [ ] **Step 6: Run baseline and tool tests**
+- [x] **Step 6: Run baseline and tool tests**
 
 Run:
 
@@ -1647,7 +1647,7 @@ Run:
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Verify every runtime LLM prompt is registry-backed**
+- [x] **Step 7: Verify every runtime LLM prompt is registry-backed**
 
 Run:
 
@@ -1659,7 +1659,7 @@ rg -n 'prompt = \\(|_PROMPT\\.format|return f\"\"\"You transform' \
 Expected: no runtime prompt construction matches. Compatibility constants in
 `agent/prompts.py` remain allowed because they are registry lookups.
 
-- [ ] **Step 8: Commit the baseline and tool migration**
+- [x] **Step 8: Commit the baseline and tool migration**
 
 ```bash
 git add \
@@ -1682,7 +1682,7 @@ git commit -m "refactor: render tool prompts through registry"
 - Modify: `tests/test_evaluation_storage.py`
 - Modify: `tests/test_evaluate.py`
 
-- [ ] **Step 1: Write the failing runtime metadata safety test**
+- [x] **Step 1: Write the failing runtime metadata safety test**
 
 Append to `tests/test_ablation.py`:
 
@@ -1711,7 +1711,7 @@ def test_runtime_config_snapshot_includes_safe_active_prompt_manifest():
 
 Add `import json` at the top of `tests/test_ablation.py`.
 
-- [ ] **Step 2: Update existing expected runtime versions**
+- [x] **Step 2: Update existing expected runtime versions**
 
 In `tests/test_evaluation_storage.py`, change:
 
@@ -1744,7 +1744,7 @@ Do not change the generic `RuntimeMetadata` unit tests in
 `tests/test_evaluation_schemas.py`; their `p4c` values are arbitrary constructor
 inputs, not current runtime constants.
 
-- [ ] **Step 3: Run the focused tests and verify the new manifest test fails**
+- [x] **Step 3: Run the focused tests and verify the new manifest test fails**
 
 Run:
 
@@ -1759,7 +1759,7 @@ Run:
 
 Expected: failures report schema `1`, evaluator `p4c`, or missing `prompts`.
 
-- [ ] **Step 4: Add prompt metadata to the runtime snapshot**
+- [x] **Step 4: Add prompt metadata to the runtime snapshot**
 
 In `evaluation/runtime_config.py`, add:
 
@@ -1804,7 +1804,7 @@ config={
 },
 ```
 
-- [ ] **Step 5: Run evaluation metadata and artifact tests**
+- [x] **Step 5: Run evaluation metadata and artifact tests**
 
 Run:
 
@@ -1820,7 +1820,7 @@ Run:
 Expected: all tests pass with additive prompt metadata and unchanged artifact
 filenames.
 
-- [ ] **Step 6: Commit evaluation metadata**
+- [x] **Step 6: Commit evaluation metadata**
 
 ```bash
 git add \
@@ -1840,7 +1840,7 @@ git commit -m "feat: record prompt versions in evaluation metadata"
 - Modify: `agent/graph.py`
 - Modify: `tests/test_trace_logging.py`
 
-- [ ] **Step 1: Write the failing defensive-copy trace test**
+- [x] **Step 1: Write the failing defensive-copy trace test**
 
 Append to `tests/test_trace_logging.py`:
 
@@ -1887,7 +1887,7 @@ assert all(
 )
 ```
 
-- [ ] **Step 2: Run the focused trace tests and verify they fail**
+- [x] **Step 2: Run the focused trace tests and verify they fail**
 
 Run:
 
@@ -1901,7 +1901,7 @@ Run:
 Expected: the first test fails because `TraceRecorder` has no `prompts`
 argument; the second fails because traces have no `prompts` field.
 
-- [ ] **Step 3: Store a copied manifest in `TraceRecorder`**
+- [x] **Step 3: Store a copied manifest in `TraceRecorder`**
 
 In `observability/trace.py`, add:
 
@@ -1937,7 +1937,7 @@ Add this field to the top-level dictionary in `build_record()`:
 "prompts": deepcopy(self.prompts),
 ```
 
-- [ ] **Step 4: Snapshot the active manifest when an Agent trace starts**
+- [x] **Step 4: Snapshot the active manifest when an Agent trace starts**
 
 In `agent/graph.py`, add:
 
@@ -1963,7 +1963,7 @@ trace_recorder = (
 Do not add prompt metadata to `AgentState`, the public `run_agent()` result, API
 schemas, or Gradio payloads.
 
-- [ ] **Step 5: Run all trace and API compatibility tests**
+- [x] **Step 5: Run all trace and API compatibility tests**
 
 Run:
 
@@ -1977,7 +1977,7 @@ Run:
 Expected: all tests pass and trace lookup remains compatible with the additive
 top-level `prompts` field.
 
-- [ ] **Step 6: Commit trace metadata**
+- [x] **Step 6: Commit trace metadata**
 
 ```bash
 git add \
@@ -1998,7 +1998,7 @@ git commit -m "feat: record prompt versions in agent traces"
 - Modify: `docs/superpowers/plans/2026-06-14-p4c-modular-evaluation-framework.md`
 - Modify: `docs/superpowers/plans/2026-06-18-p4d-prompt-versioning.md`
 
-- [ ] **Step 1: Document the prompt-versioning architecture**
+- [x] **Step 1: Document the prompt-versioning architecture**
 
 Add this section after `### Modular Evaluation Framework` in `README.md`:
 
@@ -2012,8 +2012,8 @@ available as compatibility exports, while runtime call sites render active
 versions through the registry.
 
 Evaluation artifacts and local Agent traces record a safe active prompt
-manifest containing only IDs, versions, and fingerprints. They do not store
-full templates, rendered prompts, user questions, retrieved chunks, or secrets.
+manifest containing only IDs, versions, and fingerprints. The manifest does not
+store full templates, rendered prompts, prompt inputs, user data, or secrets.
 P4d detects template drift but does not yet run LLM-based behavioral prompt
 regression or support dynamic version selection.
 ```
@@ -2051,7 +2051,7 @@ Keep the remaining retrieval, workspace, model-tuning, and human-label roadmap
 items after these four entries. Remove the now-completed prompt-version tracking
 item and avoid claiming behavioral prompt regression is complete.
 
-- [ ] **Step 2: Add the P4d changelog entry**
+- [x] **Step 2: Add the P4d changelog entry**
 
 Insert at the top of `CHANGELOG.md`:
 
@@ -2093,7 +2093,7 @@ Date: 2026-06-18
 - Ablation, matrix, dashboard, and FastAPI compatibility tests: `83 passed`.
 ```
 
-- [ ] **Step 3: Align release and prior-plan documentation**
+- [x] **Step 3: Align release and prior-plan documentation**
 
 In `docs/github_release_checklist.md`:
 
@@ -2123,7 +2123,7 @@ to:
 Add an execution note stating that P4c was merged to `main` and tagged
 `v0.4.2-p4c` before P4d began.
 
-- [ ] **Step 4: Run compile and import verification**
+- [x] **Step 4: Run compile and import verification**
 
 Run:
 
@@ -2146,7 +2146,7 @@ Expected:
 8
 ```
 
-- [ ] **Step 5: Run prompt-focused verification**
+- [x] **Step 5: Run prompt-focused verification**
 
 Run:
 
@@ -2158,7 +2158,7 @@ Run:
 
 Expected: `13 passed`.
 
-- [ ] **Step 6: Run CLI compatibility smoke tests**
+- [x] **Step 6: Run CLI compatibility smoke tests**
 
 Run:
 
@@ -2172,7 +2172,7 @@ Run:
 
 Expected: `3 passed`.
 
-- [ ] **Step 7: Run direct consumer regression tests**
+- [x] **Step 7: Run direct consumer regression tests**
 
 Run:
 
@@ -2188,7 +2188,7 @@ Run:
 
 Expected: all tests pass.
 
-- [ ] **Step 8: Run the full project test suite**
+- [x] **Step 8: Run the full project test suite**
 
 Run:
 
@@ -2198,7 +2198,7 @@ Run:
 
 Expected: `489 passed`.
 
-- [ ] **Step 9: Verify prompt-source and metadata safety invariants**
+- [x] **Step 9: Verify prompt-source and metadata safety invariants**
 
 Run:
 
@@ -2217,7 +2217,7 @@ Expected:
   runtime metadata or trace construction
 - `git diff --check` reports no whitespace errors
 
-- [ ] **Step 10: Inspect final scope**
+- [x] **Step 10: Inspect final scope**
 
 Run:
 
@@ -2230,11 +2230,54 @@ git log --oneline --decorate 59f58b5..HEAD
 Expected:
 
 - only P4d prompt, metadata, trace, tests, and documentation files are changed
-- `.superpowers/` remains untracked and untouched
+- `.venv` remains untracked and unstaged
 - commits remain separated by registry, catalog, Agent migration, tool
   migration, evaluation metadata, trace metadata, and documentation
 
-- [ ] **Step 11: Mark the implementation plan complete and commit docs**
+Execution notes:
+
+- Compile verification completed successfully for `prompting`, `agent`, `rag`,
+  `api`, `evaluation`, `experiments`, `baseline`, `tools`, and
+  `observability`.
+- The import smoke test printed `36` evaluation questions and `8` active
+  prompt-manifest entries.
+- Prompt registry and catalog verification passed with `13 passed in 0.02s`.
+- CLI compatibility verification passed with `3 passed in 2.09s`.
+- The exact four-file ablation, matrix, dashboard, and FastAPI compatibility
+  command passed with `83 passed in 3.80s`.
+- The broader direct-consumer command, adding Gradio and trace tests, passed
+  with `110 passed in 4.63s`.
+- The full suite passed with `489 passed in 3.63s`.
+- The runtime-inline prompt search returned no matches.
+- The exact metadata safety search for `template`, `rendered_prompt`, and
+  `OPENAI_API_KEY` returned no matches. A broader semantic inspection found
+  only the active-manifest import/storage, safety docstrings, and the trace's
+  pre-existing question and compact document diagnostics; no prompt template,
+  rendered prompt, prompt-input, or API-key field is stored.
+- `git diff --check` reported no whitespace errors.
+- Pre-commit `git status --short` showed only the five owned documentation
+  files modified plus untracked `.venv`.
+- `git diff --stat 59f58b5...HEAD` showed the expected P4d prompt registry,
+  runtime migrations, metadata/trace integration, tests, and P4d design/plan
+  files: `25 files changed, 3950 insertions(+), 268 deletions(-)`.
+- No expected verification count differed from the observed release targets.
+  The plan did not previously pin a broader-consumer count; the observed count
+  is `110`.
+- Commit series before the documentation commit:
+  - `8877f01 docs: design p4d prompt versioning`
+  - `2e2a9c8 docs: plan p4d prompt versioning`
+  - `43cd06c feat: add versioned prompt registry`
+  - `41387d7 feat: catalog versioned project prompts`
+  - `bee872d refactor: make prompt catalog versions explicit`
+  - `89bfbf4 refactor: render agent prompts through registry`
+  - `29e2f83 refactor: render tool prompts through registry`
+  - `169ea9e feat: record prompt versions in evaluation metadata`
+  - `3442e6d feat: record prompt versions in agent traces`
+  - `32f825e refactor: avoid redundant trace manifest copy`
+- Step 11 publishes these documentation updates with
+  `docs: publish p4d prompt versioning`.
+
+- [x] **Step 11: Mark the implementation plan complete and commit docs**
 
 Mark every completed checkbox in this plan, record observed verification output,
 then run:
