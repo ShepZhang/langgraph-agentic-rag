@@ -98,6 +98,28 @@ def test_runtime_config_snapshot_includes_agent_feature_flags():
     assert snapshot["agent_features"] == features.to_dict()
 
 
+def test_runtime_config_snapshot_includes_safe_active_prompt_manifest():
+    snapshot = build_runtime_config_snapshot()
+
+    assert snapshot["schema_version"] == 2
+    assert snapshot["evaluator_version"] == "p4d"
+    assert set(snapshot["prompts"]) == {
+        "agent.query_transform",
+        "agent.retry_query_rewrite",
+        "agent.retrieval_grading",
+        "agent.answer_generation",
+        "agent.claim_extraction",
+        "agent.citation_verification",
+        "agent.answer_revision",
+        "tool.document_summary",
+    }
+    assert all(
+        set(metadata) == {"version", "fingerprint"}
+        for metadata in snapshot["prompts"].values()
+    )
+    assert "template" not in json.dumps(snapshot["prompts"])
+
+
 def test_create_variant_runner_injects_variant_settings_and_features():
     variant = load_ablation_variants(CONFIG_DIR)[4]
     captured = {}

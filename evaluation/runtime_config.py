@@ -7,10 +7,11 @@ from typing import Any
 from agent.features import AgentFeatureFlags
 from config import Settings, get_settings
 from evaluation.schemas import RuntimeMetadata
+from prompting import get_active_prompt_manifest
 
 
-EVALUATION_SCHEMA_VERSION = 1
-EVALUATOR_VERSION = "p4c"
+EVALUATION_SCHEMA_VERSION = 2
+EVALUATOR_VERSION = "p4d"
 
 
 def build_runtime_config_snapshot(
@@ -40,6 +41,7 @@ def build_runtime_metadata(
                 "model": resolved.effective_llm_model,
                 "temperature": resolved.temperature,
             },
+            "prompts": get_active_prompt_manifest(),
             "retriever": {
                 "top_k": resolved.top_k,
                 "hybrid_retrieval_enabled": resolved.hybrid_retrieval_enabled,
