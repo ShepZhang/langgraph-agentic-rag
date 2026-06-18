@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from copy import deepcopy
 from typing import Any
 
 MAX_SNIPPET_CHARS = 240
@@ -18,11 +19,13 @@ class TraceRecorder:
         session_id: str | None = None,
         workspace_id: str | None = None,
         trace_id: str | None = None,
+        prompts: dict[str, dict[str, str]] | None = None,
     ) -> None:
         self.trace_id = trace_id or f"trace_{uuid.uuid4().hex}"
         self.session_id = session_id
         self.workspace_id = workspace_id
         self.original_question = original_question
+        self.prompts = deepcopy(prompts or {})
         self.started_at = time.perf_counter()
         self.events: list[dict[str, Any]] = []
         self.route_decisions: list[dict[str, Any]] = []
@@ -102,6 +105,7 @@ class TraceRecorder:
                 "session_id": self.session_id,
                 "workspace_id": self.workspace_id,
                 "original_question": self.original_question,
+                "prompts": deepcopy(self.prompts),
                 "query_transform": state.get("query_transform", {}),
                 "retrieved_documents": summarize_documents(
                     state.get("documents", [])

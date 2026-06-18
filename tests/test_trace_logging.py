@@ -84,9 +84,33 @@ def test_trace_recorder_records_compact_tool_calls():
     } in record["events"]
 
 
+def test_trace_recorder_copies_safe_prompt_manifest():
+    from observability.trace import TraceRecorder
+
+    manifest = {
+        "agent.answer_generation": {
+            "version": "v1",
+            "fingerprint": "sha256:abc",
+        }
+    }
+    recorder = TraceRecorder(original_question="question", prompts=manifest)
+
+    manifest["agent.answer_generation"]["version"] = "v2"
+    record = recorder.build_record({}, latency_ms=20)
+    record["prompts"]["agent.answer_generation"]["version"] = "v3"
+
+    assert recorder.build_record({}, latency_ms=20)["prompts"] == {
+        "agent.answer_generation": {
+            "version": "v1",
+            "fingerprint": "sha256:abc",
+        }
+    }
+
+
 def test_run_agent_writes_node_events_and_route_decisions_to_trace(tmp_path):
     from agent.graph import run_agent
     from observability.storage import JsonlTraceStore
+    from prompting import get_active_prompt_manifest
 
     settings = replace(
         get_settings(),
@@ -132,10 +156,16 @@ def test_run_agent_writes_node_events_and_route_decisions_to_trace(tmp_path):
     assert trace is not None
     assert result["trace_path"] == str(store.path)
     assert result["latency_ms"] >= 0
+    assert "prompts" not in result
     assert trace["trace_id"] == result["trace_id"]
     assert trace["session_id"] == "session_1"
     assert trace["workspace_id"] == "workspace_1"
     assert trace["original_question"] == "What is RAG?"
+    assert trace["prompts"] == get_active_prompt_manifest()
+    assert all(
+        set(metadata) == {"version", "fingerprint"}
+        for metadata in trace["prompts"].values()
+    )
     assert trace["final_answer"] == "RAG retrieves supporting evidence [1]."
     assert trace["retrieved_documents"][0]["chunk_id"] == "notes.md:pNA:c1"
     assert trace["relevant_documents"][0]["chunk_id"] == "notes.md:pNA:c1"

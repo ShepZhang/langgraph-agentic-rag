@@ -22,6 +22,7 @@ from agent.state import AgentState, ChatMessage, create_initial_state
 from config import Settings, get_settings
 from observability.logger import create_trace_store
 from observability.trace import TraceRecorder
+from prompting import get_active_prompt_manifest
 from tools import ToolRegistry, create_default_tool_registry
 
 
@@ -227,6 +228,7 @@ def run_agent(
             original_question=question,
             session_id=session_id,
             workspace_id=workspace_id,
+            prompts=get_active_prompt_manifest(),
         )
         if trace_enabled
         else None
