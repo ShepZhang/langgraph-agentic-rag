@@ -105,7 +105,7 @@ class TraceRecorder:
                 "session_id": self.session_id,
                 "workspace_id": self.workspace_id,
                 "original_question": self.original_question,
-                "prompts": deepcopy(self.prompts),
+                "prompts": self.prompts,
                 "query_transform": state.get("query_transform", {}),
                 "retrieved_documents": summarize_documents(
                     state.get("documents", [])
