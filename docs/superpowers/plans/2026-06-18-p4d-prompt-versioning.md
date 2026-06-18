@@ -2342,12 +2342,21 @@ Review notes:
 - The final whole-branch review reported no critical, important, or minor
   findings and approved P4d for integration.
 
-- [ ] **Step 13: Finish the development branch**
+- [x] **Step 13: Finish the development branch**
 
 After fresh verification, invoke
 `superpowers:finishing-a-development-branch`. Offer merge, pull request, keep,
 or cleanup choices. Create tag `v0.4.3-p4d` only after the user explicitly
 chooses integration, integration succeeds, and `main` passes the final suite.
+
+Integration notes:
+
+- On 2026-06-19, `origin/main` and local `main` were both confirmed at
+  `59f58b5` before integration.
+- `codex/p4d-prompt-versioning` was fast-forward merged into local `main`.
+- The merged `main` test suite passed with `489 passed`.
+- Tag `v0.4.3-p4d` was created only after the final integration record and
+  verification completed.
 
 ## Final Verification Matrix
 
