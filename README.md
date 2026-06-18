@@ -102,8 +102,10 @@ Agent capabilities:
 `ToolContext` injects runtime dependencies such as the active LLM, retriever,
 and `workspace_id`. Pydantic schemas validate arguments, while `ToolResult`
 normalizes success data, structured errors, metadata, and latency. Compact
-tool-call events are written into Agent traces without storing rendered prompts
-or prompt inputs, secrets, or full document bodies.
+tool-call events use allowlisted diagnostics and do not add prompt templates or
+rendered prompt payloads. The surrounding trace record still contains documented
+observability data, including the original question, compact document snippets,
+answers, citations, and workflow diagnostics.
 
 The primary LangGraph workflow uses `retrieve_context` and
 `verify_citations`. Summary and calculator are registered extension points and
@@ -331,10 +333,12 @@ verification results, retry count, latency, and error metadata.
 Trace records intentionally store compact document snippets and metadata rather
 than full document bodies or local source paths. Tool-call events store only
 allowlisted metadata such as workspace id, result count, claim count, latency,
-and sanitized errors. Each trace also carries the safe active prompt manifest
-of IDs, versions, and fingerprints without storing rendered prompts or prompt
-inputs. Database-backed trace retention and a Gradio trace dashboard remain
-later milestones.
+and sanitized errors. Each trace also carries a `prompts` manifest containing
+only prompt IDs, versions, and fingerprints; that field does not contain prompt
+templates or rendered prompt payloads. The trace record still includes the
+original question, compact document snippets, final answer, citations, and
+diagnostics described above. Database-backed trace retention and a Gradio trace
+dashboard remain later milestones.
 
 ## FastAPI Backend
 
@@ -472,7 +476,7 @@ Generated artifacts:
 
 Every variant is checkpointed before execution and finalized as `completed`, `completed_with_errors`, or `incomplete`. V0 and V6 canonical comparison artifacts are derived from those completed runs without repeating model calls.
 
-Evaluation artifacts include a sanitized `runtime_config` snapshot covering Agent feature flags, model name, temperature, active prompt versions and SHA-256 fingerprints, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name. API keys, base URLs, local persistence paths, prompt text, prompt inputs, and other secrets are intentionally excluded.
+Evaluation artifacts include a sanitized `runtime_config` snapshot covering Agent feature flags, model name, temperature, active prompt versions and SHA-256 fingerprints, retriever settings, hybrid retrieval settings, reranker settings, and vector collection name. Its `prompts` field contains only prompt IDs, versions, and fingerprints, not templates or rendered prompt payloads. API keys, base URLs, local persistence paths, and other secrets are intentionally excluded.
 
 ### Modular Evaluation Framework
 
@@ -492,16 +496,19 @@ claimed completed features.
 ### Versioned Prompt Registry
 
 P4d moves Agent, baseline, and LLM-backed tool prompts into a code-native
-registry. Each template has a stable prompt ID, immutable version, strict input
-variables, and a deterministic SHA-256 fingerprint. Existing `agent.prompts`
-constants remain available as compatibility exports, while runtime call sites
-render active versions through the registry without changing prompt text or
-parser contracts.
+registry with 10 registered `v1` templates: 8 active runtime prompts and 2
+inactive compatibility-only templates. Each template has a stable prompt ID,
+immutable version, strict input variables, and a deterministic SHA-256
+fingerprint. Existing `agent.prompts` constants remain available as
+compatibility exports, while runtime call sites render active versions through
+the registry without changing prompt text or parser contracts.
 
-Evaluation artifacts and local Agent traces record a safe active prompt
-manifest containing only prompt IDs, versions, and fingerprints. The manifest
-does not contain full templates, rendered prompts, prompt inputs, user data, or
-secrets. It supports reproducibility and template-drift detection, but P4d does
+The new `runtime_config.prompts` and trace `prompts` fields record the 8 active
+prompt IDs, versions, and fingerprints. Those fields do not contain templates
+or rendered prompt payloads. This is a field-level safety boundary: existing
+trace records still contain the original question, compact document snippets,
+answers, citations, and diagnostics as documented observability data. The
+manifest supports reproducibility and template-drift detection, but P4d does
 not add dynamic prompt selection, online prompt editing, or LLM-based behavioral
 prompt regression.
 
@@ -823,7 +830,7 @@ langgraph-agentic-rag/
 - P4a deterministic failed-case analysis implemented: evaluation results include primary failure types, reasons, and suggestions, while summaries and ablation reports include failure counts and representative cases.
 - P4b Evaluation Dashboard implemented: Gradio supports synchronous smoke or manually selected quick comparisons, filterable failed-case inspection, and a read-only V0-V6 ablation snapshot with runtime configuration and transparent stored or derived diagnostics.
 - P4c modular evaluation framework implemented: `evaluation.evaluate` is now a compatibility facade over typed schemas, dataset normalization, deterministic metrics, runner execution, comparison orchestration, report rendering, optional judge contracts, atomic JSON storage, and sanitized runtime metadata.
-- P4d prompt versioning implemented: all current Agent, baseline, and LLM-backed tool prompts have stable IDs, immutable `v1` definitions, strict rendering contracts, SHA-256 fingerprints, compatibility exports, and safe evaluation/trace manifests.
+- P4d prompt versioning implemented: 10 registered `v1` templates—8 active runtime prompts and 2 inactive compatibility-only templates—have stable IDs, strict rendering contracts, SHA-256 fingerprints, compatibility exports, and safe evaluation/trace manifests.
 
 ### Next Milestones
 

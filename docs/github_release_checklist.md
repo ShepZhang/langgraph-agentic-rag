@@ -23,6 +23,10 @@ Run these before publishing:
 .venv/bin/python -m pytest -q
 .venv/bin/python -m compileall prompting agent rag api evaluation experiments baseline tools observability
 .venv/bin/python -m pytest \
+  tests/test_prompt_registry.py \
+  tests/test_prompt_catalog.py \
+  -q
+.venv/bin/python -m pytest \
   tests/test_evaluate.py::test_main_prints_report_with_injected_runner \
   tests/test_evaluate.py::test_main_writes_comparison_artifacts \
   tests/test_evaluate.py::test_main_writes_single_system_agentic_artifact_schema \
@@ -38,6 +42,7 @@ Run these before publishing:
 Expected baseline as of `v0.4.3-p4d`:
 
 - Full test suite: `489 passed`
+- Prompt registry and catalog tests: `13 passed`
 - CLI compatibility smoke tests: `3 passed`
 - Ablation, matrix, dashboard, and FastAPI compatibility tests: `83 passed`
 
@@ -66,15 +71,17 @@ Recommended topics:
 ## Suggested Publish Flow
 
 ```bash
+git switch main
 git status --short
 git log --oneline --decorate --max-count=5
+# Run every command in "Verification Commands" above and confirm expected counts.
 git tag v0.4.3-p4d
-git remote add origin git@github.com:ShepZhang/langgraph-agentic-rag.git
-git push -u origin main
+git push origin main
 git push origin v0.4.3-p4d
 ```
 
-Only create the tag once the final local verification matches the expected
+Before creating the tag, ensure P4d is integrated into an updated `main`, the
+worktree is clean, and the final local verification matches the expected
 baseline above.
 
 ## Honest Scope Notes
@@ -86,7 +93,8 @@ baseline above.
 - Evaluation metrics are deterministic heuristics unless a future semantic judge
   is configured.
 - Prompt versioning provides deterministic template fingerprints and safe
-  manifests; it does not provide dynamic prompt selection, online editing, or
-  behavioral LLM regression testing.
+  manifests for 10 registered `v1` templates: 8 active runtime prompts and 2
+  inactive compatibility-only templates. It does not provide dynamic prompt
+  selection, online editing, or behavioral LLM regression testing.
 - Claim-level citation verification reduces unsupported claims but is not a
   formal proof system.

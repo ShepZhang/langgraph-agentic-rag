@@ -8,8 +8,8 @@ Date: 2026-06-18
 
 - Added a code-native prompt registry with stable prompt IDs, immutable versions,
   strict rendering contracts, and deterministic SHA-256 fingerprints.
-- Registered all 10 current Agent, naive baseline, citation-verification, and
-  document-summary prompts as exact `v1` templates.
+- Registered 10 exact `v1` templates: 8 active runtime prompts plus 2 inactive
+  compatibility-only templates.
 - Added safe active prompt manifests to evaluation runtime metadata and local
   Agent traces.
 

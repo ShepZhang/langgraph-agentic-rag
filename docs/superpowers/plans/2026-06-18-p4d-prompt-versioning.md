@@ -2006,16 +2006,19 @@ Add this section after `### Modular Evaluation Framework` in `README.md`:
 ### Versioned Prompt Registry
 
 P4d moves Agent, baseline, and LLM-backed tool prompts into a code-native
-registry. Each template has a stable prompt ID, immutable version, strict input
-variables, and a SHA-256 fingerprint. Existing `agent.prompts` constants remain
-available as compatibility exports, while runtime call sites render active
-versions through the registry.
+registry with 10 registered `v1` templates: 8 active runtime prompts and 2
+inactive compatibility-only templates. Each template has a stable prompt ID,
+immutable version, strict input variables, and a SHA-256 fingerprint. Existing
+`agent.prompts` constants remain available as compatibility exports, while
+runtime call sites render active versions through the registry.
 
-Evaluation artifacts and local Agent traces record a safe active prompt
-manifest containing only IDs, versions, and fingerprints. The manifest does not
-store full templates, rendered prompts, prompt inputs, user data, or secrets.
-P4d detects template drift but does not yet run LLM-based behavioral prompt
-regression or support dynamic version selection.
+The new evaluation `runtime_config.prompts` and trace `prompts` fields record
+only the 8 active prompt IDs, versions, and fingerprints; those fields do not
+store templates or rendered prompt payloads. Existing trace records still
+contain the original question, compact document snippets, answers, citations,
+and diagnostics as documented observability data. P4d detects template drift
+but does not yet run LLM-based behavioral prompt regression or support dynamic
+version selection.
 ```
 
 In the Project Structure tree add:
@@ -2028,12 +2031,14 @@ In the Project Structure tree add:
 ```
 
 Update the runtime-config paragraph to include prompt versions and
-fingerprints. Change existing trace/tool wording from "without storing prompts"
-to "without storing rendered prompts or prompt inputs" so the new safe manifest
-is described accurately. Add this Completed Work item:
+fingerprints. Scope trace safety wording to the new `prompts` manifest field:
+it contains only IDs, versions, and fingerprints, without templates or rendered
+prompt payloads. Explicitly retain the documented fact that trace records also
+contain the original question, compact document snippets, answers, citations,
+and diagnostics. Add this Completed Work item:
 
 ```markdown
-- P4d prompt versioning implemented: all current Agent, baseline, and LLM-backed tool prompts have stable IDs, immutable `v1` definitions, strict rendering contracts, SHA-256 fingerprints, compatibility exports, and safe evaluation/trace manifests.
+- P4d prompt versioning implemented: 10 registered `v1` templates—8 active runtime prompts and 2 inactive compatibility-only templates—have stable IDs, strict rendering contracts, SHA-256 fingerprints, compatibility exports, and safe evaluation/trace manifests.
 ```
 
 Replace the beginning of Next Milestones with the confirmed route:
@@ -2064,8 +2069,8 @@ Date: 2026-06-18
 
 - Added a code-native prompt registry with stable prompt IDs, immutable versions,
   strict rendering contracts, and deterministic SHA-256 fingerprints.
-- Registered all current Agent, naive baseline, citation-verification, and
-  document-summary prompts as exact `v1` templates.
+- Registered 10 exact `v1` templates: 8 active runtime prompts plus 2 inactive
+  compatibility-only templates.
 - Added safe active prompt manifests to evaluation runtime metadata and local
   Agent traces.
 
@@ -2223,12 +2228,18 @@ Run:
 
 ```bash
 git status --short
+git diff --stat 59f58b5...32f825e
+git log --oneline --decorate 59f58b5..32f825e
 git diff --stat 59f58b5...HEAD
 git log --oneline --decorate 59f58b5..HEAD
 ```
 
 Expected:
 
+- the pinned `59f58b5...32f825e` comparison reports the pre-documentation P4d
+  implementation scope
+- the `59f58b5...HEAD` comparison reports the current scope including
+  documentation follow-ups
 - only P4d prompt, metadata, trace, tests, and documentation files are changed
 - `.venv` remains untracked and unstaged
 - commits remain separated by registry, catalog, Agent migration, tool
@@ -2250,16 +2261,22 @@ Execution notes:
 - The full suite passed with `489 passed in 3.63s`.
 - The runtime-inline prompt search returned no matches.
 - The exact metadata safety search for `template`, `rendered_prompt`, and
-  `OPENAI_API_KEY` returned no matches. A broader semantic inspection found
-  only the active-manifest import/storage, safety docstrings, and the trace's
-  pre-existing question and compact document diagnostics; no prompt template,
-  rendered prompt, prompt-input, or API-key field is stored.
+  `OPENAI_API_KEY` returned no matches. A broader semantic inspection confirmed
+  that the new evaluation `runtime_config.prompts` and trace `prompts` fields
+  contain only IDs, versions, and fingerprints, not templates or rendered
+  prompt payloads. This safety statement is scoped to those fields: the trace
+  record still stores its pre-existing original question, compact document
+  snippets, answers, citations, and diagnostics.
 - `git diff --check` reported no whitespace errors.
 - Pre-commit `git status --short` showed only the five owned documentation
   files modified plus untracked `.venv`.
-- `git diff --stat 59f58b5...HEAD` showed the expected P4d prompt registry,
-  runtime migrations, metadata/trace integration, tests, and P4d design/plan
-  files: `25 files changed, 3950 insertions(+), 268 deletions(-)`.
+- The pinned pre-documentation command
+  `git diff --stat 59f58b5...32f825e` showed the P4d implementation scope:
+  `25 files changed, 3950 insertions(+), 268 deletions(-)`.
+- Before the follow-up clarification commit, the current working-tree comparison
+  `git diff --stat 59f58b5` showed the complete P4d scope including
+  documentation follow-ups: `29 files changed, 4127 insertions(+), 294
+  deletions(-)`.
 - No expected verification count differed from the observed release targets.
   The plan did not previously pin a broader-consumer count; the observed count
   is `110`.
@@ -2276,6 +2293,19 @@ Execution notes:
   - `32f825e refactor: avoid redundant trace manifest copy`
 - Step 11 publishes these documentation updates with
   `docs: publish p4d prompt versioning`.
+- Follow-up review clarification updates only owned documentation and is
+  committed as `docs: clarify p4d release guidance`; Steps 12-13 remain
+  controller-owned and unchecked.
+- Documentation commit series:
+  - `c7b0132 docs: publish p4d prompt versioning`
+  - `docs: clarify p4d release guidance`
+- Follow-up verification:
+  - Markdown consistency checked four modified Markdown files: balanced code
+    fences and no trailing whitespace.
+  - Prompt registry and catalog tests: `13 passed in 0.02s`.
+  - CLI compatibility smoke tests: `3 passed in 1.60s`.
+  - Exact four-file compatibility command: `83 passed in 3.15s`.
+  - Full suite: `489 passed in 4.49s`.
 
 - [x] **Step 11: Mark the implementation plan complete and commit docs**
 
