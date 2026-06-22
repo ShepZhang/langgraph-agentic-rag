@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any, cast, get_type_hints
 
 import pytest
@@ -93,6 +94,12 @@ def test_unavailable_metrics_serialize_as_none():
     assert payload["unsupported_claim_count"] is None
     assert payload["supported_claim_ratio"] is None
     assert payload["citation_verification_pass_rate"] is None
+    assert payload["judge_completed_count"] == 0
+    assert payload["judge_failed_count"] == 0
+    assert payload["judge_completion_rate"] is None
+    assert payload["average_semantic_correctness"] is None
+    assert payload["average_groundedness"] is None
+    assert payload["groundedness_applicable_count"] == 0
     assert payload["total_questions"] == 0
     assert payload["failure_type_counts"] == {}
 
@@ -152,7 +159,9 @@ def test_empty_result_covers_current_single_question_result_shape():
         "retrieved_documents",
         "relevant_documents",
         "failure_analysis",
+        "judge",
     }
+    assert result.judge == JudgeResult.disabled()
 
 
 def test_result_copies_structured_inputs_and_serialized_payloads():
@@ -183,20 +192,103 @@ def test_result_copies_structured_inputs_and_serialized_payloads():
     assert fresh_payload["failure_analysis"]["failure_type"] == "no_failure"
 
 
-def test_result_from_compat_dict_ignores_additive_fields():
+def test_result_from_compat_dict_accepts_judge_payloads_and_ignores_unknown_fields():
     result = EvaluationResult.from_compat_dict(
         {
             "question_id": "q001",
             "question_type": "single_doc",
             "question": "What is RAG?",
             "answer_returned": True,
+            "judge": {
+                "status": "completed",
+                "scores": {"semantic_correctness": 0.75, "groundedness": None},
+                "reason": "Looks right.",
+                "raw_scores": {"semantic_correctness": 4, "groundedness": None},
+                "reasons": {"semantic_correctness": "Matches the gold answer."},
+                "model": "deepseek-chat",
+                "prompt_id": "semantic-judge",
+                "prompt_version": "v2",
+                "prompt_fingerprint": "abc123",
+                "ignored_nested": "value",
+            },
             "extra_metric": "external-diagnostic",
         }
     )
 
     assert result.question_id == "q001"
     assert result.answer_returned is True
+    assert result.judge == JudgeResult(
+        "completed",
+        {"semantic_correctness": 0.75, "groundedness": None},
+        "Looks right.",
+        None,
+        {"semantic_correctness": 4, "groundedness": None},
+        {"semantic_correctness": "Matches the gold answer."},
+        "deepseek-chat",
+        "semantic-judge",
+        "v2",
+        "abc123",
+    )
     assert "extra_metric" not in result.to_dict()
+    assert "ignored_nested" not in result.to_dict()["judge"]
+
+
+def test_result_from_compat_dict_accepts_existing_judge_object_and_defaults_missing_judge():
+    existing_judge = JudgeResult.completed(
+        {"semantic_correctness": 0.8},
+        reason="Aligned.",
+        model="deepseek-chat",
+    )
+
+    with_judge = EvaluationResult.from_compat_dict(
+        {
+            "question_id": "q001",
+            "question_type": "single_doc",
+            "question": "What is RAG?",
+            "judge": existing_judge,
+        }
+    )
+    without_judge = EvaluationResult.from_compat_dict(
+        {
+            "question_id": "q002",
+            "question_type": "single_doc",
+            "question": "What is retrieval?",
+        }
+    )
+
+    assert with_judge.judge == existing_judge
+    assert with_judge.judge is not existing_judge
+    assert without_judge.judge == JudgeResult.disabled()
+
+
+def test_result_from_compat_dict_reads_pre_p5a_payloads_without_judge():
+    payload = {
+        "question_id": "q001",
+        "question_type": "single_doc",
+        "question": "What is RAG?",
+        "answer_returned": True,
+        "citations": [{"source": "notes.md", "snippet": "Evidence."}],
+        "failure_analysis": {"failure_type": "no_failure"},
+    }
+
+    result = EvaluationResult.from_compat_dict(payload)
+
+    assert result.answer_returned is True
+    assert result.citations == [{"source": "notes.md", "snippet": "Evidence."}]
+    assert result.failure_analysis == {"failure_type": "no_failure"}
+    assert result.judge == JudgeResult.disabled()
+
+
+def test_result_rejects_invalid_judge_type():
+    with pytest.raises(ValueError, match="judge"):
+        EvaluationResult.from_compat_dict(
+            {
+                "question_id": "q001",
+                "question_type": "single_doc",
+                "question": "What is RAG?",
+                "judge": "completed",
+            }
+        )
 
 
 def test_single_and_comparison_reports_keep_established_shapes():
@@ -375,39 +467,137 @@ def test_runtime_metadata_protects_versions_and_copies_nested_config():
     }
 
 
-def test_judge_result_distinguishes_disabled_failed_and_completed_states():
+def test_judge_result_legacy_factories_direct_and_positional_calls_remain_valid():
     disabled = JudgeResult.disabled()
     failed = JudgeResult.failed("RuntimeError: unavailable")
     completed = JudgeResult.completed(
         {"semantic_correctness": 0.8},
         reason="The answer matches the reference.",
     )
+    direct = JudgeResult(status="completed", scores={"semantic_correctness": 0.7})
+    positional = JudgeResult("completed", {"semantic_correctness": 0.6}, "reason", None)
 
     assert disabled.status == "disabled"
     assert disabled.scores == {}
+    assert disabled.raw_scores == {}
+    assert disabled.reasons == {}
     assert disabled.error is None
     assert failed.status == "failed"
     assert failed.error == "RuntimeError: unavailable"
+    assert failed.model is None
     assert completed.status == "completed"
     assert completed.scores == {"semantic_correctness": 0.8}
     assert completed.reason == "The answer matches the reference."
+    assert direct.scores == {"semantic_correctness": 0.7}
+    assert positional.scores == {"semantic_correctness": 0.6}
+    assert positional.reason == "reason"
 
 
-def test_judge_result_copies_input_scores():
-    scores = {"semantic_correctness": 0.8}
+def test_judge_result_supports_enriched_metadata_and_failed_metadata():
+    completed = JudgeResult.completed(
+        {"semantic_correctness": 0.8, "groundedness": None},
+        reason="The answer matches the reference.",
+        raw_scores={"semantic_correctness": 4, "groundedness": None},
+        reasons={"semantic_correctness": "Reference-aligned."},
+        model="deepseek-chat",
+        prompt_id="semantic-judge",
+        prompt_version="v2",
+        prompt_fingerprint="abc123",
+    )
+    failed = JudgeResult.failed(
+        "RuntimeError: unavailable",
+        model="deepseek-chat",
+        prompt_id="semantic-judge",
+        prompt_version="v2",
+        prompt_fingerprint="abc123",
+    )
 
-    result = JudgeResult(status="completed", scores=scores)
+    assert completed.raw_scores == {"semantic_correctness": 4, "groundedness": None}
+    assert completed.reasons == {"semantic_correctness": "Reference-aligned."}
+    assert completed.model == "deepseek-chat"
+    assert completed.prompt_id == "semantic-judge"
+    assert completed.prompt_version == "v2"
+    assert completed.prompt_fingerprint == "abc123"
+    assert failed.status == "failed"
+    assert failed.error == "RuntimeError: unavailable"
+    assert failed.model == "deepseek-chat"
+    assert failed.prompt_id == "semantic-judge"
+    assert failed.prompt_version == "v2"
+    assert failed.prompt_fingerprint == "abc123"
+
+
+def test_judge_result_copies_input_maps_and_serialized_payloads():
+    scores = {"semantic_correctness": 0.8, "groundedness": None}
+    raw_scores = {"semantic_correctness": 4, "groundedness": None}
+    reasons = {"semantic_correctness": "Reference-aligned."}
+
+    result = JudgeResult(
+        status="completed",
+        scores=scores,
+        raw_scores=raw_scores,
+        reasons=reasons,
+    )
     scores["semantic_correctness"] = 0.1
+    raw_scores["semantic_correctness"] = 1
+    reasons["semantic_correctness"] = "mutated"
+    payload = asdict(result)
+    payload["scores"]["semantic_correctness"] = 0.0
+    payload["raw_scores"]["semantic_correctness"] = 0
+    payload["reasons"]["semantic_correctness"] = "serialized"
 
-    assert result.scores == {"semantic_correctness": 0.8}
+    assert result.scores == {"semantic_correctness": 0.8, "groundedness": None}
+    assert result.raw_scores == {"semantic_correctness": 4, "groundedness": None}
+    assert result.reasons == {"semantic_correctness": "Reference-aligned."}
+
+
+def test_result_copies_judge_inputs_and_serialized_payloads():
+    scores = {"semantic_correctness": 0.8, "groundedness": None}
+    raw_scores = {"semantic_correctness": 4, "groundedness": None}
+    reasons = {"semantic_correctness": "Reference-aligned."}
+    result = EvaluationResult(
+        question_id="q001",
+        question_type="single_doc",
+        question="What is RAG?",
+        judge={
+            "status": "completed",
+            "scores": scores,
+            "raw_scores": raw_scores,
+            "reasons": reasons,
+        },
+    )
+
+    scores["semantic_correctness"] = 0.1
+    raw_scores["semantic_correctness"] = 1
+    reasons["semantic_correctness"] = "mutated"
+    payload = result.to_dict()
+    payload["judge"]["scores"]["semantic_correctness"] = 0.0
+    payload["judge"]["raw_scores"]["semantic_correctness"] = 0
+    payload["judge"]["reasons"]["semantic_correctness"] = "serialized"
+
+    fresh_payload = result.to_dict()
+    assert fresh_payload["judge"]["scores"] == {
+        "semantic_correctness": 0.8,
+        "groundedness": None,
+    }
+    assert fresh_payload["judge"]["raw_scores"] == {
+        "semantic_correctness": 4,
+        "groundedness": None,
+    }
+    assert fresh_payload["judge"]["reasons"] == {
+        "semantic_correctness": "Reference-aligned."
+    }
 
 
 def test_result_uses_existing_document_contract_types():
     hints = get_type_hints(EvaluationResult)
+    judge_hints = get_type_hints(JudgeResult)
 
+    assert hints["judge"] == JudgeResult
     assert hints["citations"] == list[Citation]
     assert hints["claims"] == list[dict[str, object]]
     assert hints["claim_verification_results"] == list[dict[str, object]]
     assert hints["retrieved_documents"] == list[RetrievedDocument]
     assert hints["relevant_documents"] == list[RetrievedDocument]
     assert hints["failure_analysis"] == dict[str, str]
+    assert judge_hints["scores"] == dict[str, float | None]
+    assert judge_hints["raw_scores"] == dict[str, int | None]

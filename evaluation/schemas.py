@@ -55,6 +55,84 @@ class EvaluationQuestion:
         return payload
 
 
+@dataclass(frozen=True)
+class JudgeResult:
+    status: JudgeStatus
+    scores: dict[str, float | None] = field(default_factory=dict)
+    reason: str = ""
+    error: str | None = None
+    raw_scores: dict[str, int | None] = field(default_factory=dict)
+    reasons: dict[str, str] = field(default_factory=dict)
+    model: str | None = None
+    prompt_id: str | None = None
+    prompt_version: str | None = None
+    prompt_fingerprint: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "scores", deepcopy(self.scores))
+        object.__setattr__(self, "raw_scores", deepcopy(self.raw_scores))
+        object.__setattr__(self, "reasons", deepcopy(self.reasons))
+
+    @classmethod
+    def disabled(cls) -> JudgeResult:
+        return cls(status="disabled")
+
+    @classmethod
+    def completed(
+        cls,
+        scores: dict[str, float | None],
+        reason: str = "",
+        *,
+        raw_scores: Mapping[str, int | None] | None = None,
+        reasons: Mapping[str, str] | None = None,
+        model: str | None = None,
+        prompt_id: str | None = None,
+        prompt_version: str | None = None,
+        prompt_fingerprint: str | None = None,
+    ) -> JudgeResult:
+        return cls(
+            status="completed",
+            scores=dict(scores),
+            reason=reason,
+            raw_scores=dict(raw_scores or {}),
+            reasons=dict(reasons or {}),
+            model=model,
+            prompt_id=prompt_id,
+            prompt_version=prompt_version,
+            prompt_fingerprint=prompt_fingerprint,
+        )
+
+    @classmethod
+    def failed(
+        cls,
+        error: str,
+        *,
+        model: str | None = None,
+        prompt_id: str | None = None,
+        prompt_version: str | None = None,
+        prompt_fingerprint: str | None = None,
+    ) -> JudgeResult:
+        return cls(
+            status="failed",
+            error=error,
+            model=model,
+            prompt_id=prompt_id,
+            prompt_version=prompt_version,
+            prompt_fingerprint=prompt_fingerprint,
+        )
+
+    @classmethod
+    def from_compat_dict(cls, payload: Mapping[str, Any]) -> JudgeResult:
+        """Build a judge result from a public payload while ignoring additive fields."""
+
+        allowed_fields = {item.name for item in fields(cls)}
+        filtered_payload = {
+            key: deepcopy(value) for key, value in payload.items() if key in allowed_fields
+        }
+        filtered_payload.setdefault("status", "disabled")
+        return cls(**filtered_payload)
+
+
 @dataclass
 class EvaluationResult:
     question_id: str
@@ -93,8 +171,15 @@ class EvaluationResult:
     retrieved_documents: list[RetrievedDocument] = field(default_factory=list)
     relevant_documents: list[RetrievedDocument] = field(default_factory=list)
     failure_analysis: dict[str, str] = field(default_factory=dict)
+    judge: JudgeResult = field(default_factory=JudgeResult.disabled)
 
     def __post_init__(self) -> None:
+        if isinstance(self.judge, Mapping):
+            self.judge = JudgeResult.from_compat_dict(self.judge)
+        elif isinstance(self.judge, JudgeResult):
+            self.judge = deepcopy(self.judge)
+        else:
+            raise ValueError("judge must be a JudgeResult or mapping payload")
         self.token_usage = deepcopy(self.token_usage)
         self.citations = deepcopy(self.citations)
         self.claims = deepcopy(self.claims)
@@ -121,13 +206,11 @@ class EvaluationResult:
         """Build a result from a public payload while ignoring additive fields."""
 
         allowed_fields = {item.name for item in fields(cls)}
-        return cls(
-            **{
-                key: deepcopy(value)
-                for key, value in payload.items()
-                if key in allowed_fields
-            }
-        )
+        init_payload = {
+            key: deepcopy(value) for key, value in payload.items() if key in allowed_fields
+        }
+        init_payload.setdefault("judge", JudgeResult.disabled())
+        return cls(**init_payload)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -160,6 +243,12 @@ class EvaluationSummary:
     average_latency: float = 0
     rewrite_triggered_count: int = 0
     error_count: int = 0
+    judge_completed_count: int = 0
+    judge_failed_count: int = 0
+    judge_completion_rate: float | None = None
+    average_semantic_correctness: float | None = None
+    average_groundedness: float | None = None
+    groundedness_applicable_count: int = 0
     failure_type_counts: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -263,34 +352,3 @@ class RuntimeMetadata:
             "evaluator_version": self.evaluator_version,
             **deepcopy(self.config),
         }
-
-
-@dataclass(frozen=True)
-class JudgeResult:
-    status: JudgeStatus
-    scores: dict[str, float] = field(default_factory=dict)
-    reason: str = ""
-    error: str | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "scores", deepcopy(self.scores))
-
-    @classmethod
-    def disabled(cls) -> JudgeResult:
-        return cls(status="disabled")
-
-    @classmethod
-    def completed(
-        cls,
-        scores: dict[str, float],
-        reason: str = "",
-    ) -> JudgeResult:
-        return cls(
-            status="completed",
-            scores=dict(scores),
-            reason=reason,
-        )
-
-    @classmethod
-    def failed(cls, error: str) -> JudgeResult:
-        return cls(status="failed", error=error)
