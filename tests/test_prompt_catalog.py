@@ -40,6 +40,18 @@ EXPECTED_PROMPTS = {
         ("answer", "documents", "question"),
         "sha256:cc44c443a01e6f672dcacb2e9003f22a809742b54ee5b762d222ee17f4f00c17",
     ),
+    "evaluation.semantic_judge": (
+        (
+            "citations",
+            "evidence",
+            "fallback_triggered",
+            "gold_answer",
+            "question",
+            "should_answer",
+            "system_answer",
+        ),
+        "sha256:58c0f2bcecbd34afbf4f30054281daf62a25fff311aefe3c4377b759f1095462",
+    ),
     "agent.query_rewrite": (
         ("chat_history", "question"),
         "sha256:3ccba60fa7582f1b319e3b07422ad569d212af7f49a7eb2a1c98872c5f32f4c7",
@@ -74,6 +86,7 @@ ACTIVE_PROMPT_IDS = {
     "agent.answer_revision",
     "agent.citation_verification",
     "agent.claim_extraction",
+    "evaluation.semantic_judge",
     "agent.query_transform",
     "agent.retrieval_grading",
     "agent.retry_query_rewrite",
@@ -155,3 +168,23 @@ def test_document_summary_prompt_renders_exact_current_string():
         "Document:\n"
         "Grounded answers require retrieved evidence."
     )
+
+
+def test_semantic_judge_prompt_renders_expected_evaluation_structure():
+    rendered = render_prompt(
+        "evaluation.semantic_judge",
+        question="What is RAG?",
+        gold_answer="Retrieval-augmented generation.",
+        should_answer=True,
+        fallback_triggered=False,
+        system_answer="RAG uses retrieved evidence.",
+        citations=[],
+        evidence=[],
+    )
+
+    assert "semantic_correctness" in rendered
+    assert "groundedness" in rendered
+    assert '"applicable": true' in rendered
+    assert '"score": 0' in rendered
+    assert "Question:\nWhat is RAG?" in rendered
+    assert rendered.endswith("JSON:")

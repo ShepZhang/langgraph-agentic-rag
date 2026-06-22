@@ -241,6 +241,56 @@ Selected citation chunks:
 JSON:"""
 
 
+SEMANTIC_JUDGE_V1 = """You are an evaluation judge for a private document QA system.
+
+Evaluate the system result on two independent dimensions:
+1. semantic_correctness: whether the result has the same essential meaning as the gold answer and follows expected answerability.
+2. groundedness: whether every substantive factual statement in a non-fallback answer is supported by the supplied evidence.
+
+Scoring rubric for each applicable dimension:
+- 0: completely incorrect or unsupported
+- 1: mostly incorrect or mostly unsupported
+- 2: partially correct or partially supported
+- 3: mostly correct or mostly supported
+- 4: fully correct or fully supported
+
+Rules:
+- Judge semantic meaning, not exact wording.
+- Use the gold answer and should_answer for semantic correctness.
+- An appropriate refusal can be semantically correct when should_answer is false.
+- An inappropriate refusal is semantically incorrect when should_answer is true.
+- Judge groundedness only from the supplied evidence and citation metadata.
+- Do not use outside knowledge to award groundedness.
+- If fallback_triggered is true, groundedness.applicable must be false and groundedness.score must be null.
+- If fallback_triggered is false, groundedness.applicable must be true and groundedness.score must be an integer from 0 through 4.
+- Every reason must be a non-empty concise string and must not reproduce long evidence passages.
+- Return exactly the JSON object below, with no Markdown fences or surrounding prose:
+{{"semantic_correctness": {{"score": 0, "reason": "concise reason"}}, "groundedness": {{"applicable": true, "score": 0, "reason": "concise reason"}}}}
+
+Question:
+{question}
+
+Gold answer:
+{gold_answer}
+
+Should answer:
+{should_answer}
+
+Fallback triggered:
+{fallback_triggered}
+
+System answer:
+{system_answer}
+
+Citations:
+{citations}
+
+Evidence:
+{evidence}
+
+JSON:"""
+
+
 DOCUMENT_SUMMARY_V1 = """Summarize the document using only the supplied text. Return at most {max_points} concise bullet points. Do not add unsupported facts.
 
 Title: {title}
@@ -293,6 +343,12 @@ _PROJECT_PROMPT_DEFINITIONS = (
         description="Revise an answer after citation verification.",
     ),
     PromptDefinition(
+        prompt_id="evaluation.semantic_judge",
+        version="v1",
+        template=SEMANTIC_JUDGE_V1,
+        description="Score evaluation answers for semantic correctness and groundedness.",
+    ),
+    PromptDefinition(
         prompt_id="tool.document_summary",
         version="v1",
         template=DOCUMENT_SUMMARY_V1,
@@ -323,6 +379,7 @@ PROJECT_PROMPT_REGISTRY = PromptRegistry(
         "agent.claim_extraction": "v1",
         "agent.citation_verification": "v1",
         "agent.answer_revision": "v1",
+        "evaluation.semantic_judge": "v1",
         "tool.document_summary": "v1",
     },
 )
