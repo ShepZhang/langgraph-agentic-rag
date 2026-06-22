@@ -69,6 +69,10 @@ class JudgeResult:
     prompt_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
+        if self.status not in {"disabled", "completed", "failed"}:
+            raise ValueError(
+                "Judge status must be one of: disabled, completed, failed"
+            )
         object.__setattr__(self, "scores", deepcopy(self.scores))
         object.__setattr__(self, "raw_scores", deepcopy(self.raw_scores))
         object.__setattr__(self, "reasons", deepcopy(self.reasons))
@@ -126,9 +130,7 @@ class JudgeResult:
         """Build a judge result from a public payload while ignoring additive fields."""
 
         allowed_fields = {item.name for item in fields(cls)}
-        filtered_payload = {
-            key: deepcopy(value) for key, value in payload.items() if key in allowed_fields
-        }
+        filtered_payload = {key: value for key, value in payload.items() if key in allowed_fields}
         filtered_payload.setdefault("status", "disabled")
         return cls(**filtered_payload)
 
@@ -206,9 +208,7 @@ class EvaluationResult:
         """Build a result from a public payload while ignoring additive fields."""
 
         allowed_fields = {item.name for item in fields(cls)}
-        init_payload = {
-            key: deepcopy(value) for key, value in payload.items() if key in allowed_fields
-        }
+        init_payload = {key: value for key, value in payload.items() if key in allowed_fields}
         init_payload.setdefault("judge", JudgeResult.disabled())
         return cls(**init_payload)
 

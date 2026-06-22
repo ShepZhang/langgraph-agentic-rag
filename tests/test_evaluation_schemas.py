@@ -261,6 +261,55 @@ def test_result_from_compat_dict_accepts_existing_judge_object_and_defaults_miss
     assert without_judge.judge == JudgeResult.disabled()
 
 
+def test_result_from_compat_dict_isolated_from_subsequent_payload_mutation():
+    payload = {
+        "question_id": "q001",
+        "question_type": "single_doc",
+        "question": "What is RAG?",
+        "token_usage": {"total_tokens": 42},
+        "citations": [{"source": "notes.md", "snippet": "Evidence."}],
+        "claims": [{"claim": "RAG uses retrieval"}],
+        "claim_verification_results": [{"supported": True}],
+        "retrieved_documents": [{"source": "notes.md", "matched_queries": ["rag"]}],
+        "relevant_documents": [{"source": "notes.md", "matched_queries": ["rag"]}],
+        "failure_analysis": {"failure_type": "no_failure"},
+        "judge": {
+            "status": "completed",
+            "scores": {"semantic_correctness": 0.75},
+            "raw_scores": {"semantic_correctness": 4},
+            "reasons": {"semantic_correctness": "Looks right."},
+        },
+    }
+
+    result = EvaluationResult.from_compat_dict(payload)
+
+    payload["token_usage"]["total_tokens"] = 0
+    payload["citations"][0]["source"] = "mutated.md"
+    payload["claims"][0]["claim"] = "mutated"
+    payload["claim_verification_results"][0]["supported"] = False
+    payload["retrieved_documents"][0]["matched_queries"].append("mutated")
+    payload["relevant_documents"][0]["matched_queries"].append("mutated")
+    payload["failure_analysis"]["failure_type"] = "mutated"
+    payload["judge"]["scores"]["semantic_correctness"] = 0.0
+    payload["judge"]["raw_scores"]["semantic_correctness"] = 0
+    payload["judge"]["reasons"]["semantic_correctness"] = "mutated"
+
+    assert result.token_usage == {"total_tokens": 42}
+    assert result.citations == [{"source": "notes.md", "snippet": "Evidence."}]
+    assert result.claims == [{"claim": "RAG uses retrieval"}]
+    assert result.claim_verification_results == [{"supported": True}]
+    assert result.retrieved_documents == [
+        {"source": "notes.md", "matched_queries": ["rag"]}
+    ]
+    assert result.relevant_documents == [
+        {"source": "notes.md", "matched_queries": ["rag"]}
+    ]
+    assert result.failure_analysis == {"failure_type": "no_failure"}
+    assert result.judge.scores == {"semantic_correctness": 0.75}
+    assert result.judge.raw_scores == {"semantic_correctness": 4}
+    assert result.judge.reasons == {"semantic_correctness": "Looks right."}
+
+
 def test_result_from_compat_dict_reads_pre_p5a_payloads_without_judge():
     payload = {
         "question_id": "q001",
@@ -548,6 +597,16 @@ def test_judge_result_copies_input_maps_and_serialized_payloads():
     assert result.scores == {"semantic_correctness": 0.8, "groundedness": None}
     assert result.raw_scores == {"semantic_correctness": 4, "groundedness": None}
     assert result.reasons == {"semantic_correctness": "Reference-aligned."}
+
+
+def test_judge_result_rejects_invalid_status_on_direct_construction():
+    with pytest.raises(ValueError, match="Judge status"):
+        JudgeResult(status=cast(Any, "pending"))
+
+
+def test_judge_result_rejects_invalid_status_in_compat_dict():
+    with pytest.raises(ValueError, match="Judge status"):
+        JudgeResult.from_compat_dict({"status": "pending", "scores": {}})
 
 
 def test_result_copies_judge_inputs_and_serialized_payloads():
