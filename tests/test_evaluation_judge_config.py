@@ -338,3 +338,18 @@ def test_disabled_judge_runtime_metadata_uses_none_for_empty_model():
         "model": None,
         "temperature": 0.0,
     }
+
+
+def test_disabled_judge_runtime_metadata_sanitizes_stale_settings():
+    settings = EvaluationJudgeSettings(
+        enabled=False,
+        api_key="stale-secret",
+        base_url="https://stale-judge.example/v1",
+        model="stale-model",
+        temperature=1.5,
+    )
+
+    metadata = build_judge_runtime_metadata(settings)
+
+    assert metadata["model"] is None
+    assert metadata["temperature"] == 0.0

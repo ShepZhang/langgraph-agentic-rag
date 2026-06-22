@@ -134,6 +134,6 @@ def build_judge_runtime_metadata(
     return {
         "enabled": settings.enabled,
         "provider": "openai_compatible",
-        "model": settings.model or None,
-        "temperature": settings.temperature,
+        "model": (settings.model or None) if settings.enabled else None,
+        "temperature": settings.temperature if settings.enabled else 0.0,
     }
