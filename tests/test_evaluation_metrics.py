@@ -354,6 +354,26 @@ def test_summarize_results_ignores_invalid_judge_scores():
     assert summary.groundedness_applicable_count == 2
 
 
+def test_summarize_results_ignores_overflowing_judge_score():
+    question = normalize_question({"question": "Overflowing score?"}, index=0)
+    result = EvaluationResult.empty(
+        question_id=question.id,
+        question_type=question.question_type,
+        question=question.question,
+    )
+    result.answer_returned = True
+    result.judge = JudgeResult.completed(
+        {"semantic_correctness": 10**309, "groundedness": 0.5},
+        reason="overflowing semantic score",
+    )
+
+    summary = summarize_results([result], [question])
+
+    assert summary.average_semantic_correctness is None
+    assert summary.average_groundedness == 0.5
+    assert summary.groundedness_applicable_count == 1
+
+
 def test_summarize_results_groundedness_excludes_none_scores():
     """Groundedness None scores are excluded from count and average."""
     question = normalize_question({"question": "None groundedness?"}, index=0)

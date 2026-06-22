@@ -480,9 +480,13 @@ def _safe_float(value: Any) -> float | None:
         return None
     if not isinstance(value, int | float):
         return None
-    if not math.isfinite(value):
+    try:
+        float_value = float(value)
+    except OverflowError:
         return None
-    return float(value)
+    if not math.isfinite(float_value):
+        return None
+    return float_value
 
 
 def _safe_cost(value: Any) -> float | None:
