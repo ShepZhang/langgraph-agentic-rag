@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -52,6 +53,12 @@ def test_judge_settings_are_frozen():
         settings.enabled = True  # type: ignore[misc]
 
 
+def test_judge_settings_repr_excludes_api_key():
+    settings = EvaluationJudgeSettings(api_key="judge-secret")
+
+    assert "judge-secret" not in repr(settings)
+
+
 def test_disabled_judge_ignores_invalid_unused_temperature():
     settings = load_evaluation_judge_settings(
         {
@@ -61,6 +68,12 @@ def test_disabled_judge_ignores_invalid_unused_temperature():
     )
 
     assert settings.temperature == 0.0
+
+
+def test_disabled_direct_settings_ignore_unused_temperature_validation():
+    settings = EvaluationJudgeSettings(enabled=False, temperature=float("nan"))
+
+    assert math.isnan(settings.temperature)
 
 
 @pytest.mark.parametrize(
@@ -81,7 +94,7 @@ def test_enabled_judge_requires_each_independent_field(missing_name):
 
 @pytest.mark.parametrize(
     "raw_temperature",
-    ["-0.1", "2.1", "not-a-number"],
+    ["-0.1", "2.1", "not-a-number", "nan", "inf", "-inf"],
 )
 def test_enabled_judge_rejects_invalid_temperatures(raw_temperature):
     environ = _enabled_environment()
@@ -91,10 +104,71 @@ def test_enabled_judge_rejects_invalid_temperatures(raw_temperature):
         load_evaluation_judge_settings(environ)
 
 
+@pytest.mark.parametrize("raw_temperature", ["0", "2"])
+def test_enabled_judge_accepts_temperature_boundaries(raw_temperature):
+    environ = _enabled_environment()
+    environ["EVALUATION_JUDGE_TEMPERATURE"] = raw_temperature
+
+    settings = load_evaluation_judge_settings(environ)
+
+    assert settings.temperature == float(raw_temperature)
+
+
 def test_enabled_judge_defaults_temperature_to_zero():
     settings = load_evaluation_judge_settings(_enabled_environment())
 
     assert settings.temperature == 0.0
+
+
+@pytest.mark.parametrize(
+    ("field_name", "message"),
+    [
+        ("api_key", "EVALUATION_JUDGE_API_KEY"),
+        ("base_url", "EVALUATION_JUDGE_BASE_URL"),
+        ("model", "EVALUATION_JUDGE_MODEL"),
+    ],
+)
+def test_direct_enabled_settings_require_each_independent_field(
+    field_name,
+    message,
+):
+    values = {
+        "api_key": "judge-secret",
+        "base_url": "https://judge.example/v1",
+        "model": "deepseek-chat",
+    }
+    values[field_name] = "   "
+
+    with pytest.raises(ValueError, match=message):
+        EvaluationJudgeSettings(enabled=True, **values)
+
+
+@pytest.mark.parametrize(
+    "temperature",
+    [-0.1, 2.1, float("nan"), float("inf"), float("-inf"), "not-a-number"],
+)
+def test_direct_enabled_settings_reject_invalid_temperature(temperature):
+    with pytest.raises(ValueError, match="EVALUATION_JUDGE_TEMPERATURE"):
+        EvaluationJudgeSettings(
+            enabled=True,
+            api_key="judge-secret",
+            base_url="https://judge.example/v1",
+            model="deepseek-chat",
+            temperature=temperature,
+        )
+
+
+@pytest.mark.parametrize("temperature", [0.0, 2.0])
+def test_direct_enabled_settings_accept_temperature_boundaries(temperature):
+    settings = EvaluationJudgeSettings(
+        enabled=True,
+        api_key="judge-secret",
+        base_url="https://judge.example/v1",
+        model="deepseek-chat",
+        temperature=temperature,
+    )
+
+    assert settings.temperature == temperature
 
 
 @pytest.mark.parametrize(
@@ -142,6 +216,27 @@ def test_disabled_judge_does_not_construct_client():
     with pytest.raises(RuntimeError, match="disabled"):
         create_evaluation_judge_model(
             EvaluationJudgeSettings(),
+            client_factory=client_factory,
+        )
+
+    assert calls == 0
+
+
+def test_invalid_enabled_settings_do_not_construct_client():
+    calls = 0
+
+    def client_factory(**_kwargs):
+        nonlocal calls
+        calls += 1
+
+    with pytest.raises(ValueError, match="EVALUATION_JUDGE_API_KEY"):
+        create_evaluation_judge_model(
+            EvaluationJudgeSettings(
+                enabled=True,
+                api_key="",
+                base_url="https://judge.example/v1",
+                model="deepseek-chat",
+            ),
             client_factory=client_factory,
         )
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -13,10 +14,36 @@ class EvaluationJudgeSettings:
     """Settings for an optional OpenAI-compatible evaluation Judge."""
 
     enabled: bool = False
-    api_key: str = ""
+    api_key: str = field(default="", repr=False)
     base_url: str = ""
     model: str = ""
     temperature: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Validate settings required by an enabled evaluation Judge."""
+
+        if not self.enabled:
+            return
+
+        required_values = {
+            "EVALUATION_JUDGE_API_KEY": self.api_key,
+            "EVALUATION_JUDGE_BASE_URL": self.base_url,
+            "EVALUATION_JUDGE_MODEL": self.model,
+        }
+        for name, value in required_values.items():
+            if not value.strip():
+                raise ValueError(
+                    f"{name} must not be empty when EVALUATION_JUDGE_ENABLED is true"
+                )
+
+        try:
+            temperature_is_valid = (
+                math.isfinite(self.temperature) and 0 <= self.temperature <= 2
+            )
+        except TypeError:
+            temperature_is_valid = False
+        if not temperature_is_valid:
+            raise ValueError("EVALUATION_JUDGE_TEMPERATURE must be between 0 and 2")
 
 
 def _parse_enabled(raw_value: str | None) -> bool:
@@ -51,17 +78,6 @@ def load_evaluation_judge_settings(
             temperature=0.0,
         )
 
-    required_values = {
-        "EVALUATION_JUDGE_API_KEY": api_key,
-        "EVALUATION_JUDGE_BASE_URL": base_url,
-        "EVALUATION_JUDGE_MODEL": model,
-    }
-    for name, value in required_values.items():
-        if not value:
-            raise ValueError(
-                f"{name} must not be empty when EVALUATION_JUDGE_ENABLED is true"
-            )
-
     raw_temperature = source.get("EVALUATION_JUDGE_TEMPERATURE", "0.0").strip()
     try:
         temperature = float(raw_temperature)
@@ -69,8 +85,6 @@ def load_evaluation_judge_settings(
         raise ValueError(
             f"EVALUATION_JUDGE_TEMPERATURE must be a number, got {raw_temperature!r}"
         ) from exc
-    if not 0 <= temperature <= 2:
-        raise ValueError("EVALUATION_JUDGE_TEMPERATURE must be between 0 and 2")
 
     return EvaluationJudgeSettings(
         enabled=True,
