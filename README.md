@@ -522,15 +522,20 @@ disabled, evaluation creates no Judge client and makes no Judge calls.
 
 The Judge scores semantic correctness and groundedness with raw integer values
 from `0` to `4`, then records normalized values from `0` to `1`. Fallback
-results still receive semantic correctness, while groundedness is `null`.
+results still receive semantic correctness, while groundedness is `null`. If
+an evaluation record has no nonblank `gold_answer`, semantic correctness is
+reported as unavailable instead of aggregating an ungrounded score.
 Evidence selection prefers relevant documents and otherwise uses retrieved
 documents, preserving order and limiting input to 8 chunks and 1,200 characters
-per chunk.
+per chunk. Source metadata is reduced to a safe basename; URL user information,
+query parameters, and fragments are removed before Judge invocation.
 
 Each successful system result creates one Judge call. A naive-versus-agentic
 comparison therefore creates two Judge calls per question, which can materially
 increase latency and cost. Judge failures are isolated per result: deterministic
 metrics remain unchanged and available even when semantic scoring fails.
+Runtime metadata records the resolved configured or injected Judge without
+serializing credentials or base URLs.
 
 LLM-as-a-Judge scores can inherit model bias and are not human ground truth.
 P5a adds no Evaluation Dashboard UI for these scores; raw JSON reports and

@@ -593,6 +593,47 @@ def test_evaluate_questions_with_injected_judge_does_not_build_configured_judge(
     assert report["results"][0]["judge"]["status"] == "completed"
 
 
+def test_injected_judge_runtime_metadata_is_preserved_in_written_artifacts(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    class InjectedJudge:
+        def evaluate(self, question, result) -> JudgeResult:
+            return JudgeResult.completed(
+                {"semantic_correctness": 1.0, "groundedness": 0.75},
+                reason="Injected judge.",
+                model="custom-judge-v2",
+            )
+
+    monkeypatch.setenv("EVALUATION_JUDGE_ENABLED", "true")
+    monkeypatch.delenv("EVALUATION_JUDGE_API_KEY", raising=False)
+    monkeypatch.delenv("EVALUATION_JUDGE_BASE_URL", raising=False)
+    monkeypatch.delenv("EVALUATION_JUDGE_MODEL", raising=False)
+    report = evaluate_questions(
+        [
+            {
+                "question": "What is Agentic RAG?",
+                "gold_answer": "Agentic RAG adds control flow around retrieval.",
+            }
+        ],
+        run_agent_fn=lambda _question: {"answer": "It adds retrieval control flow."},
+        timer=lambda: 0.0,
+        judge=InjectedJudge(),
+    )
+
+    evaluator.write_evaluation_artifacts(report, tmp_path)
+    payload = json.loads((tmp_path / "agentic_result.json").read_text(encoding="utf-8"))
+
+    expected_metadata = {
+        "enabled": True,
+        "provider": "injected",
+        "model": "custom-judge-v2",
+        "temperature": None,
+    }
+    assert report["runtime_config"]["judge"] == expected_metadata
+    assert payload["runtime_config"]["judge"] == expected_metadata
+
+
 def test_evaluate_questions_builds_configured_judge_once_when_omitted(
     monkeypatch,
 ) -> None:

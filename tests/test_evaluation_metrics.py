@@ -374,6 +374,34 @@ def test_summarize_results_ignores_overflowing_judge_score():
     assert summary.groundedness_applicable_count == 1
 
 
+def test_summarize_results_ignores_judge_scores_outside_normalized_range():
+    question = normalize_question({"question": "Out-of-range scores?"}, index=0)
+    high = EvaluationResult.empty(
+        question_id="q-high",
+        question_type=question.question_type,
+        question=question.question,
+    )
+    high.judge = JudgeResult.completed(
+        {"semantic_correctness": 4.0, "groundedness": 0.75},
+        reason="raw score leaked into normalized field",
+    )
+    low = EvaluationResult.empty(
+        question_id="q-low",
+        question_type=question.question_type,
+        question=question.question,
+    )
+    low.judge = JudgeResult.completed(
+        {"semantic_correctness": 0.5, "groundedness": -1.0},
+        reason="negative normalized score",
+    )
+
+    summary = summarize_results([high, low], [question, question])
+
+    assert summary.average_semantic_correctness == 0.5
+    assert summary.average_groundedness == 0.75
+    assert summary.groundedness_applicable_count == 1
+
+
 def test_summarize_results_groundedness_excludes_none_scores():
     """Groundedness None scores are excluded from count and average."""
     question = normalize_question({"question": "None groundedness?"}, index=0)

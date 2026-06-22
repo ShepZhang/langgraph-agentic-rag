@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from typing import Any
 
 from agent.features import AgentFeatureFlags
@@ -23,6 +25,7 @@ def build_runtime_config_snapshot(
     settings: Settings | None = None,
     features: AgentFeatureFlags | None = None,
     judge_settings: EvaluationJudgeSettings | None = None,
+    judge_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return reproducibility metadata without secrets or local paths."""
 
@@ -30,6 +33,7 @@ def build_runtime_config_snapshot(
         settings=settings,
         features=features,
         judge_settings=judge_settings,
+        judge_metadata=judge_metadata,
     ).to_dict()
 
 
@@ -37,22 +41,27 @@ def build_runtime_metadata(
     settings: Settings | None = None,
     features: AgentFeatureFlags | None = None,
     judge_settings: EvaluationJudgeSettings | None = None,
+    judge_metadata: Mapping[str, Any] | None = None,
 ) -> RuntimeMetadata:
     """Return versioned reproducibility metadata without secrets or local paths."""
 
     resolved = settings or get_settings()
     resolved_features = features or AgentFeatureFlags()
-    resolved_judge = (
-        judge_settings
-        if judge_settings is not None
-        else load_evaluation_judge_settings()
-    )
+    if judge_metadata is None:
+        resolved_judge = (
+            judge_settings
+            if judge_settings is not None
+            else load_evaluation_judge_settings()
+        )
+        resolved_judge_metadata = build_judge_runtime_metadata(resolved_judge)
+    else:
+        resolved_judge_metadata = _sanitize_judge_runtime_metadata(judge_metadata)
     return RuntimeMetadata(
         schema_version=EVALUATION_SCHEMA_VERSION,
         evaluator_version=EVALUATOR_VERSION,
         config={
             "agent_features": resolved_features.to_dict(),
-            "judge": build_judge_runtime_metadata(resolved_judge),
+            "judge": resolved_judge_metadata,
             "llm": {
                 "provider": resolved.llm_provider,
                 "model": resolved.effective_llm_model,
@@ -77,3 +86,41 @@ def build_runtime_metadata(
             },
         },
     )
+
+
+def _sanitize_judge_runtime_metadata(
+    metadata: Mapping[str, Any],
+) -> dict[str, bool | str | float | None]:
+    enabled = metadata.get("enabled") is True
+    provider_value = metadata.get("provider")
+    provider = (
+        provider_value.strip()
+        if isinstance(provider_value, str) and provider_value.strip()
+        else "injected"
+    )
+    model_value = metadata.get("model")
+    model = (
+        model_value.strip()
+        if isinstance(model_value, str) and model_value.strip()
+        else None
+    )
+    temperature_value = metadata.get("temperature")
+    temperature: float | None = None
+    if isinstance(temperature_value, int | float) and not isinstance(
+        temperature_value, bool
+    ):
+        try:
+            candidate_temperature = float(temperature_value)
+        except OverflowError:
+            candidate_temperature = None
+        if (
+            candidate_temperature is not None
+            and math.isfinite(candidate_temperature)
+        ):
+            temperature = candidate_temperature
+    return {
+        "enabled": enabled,
+        "provider": provider,
+        "model": model if enabled else None,
+        "temperature": temperature if enabled else 0.0,
+    }

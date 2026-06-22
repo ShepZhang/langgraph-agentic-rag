@@ -39,12 +39,16 @@ class MessageResponse:
         self.content = content
 
 
-def _question(*, answerable: bool = True) -> EvaluationQuestion:
+def _question(
+    *,
+    answerable: bool = True,
+    gold_answer: str = "Retrieval augmented generation.",
+) -> EvaluationQuestion:
     return EvaluationQuestion(
         id="q001",
         question="What is RAG?",
         question_type="single_doc",
-        gold_answer="Retrieval augmented generation.",
+        gold_answer=gold_answer,
         expected_sources=["notes.md"],
         expected_keywords=["retrieval"],
         source_match_mode="any",
@@ -188,6 +192,21 @@ def test_deepseek_judge_returns_groundedness_none_for_fallback_answers():
     assert result.raw_scores == {"semantic_correctness": 3, "groundedness": None}
     assert result.scores == {"semantic_correctness": 0.75, "groundedness": None}
     assert result.reasons["groundedness"] == "Groundedness not applicable for fallback answers."
+
+
+def test_deepseek_judge_marks_semantic_correctness_unavailable_without_gold_answer():
+    llm = FakeLLM(_semantic_payload())
+    judge = DeepSeekJudge(llm, model="deepseek-chat", api_key="secret-key")
+
+    result = judge.evaluate(_question(gold_answer="   "), _result())
+
+    assert len(llm.prompts) == 1
+    assert result.status == "completed"
+    assert result.raw_scores == {"semantic_correctness": None, "groundedness": 4}
+    assert result.scores == {"semantic_correctness": None, "groundedness": 1.0}
+    assert result.reasons["semantic_correctness"] == (
+        "Semantic correctness unavailable: gold answer was not provided."
+    )
 
 
 @pytest.mark.parametrize("response", ["", "not json"])

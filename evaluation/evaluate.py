@@ -22,7 +22,7 @@ from evaluation.dataset import (
     normalize_question,
     normalize_questions,
 )
-from evaluation.judges import Judge, build_configured_judge
+from evaluation.judges import Judge, build_configured_judge, describe_judge_runtime
 from evaluation.metrics import summarize_results as summarize_metric_results
 from evaluation.reporting import format_evaluation_report
 from evaluation.runners import CallableRunnerAdapter
@@ -54,20 +54,30 @@ def evaluate_questions(
     resolved_judge = judge if judge is not None else build_configured_judge()
 
     if run_naive_fn is not None:
-        return evaluate_typed_comparison(
+        typed_report = evaluate_typed_comparison(
             questions=typed_questions,
             agentic_runner=agentic_runner,
             naive_runner=CallableRunnerAdapter(run_naive_fn),
             timer=timer,
             judge=resolved_judge,
-        ).to_dict()
+        )
+    else:
+        typed_report = evaluate_typed_single_system(
+            typed_questions,
+            agentic_runner,
+            timer,
+            judge=resolved_judge,
+        )
 
-    return evaluate_typed_single_system(
-        typed_questions,
-        agentic_runner,
-        timer,
-        judge=resolved_judge,
-    ).to_dict()
+    report = typed_report.to_dict()
+    runtime_config = build_runtime_config_snapshot(
+        judge_metadata=describe_judge_runtime(
+            resolved_judge,
+            result_model=_find_judge_model(report),
+        )
+    )
+    report["runtime_config"] = runtime_config
+    return report
 
 
 def evaluate_single_system(
@@ -146,11 +156,33 @@ def main(
 def write_evaluation_artifacts(report: dict[str, Any], output_dir: str | Path) -> None:
     """Write structured JSON artifacts for downstream evaluation analysis."""
 
+    runtime_config = report.get("runtime_config")
+    if not isinstance(runtime_config, dict):
+        runtime_config = build_runtime_config_snapshot()
     write_compatibility_artifacts(
         report,
         output_dir,
-        runtime_config=build_runtime_config_snapshot(),
+        runtime_config=runtime_config,
     )
+
+
+def _find_judge_model(value: Any) -> str | None:
+    if isinstance(value, dict):
+        judge = value.get("judge")
+        if isinstance(judge, dict):
+            model = judge.get("model")
+            if isinstance(model, str) and model.strip():
+                return model.strip()
+        for nested in value.values():
+            model = _find_judge_model(nested)
+            if model is not None:
+                return model
+    elif isinstance(value, list):
+        for nested in value:
+            model = _find_judge_model(nested)
+            if model is not None:
+                return model
+    return None
 
 
 if __name__ == "__main__":

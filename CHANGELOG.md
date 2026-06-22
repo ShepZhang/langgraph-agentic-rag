@@ -19,6 +19,9 @@ Date: 2026-06-22
   version `p5a`.
 - Moved failure analysis after optional Judge invocation while preserving
   system-only latency semantics.
+- Semantic correctness is unavailable when `gold_answer` is blank, normalized
+  aggregates reject scores outside `0-1`, and injected Judge metadata is
+  preserved in artifacts.
 
 ### Notes
 
@@ -27,13 +30,15 @@ Date: 2026-06-22
 - Enabling it adds one model call per successful system result and can increase
   latency and cost substantially for comparison and ablation runs.
 - Judge scores are model-based signals, not human ground truth.
+- Evidence source URLs are reduced to credential-free basenames before Judge
+  invocation.
 
 ### Verification
 
-- Full test suite: `636 passed`.
-- Focused Judge and evaluation tests: `185 passed`.
+- Full test suite: `641 passed`.
+- Focused Judge and evaluation tests: `188 passed`.
 - CLI compatibility smoke tests: `3 passed`.
-- Ablation, matrix, Dashboard, and FastAPI compatibility tests: `91 passed`.
+- Ablation, matrix, Dashboard, and FastAPI compatibility tests: `92 passed`.
 
 ## v0.4.3-p4d - Prompt Versioning
 

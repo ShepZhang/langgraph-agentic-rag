@@ -57,10 +57,10 @@ git diff --check
 
 Observed verification for `v0.5.0-p5a`:
 
-- Full test suite: `636 passed`
-- Focused Judge and evaluation tests: `185 passed`
+- Full test suite: `641 passed`
+- Focused Judge and evaluation tests: `188 passed`
 - CLI compatibility smoke tests: `3 passed`
-- Ablation, matrix, Dashboard, and FastAPI compatibility tests: `91 passed`
+- Ablation, matrix, Dashboard, and FastAPI compatibility tests: `92 passed`
 - Python `compileall`: success
 
 ## GitHub Project Narrative

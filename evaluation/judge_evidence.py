@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from evaluation.schemas import EvaluationResult
 
@@ -22,7 +23,9 @@ def select_judge_evidence(result: EvaluationResult) -> list[dict[str, Any]]:
 def format_judge_evidence(result: EvaluationResult) -> str:
     """Serialize bounded judge evidence as compact deterministic JSON."""
 
-    evidence = [_format_evidence_record(record) for record in select_judge_evidence(result)]
+    evidence = [
+        _format_evidence_record(record) for record in select_judge_evidence(result)
+    ]
     return json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -73,7 +76,13 @@ def _basename_value(value: Any) -> str:
     cleaned = value.strip()
     if not cleaned:
         return ""
-    normalized = cleaned.replace("\\", "/").rstrip("/")
+    normalized = cleaned.replace("\\", "/")
+    if "://" in normalized or normalized.startswith("//"):
+        normalized = urlsplit(normalized).path
+    else:
+        normalized = normalized.split("?", maxsplit=1)[0]
+        normalized = normalized.split("#", maxsplit=1)[0]
+    normalized = normalized.rstrip("/")
     if not normalized:
         return ""
     return normalized.rsplit("/", maxsplit=1)[-1]

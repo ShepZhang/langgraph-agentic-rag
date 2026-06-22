@@ -663,6 +663,10 @@ P5a updates:
 The existing prompt manifest includes
 `evaluation.semantic_judge@v1` and its fingerprint.
 
+When a custom Judge is injected through the public facade, the artifact records
+sanitized runtime metadata for that resolved Judge instead of rebuilding
+contradictory Judge metadata from the environment.
+
 No runtime metadata contains:
 
 - Judge API key
@@ -913,8 +917,10 @@ P5a is complete when:
 - comparison mode independently judges naive and Agentic results
 - semantic correctness and groundedness use strict `0–4` integer scores
 - normalized scores use `raw / 4`
+- semantic correctness is unavailable when no nonblank gold answer exists
 - fallback groundedness is unavailable and excluded from its average
 - evidence selection and size limits are deterministic
+- evidence source URLs cannot expose user information, queries, or fragments
 - invalid Judge output fails without partial acceptance
 - Judge failures never terminate evaluation
 - deterministic metrics are unchanged by Judge output

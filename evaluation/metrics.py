@@ -516,7 +516,7 @@ def _judge_scores(
     scores: list[float] = []
     for r in results:
         score = _safe_float(r.judge.scores.get(dimension))
-        if score is not None:
+        if score is not None and 0.0 <= score <= 1.0:
             scores.append(score)
     return scores
 

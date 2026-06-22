@@ -2921,11 +2921,15 @@ prompt section. It must state:
 - semantic correctness and groundedness use raw `0–4` and normalized `0–1`
   values
 - fallback results receive semantic correctness but groundedness is `null`
+- records without a nonblank `gold_answer` report semantic correctness as
+  unavailable rather than aggregating an unsupported score
 - evidence uses relevant documents first, then retrieved documents, with 8
   chunks and 1,200 characters per chunk
+- evidence source URLs are reduced to credential-free basenames
 - one successful result creates one Judge call; comparison creates two calls
   per question
 - Judge failures are isolated and do not remove deterministic metrics
+- injected Judge runtime metadata is preserved in written artifacts
 - LLM-as-a-Judge can be biased and is not a human ground truth
 - P5a adds no Dashboard UI; raw reports carry the fields
 
@@ -3099,10 +3103,10 @@ Expected:
 
 Observed verification on 2026-06-22:
 
-- full project suite: `636 passed`
-- focused Judge and evaluation suite: `185 passed`
+- full project suite: `641 passed`
+- focused Judge and evaluation suite: `188 passed`
 - CLI compatibility smoke tests: `3 passed`
-- ablation, matrix, Dashboard, and FastAPI compatibility suite: `91 passed`
+- ablation, matrix, Dashboard, and FastAPI compatibility suite: `92 passed`
 - `compileall` across prompting, Agent, RAG, API, evaluation, experiments,
   baseline, tools, and observability: success
 - documentation prompt/environment scan: expected references found

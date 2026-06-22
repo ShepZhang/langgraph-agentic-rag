@@ -20,6 +20,9 @@ from tools.base import coerce_llm_text
 SEMANTIC_JUDGE_PROMPT_ID = "evaluation.semantic_judge"
 SEMANTIC_JUDGE_PROMPT_VERSION = "v1"
 MAX_JUDGE_ERROR_CHARS = 500
+SEMANTIC_CORRECTNESS_UNAVAILABLE_REASON = (
+    "Semantic correctness unavailable: gold answer was not provided."
+)
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _BEARER_TOKEN_RE = re.compile(r"\bBearer\s+\S+", re.IGNORECASE)
@@ -54,10 +57,18 @@ class DisabledJudge:
 
 
 class DeepSeekJudge:
-    def __init__(self, llm: JudgeLLM, *, model: str, api_key: str) -> None:
+    def __init__(
+        self,
+        llm: JudgeLLM,
+        *,
+        model: str,
+        api_key: str,
+        temperature: float = 0.0,
+    ) -> None:
         self.llm = llm
         self.model = model
         self.api_key = api_key
+        self.temperature = temperature
         self.prompt_definition = get_prompt_definition(
             SEMANTIC_JUDGE_PROMPT_ID,
             version=SEMANTIC_JUDGE_PROMPT_VERSION,
@@ -88,11 +99,20 @@ class DeepSeekJudge:
                 raw_text,
                 fallback_triggered=result.fallback_triggered,
             )
+            scores = dict(parsed.scores)
+            raw_scores = dict(parsed.raw_scores)
+            reasons = dict(parsed.reasons)
+            if not question.gold_answer.strip():
+                scores["semantic_correctness"] = None
+                raw_scores["semantic_correctness"] = None
+                reasons["semantic_correctness"] = (
+                    SEMANTIC_CORRECTNESS_UNAVAILABLE_REASON
+                )
             return JudgeResult.completed(
-                parsed.scores,
+                scores,
                 reason="Semantic Judge completed.",
-                raw_scores=parsed.raw_scores,
-                reasons=parsed.reasons,
+                raw_scores=raw_scores,
+                reasons=reasons,
                 **self._metadata(),
             )
         except Exception as exc:
@@ -130,7 +150,43 @@ def build_configured_judge(
         llm,
         model=resolved_settings.model,
         api_key=resolved_settings.api_key,
+        temperature=resolved_settings.temperature,
     )
+
+
+def describe_judge_runtime(
+    judge: Judge,
+    *,
+    result_model: str | None = None,
+) -> dict[str, bool | str | float | None]:
+    """Return sanitized runtime metadata for a resolved Judge instance."""
+
+    if isinstance(judge, DisabledJudge):
+        return {
+            "enabled": False,
+            "provider": "openai_compatible",
+            "model": None,
+            "temperature": 0.0,
+        }
+    if isinstance(judge, DeepSeekJudge):
+        return {
+            "enabled": True,
+            "provider": "openai_compatible",
+            "model": judge.model,
+            "temperature": judge.temperature,
+        }
+
+    model = result_model
+    if model is None:
+        candidate = getattr(judge, "model", None)
+        if isinstance(candidate, str) and candidate.strip():
+            model = candidate.strip()
+    return {
+        "enabled": True,
+        "provider": "injected",
+        "model": model,
+        "temperature": None,
+    }
 
 
 def invoke_judge(

@@ -715,6 +715,28 @@ def test_runtime_config_judge_settings_cached_in_snapshot():
     assert "base_url" not in snapshot["judge"]
 
 
+def test_runtime_config_sanitizes_injected_judge_metadata():
+    snapshot = build_runtime_config_snapshot(
+        judge_metadata={
+            "enabled": True,
+            "provider": " injected ",
+            "model": " custom-judge ",
+            "temperature": 10**309,
+            "api_key": "secret-key",
+            "base_url": "https://secret.example/v1",
+        }
+    )
+
+    assert snapshot["judge"] == {
+        "enabled": True,
+        "provider": "injected",
+        "model": "custom-judge",
+        "temperature": None,
+    }
+    assert "secret-key" not in str(snapshot)
+    assert "secret.example" not in str(snapshot)
+
+
 def test_build_runtime_metadata_calls_load_judge_settings_once_when_omitted(
     monkeypatch,
 ):

@@ -170,6 +170,38 @@ def test_windows_and_posix_paths_are_reduced_to_basenames():
     assert [record["source"] for record in citations] == ["gamma.txt", "delta.txt"]
 
 
+def test_url_sources_strip_userinfo_query_and_fragment_credentials():
+    result = _empty_result()
+    result.relevant_documents = [
+        {
+            "source": (
+                "https://user:password@storage.example/private/doc.pdf"
+                "?X-Amz-Credential=SECRET&X-Amz-Signature=SIG#private"
+            ),
+            "content": "evidence",
+        }
+    ]
+    result.citations = [
+        {
+            "source": (
+                "//token:secret@storage.example/private/citation.pdf"
+                "?access_token=SECRET#fragment"
+            ),
+            "snippet": "citation",
+        }
+    ]
+
+    evidence = json.loads(format_judge_evidence(result))
+    citations = json.loads(format_judge_citations(result))
+
+    assert evidence == [{"source": "doc.pdf", "content": "evidence"}]
+    assert citations == [{"source": "citation.pdf", "snippet": "citation"}]
+    serialized = json.dumps([evidence, citations])
+    assert "SECRET" not in serialized
+    assert "password" not in serialized
+    assert "token:secret" not in serialized
+
+
 def test_invalid_page_and_blank_metadata_are_omitted_and_non_string_content_becomes_empty():
     result = _empty_result()
     result.relevant_documents = [
