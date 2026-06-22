@@ -9,7 +9,6 @@ from typing import Any, Protocol
 
 from agent.state import ChatMessage
 from evaluation.metrics import (
-    attach_failure_analysis,
     build_error_result,
     score_system_output,
 )
@@ -82,7 +81,8 @@ def evaluate_question(
 
     result.latency = latency
     result.error = error
-    return attach_failure_analysis(question, result)
+    result.failure_analysis = {}
+    return result
 
 
 def _format_error(exc: Exception) -> str:

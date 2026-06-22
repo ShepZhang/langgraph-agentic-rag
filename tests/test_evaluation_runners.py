@@ -47,7 +47,7 @@ def test_callable_runner_adapter_passes_history_to_two_argument_runner() -> None
     assert calls == [("What did we discuss?", history)]
 
 
-def test_evaluate_question_records_runner_errors_latency_and_failure_analysis() -> None:
+def test_evaluate_question_records_runner_errors_latency_and_empty_failure_analysis() -> None:
     question = normalize_question(
         {
             "id": "q-error",
@@ -78,8 +78,7 @@ def test_evaluate_question_records_runner_errors_latency_and_failure_analysis() 
     assert result.answer_returned is False
     assert result.latency == 2.5
     assert result.error == "RuntimeError: offline"
-    assert result.failure_analysis["failure_type"] == "tool_failure"
-    assert result.failure_analysis["reason"]
+    assert result.failure_analysis == {}
 
 
 def test_evaluate_question_scores_successful_runner_output() -> None:
@@ -117,4 +116,4 @@ def test_evaluate_question_scores_successful_runner_output() -> None:
     assert result.source_hit is True
     assert result.latency == 0.25
     assert result.error is None
-    assert result.failure_analysis["failure_type"] == "no_failure"
+    assert result.failure_analysis == {}

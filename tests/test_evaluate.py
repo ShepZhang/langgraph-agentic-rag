@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections import Counter
 import json
 from pathlib import Path
-from typing import Any, get_args, get_origin
+from typing import Any, get_args, get_origin, get_type_hints
 
 import pytest
 
 from agent.state import ChatMessage
 import evaluation.evaluate as evaluator
 from evaluation.evaluate import evaluate_questions, format_report, load_eval_questions, main
+from evaluation.schemas import JudgeResult
 
 
 def test_public_facade_exports_owned_callables():
@@ -35,6 +36,14 @@ def test_public_facade_reexports_legacy_runner_alias():
         [str, list[ChatMessage]],
         dict[str, Any],
     )
+
+
+def test_public_facade_type_hints_include_optional_judge() -> None:
+    evaluate_questions_hints = get_type_hints(evaluator.evaluate_questions)
+    evaluate_single_hints = get_type_hints(evaluator.evaluate_single_system)
+
+    assert evaluate_questions_hints["judge"] == evaluator.Judge | None
+    assert evaluate_single_hints["judge"] == evaluator.Judge | None
 
 
 def test_summarize_results_ignores_unknown_result_fields_for_compatibility():
@@ -491,6 +500,12 @@ def test_evaluate_questions_computes_agentic_summary_metrics():
         "average_latency": 1.5,
         "rewrite_triggered_count": 2,
         "error_count": 0,
+        "judge_completed_count": 0,
+        "judge_failed_count": 0,
+        "judge_completion_rate": None,
+        "average_semantic_correctness": None,
+        "average_groundedness": None,
+        "groundedness_applicable_count": 0,
         "failure_type_counts": {"no_failure": 2},
     }
     assert report["results"][0]["source_hit"] is True
@@ -545,6 +560,133 @@ def test_evaluate_questions_attaches_failure_analysis_and_summary_counts():
         "no_failure": 1,
         "retrieval_failure": 1,
     }
+
+
+def test_evaluate_questions_with_injected_judge_does_not_build_configured_judge(
+    monkeypatch,
+) -> None:
+    class RecordingJudge:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def evaluate(self, question, result) -> JudgeResult:
+            self.calls.append(question.question)
+            return JudgeResult.completed(
+                {"semantic_correctness": 0.9},
+                reason="Injected judge.",
+            )
+
+    def fail_build() -> evaluator.Judge:
+        raise AssertionError("build_configured_judge should not run")
+
+    monkeypatch.setattr(evaluator, "build_configured_judge", fail_build)
+    judge = RecordingJudge()
+
+    report = evaluate_questions(
+        [{"question": "What is Agentic RAG?"}],
+        run_agent_fn=lambda _question: {"answer": "Agentic RAG."},
+        timer=lambda: 0.0,
+        judge=judge,
+    )
+
+    assert judge.calls == ["What is Agentic RAG?"]
+    assert report["results"][0]["judge"]["status"] == "completed"
+
+
+def test_evaluate_questions_builds_configured_judge_once_when_omitted(
+    monkeypatch,
+) -> None:
+    build_calls = 0
+
+    class RecordingJudge:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def evaluate(self, question, result) -> JudgeResult:
+            self.calls.append(question.question)
+            return JudgeResult.completed(
+                {"semantic_correctness": 0.7},
+                reason="Built judge.",
+            )
+
+    judge = RecordingJudge()
+
+    def fake_build() -> evaluator.Judge:
+        nonlocal build_calls
+        build_calls += 1
+        return judge
+
+    monkeypatch.setattr(evaluator, "build_configured_judge", fake_build)
+
+    report = evaluate_questions(
+        [
+            {"question": "First?"},
+            {"question": "Second?"},
+        ],
+        run_agent_fn=lambda question: {"answer": question},
+        timer=lambda: 0.0,
+    )
+
+    assert build_calls == 1
+    assert judge.calls == ["First?", "Second?"]
+    assert all(result["judge"]["status"] == "completed" for result in report["results"])
+
+
+def test_public_evaluate_single_system_with_injected_judge_skips_builder(
+    monkeypatch,
+) -> None:
+    class RecordingJudge:
+        def evaluate(self, question, result) -> JudgeResult:
+            return JudgeResult.completed(
+                {"semantic_correctness": 0.6},
+                reason="Injected single.",
+            )
+
+    monkeypatch.setattr(
+        evaluator,
+        "build_configured_judge",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("build_configured_judge should not run")
+        ),
+    )
+
+    result = evaluator.evaluate_single_system(
+        {"question": "What is RAG?"},
+        lambda _question: {"answer": "Retrieval augmented generation."},
+        timer=lambda: 0.0,
+        judge=RecordingJudge(),
+    )
+
+    assert result["judge"]["status"] == "completed"
+
+
+def test_public_evaluate_single_system_builds_judge_once_when_omitted(
+    monkeypatch,
+) -> None:
+    build_calls = 0
+
+    class RecordingJudge:
+        def evaluate(self, question, result) -> JudgeResult:
+            return JudgeResult.completed(
+                {"semantic_correctness": 0.6},
+                reason="Built single.",
+            )
+
+    def fake_build() -> evaluator.Judge:
+        nonlocal build_calls
+        build_calls += 1
+        return RecordingJudge()
+
+    monkeypatch.setattr(evaluator, "build_configured_judge", fake_build)
+
+    result = evaluator.evaluate_single_system(
+        {"question": "What is RAG?"},
+        lambda _question: {"answer": "Retrieval augmented generation."},
+        timer=lambda: 0.0,
+    )
+
+    assert build_calls == 1
+    assert result["judge"]["status"] == "completed"
 
 
 def test_evaluate_questions_respects_answerable_without_should_answer():

@@ -6,14 +6,21 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from evaluation.metrics import summarize_results
+from evaluation.judges import DisabledJudge, Judge, invoke_judge
+from evaluation.metrics import attach_failure_analysis, summarize_results
 from evaluation.runners import EvaluationRunner, evaluate_question
 from evaluation.schemas import (
     ComparisonEvaluationSummary,
     EvaluationQuestion,
     EvaluationReport,
     EvaluationSummary,
+    EvaluationResult,
+    JudgeResult,
     PairedEvaluationResult,
+)
+
+SYSTEM_RESULT_UNAVAILABLE_ERROR = (
+    "SystemResultUnavailable: system execution failed; Judge was not invoked"
 )
 
 
@@ -21,14 +28,20 @@ def evaluate_single_system(
     questions: list[EvaluationQuestion],
     runner: EvaluationRunner,
     timer: Callable[[], float] = time.perf_counter,
+    judge: Judge | None = None,
 ) -> EvaluationReport:
     """Evaluate one system over typed questions."""
 
+    resolved_judge = judge if judge is not None else DisabledJudge()
     results = [
-        evaluate_question(
+        _finalize_result(
             question,
-            runner,
-            timer,
+            evaluate_question(
+                question,
+                runner,
+                timer,
+            ),
+            resolved_judge,
         )
         for question in questions
     ]
@@ -41,16 +54,26 @@ def evaluate_comparison(
     agentic_runner: EvaluationRunner,
     naive_runner: EvaluationRunner,
     timer: Callable[[], float] = time.perf_counter,
+    judge: Judge | None = None,
 ) -> EvaluationReport:
     """Evaluate naive and agentic systems over the same typed questions."""
 
+    resolved_judge = judge if judge is not None else DisabledJudge()
     paired_results: list[PairedEvaluationResult] = []
     naive_results = []
     agentic_results = []
 
     for question in questions:
-        naive_result = evaluate_question(question, naive_runner, timer)
-        agentic_result = evaluate_question(question, agentic_runner, timer)
+        naive_result = _finalize_result(
+            question,
+            evaluate_question(question, naive_runner, timer),
+            resolved_judge,
+        )
+        agentic_result = _finalize_result(
+            question,
+            evaluate_question(question, agentic_runner, timer),
+            resolved_judge,
+        )
         naive_results.append(naive_result)
         agentic_results.append(agentic_result)
         paired_results.append(
@@ -74,6 +97,19 @@ def evaluate_comparison(
         ),
     )
     return EvaluationReport(summary=summary, results=paired_results)
+
+
+def _finalize_result(
+    question: EvaluationQuestion,
+    result: EvaluationResult,
+    judge: Judge,
+) -> EvaluationResult:
+    if result.error:
+        result.judge = JudgeResult.failed(SYSTEM_RESULT_UNAVAILABLE_ERROR)
+        return attach_failure_analysis(question, result)
+
+    result.judge = invoke_judge(judge, question, result)
+    return attach_failure_analysis(question, result)
 
 
 def build_comparison_summary(

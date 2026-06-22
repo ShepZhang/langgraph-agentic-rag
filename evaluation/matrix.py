@@ -22,6 +22,7 @@ from evaluation.evaluate import (
     load_eval_questions,
     summarize_results,
 )
+from evaluation.judges import Judge, build_configured_judge
 from rag.embeddings import get_embedding_model
 from rag.retriever import Retriever
 from rag.vectorstore import VectorStoreManager
@@ -58,6 +59,7 @@ def evaluate_matrix(
     questions: list[dict[str, Any]],
     runners: dict[str, Runner],
     timer: Callable[[], float] = time.perf_counter,
+    judge: Judge | None = None,
 ) -> dict[str, Any]:
     """Evaluate every question against the required benchmark variants."""
 
@@ -75,6 +77,7 @@ def evaluate_matrix(
         name: [] for name in VARIANT_ORDER
     }
     matrix_results = []
+    resolved_judge = judge if judge is not None else build_configured_judge()
     normalized_questions = [
         question.to_compat_dict()
         for question in normalize_questions(questions)
@@ -84,7 +87,12 @@ def evaluate_matrix(
         systems = {}
         for name in VARIANT_ORDER:
             runner = runners[name]
-            result = evaluate_single_system(item, runner, timer)
+            result = evaluate_single_system(
+                item,
+                runner,
+                timer,
+                judge=resolved_judge,
+            )
             variant_results[name].append(result)
             systems[name] = result
         matrix_results.append(

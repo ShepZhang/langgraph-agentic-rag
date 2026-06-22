@@ -15,9 +15,10 @@ from config import get_settings
 from evaluation import evaluate as evaluator
 from evaluation.comparison import evaluate_single_system as evaluate_typed_single_system
 from evaluation.dataset import normalize_question
+from evaluation.judges import Judge
 from evaluation.metrics import summarize_results as summarize_metric_results
 from evaluation.runners import CallableRunnerAdapter
-from evaluation.schemas import EvaluationResult
+from evaluation.schemas import EvaluationResult, JudgeResult
 
 
 def _matrix_module():
@@ -105,6 +106,7 @@ def test_public_wrappers_have_typed_signatures_and_docstrings():
         "item": dict[str, Any],
         "runner": Callable[[str], dict[str, Any]],
         "timer": Callable[[], float],
+        "judge": Judge | None,
         "return": dict[str, Any],
     }
     assert summary_hints == {
@@ -117,6 +119,83 @@ def test_public_wrappers_have_typed_signatures_and_docstrings():
     ].default is evaluator.time.perf_counter
     assert evaluator.evaluate_single_system.__doc__
     assert evaluator.summarize_results.__doc__
+
+
+def test_evaluate_matrix_reuses_injected_judge_for_all_variants() -> None:
+    matrix = _matrix_module()
+    questions = [{"question": "Only question?"}]
+
+    class RecordingJudge:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        def evaluate(self, question, result) -> JudgeResult:
+            self.calls.append((question.question, result.answer))
+            return JudgeResult.completed(
+                {"semantic_correctness": 0.8},
+                reason=f"judged:{result.answer}",
+            )
+
+    judge = RecordingJudge()
+
+    report = matrix.evaluate_matrix(
+        questions,
+        {
+            "naive": lambda _question: _system_result("naive"),
+            "agentic": lambda _question: _system_result("agentic"),
+            "agentic_reranker": lambda _question: _system_result("agentic_reranker"),
+        },
+        timer=StepTimer(),
+        judge=judge,
+    )
+
+    assert judge.calls == [
+        ("Only question?", "naive"),
+        ("Only question?", "agentic"),
+        ("Only question?", "agentic_reranker"),
+    ]
+    assert all(
+        result["systems"][name]["judge"]["status"] == "completed"
+        for result in report["results"]
+        for name in ("naive", "agentic", "agentic_reranker")
+    )
+
+
+def test_evaluate_matrix_builds_judge_once_when_omitted(monkeypatch) -> None:
+    matrix = _matrix_module()
+    build_calls = 0
+    seen_judges: list[object] = []
+    shared_judge = object()
+
+    def fake_build():
+        nonlocal build_calls
+        build_calls += 1
+        return shared_judge
+
+    def fake_evaluate_single_system(item, runner, timer, judge=None):
+        seen_judges.append(judge)
+        return {
+            "question_id": item["id"],
+            "question_type": item["question_type"],
+            "question": item["question"],
+            "judge": {},
+        }
+
+    monkeypatch.setattr(matrix, "build_configured_judge", fake_build)
+    monkeypatch.setattr(matrix, "evaluate_single_system", fake_evaluate_single_system)
+
+    matrix.evaluate_matrix(
+        [{"question": "Only question?"}],
+        {
+            "naive": lambda _question: _system_result("naive"),
+            "agentic": lambda _question: _system_result("agentic"),
+            "agentic_reranker": lambda _question: _system_result("agentic_reranker"),
+        },
+        timer=StepTimer(),
+    )
+
+    assert build_calls == 1
+    assert seen_judges == [shared_judge, shared_judge, shared_judge]
 
 
 def test_evaluate_matrix_uses_canonical_variant_order_with_isolated_results():

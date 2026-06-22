@@ -22,6 +22,7 @@ from evaluation.dataset import (
     normalize_question,
     normalize_questions,
 )
+from evaluation.judges import Judge, build_configured_judge
 from evaluation.metrics import summarize_results as summarize_metric_results
 from evaluation.reporting import format_evaluation_report
 from evaluation.runners import CallableRunnerAdapter
@@ -44,11 +45,13 @@ def evaluate_questions(
     run_agent_fn: Callable[[str], dict[str, Any]] = run_agent,
     run_naive_fn: Callable[[str], dict[str, Any]] | None = None,
     timer: Callable[[], float] = time.perf_counter,
+    judge: Judge | None = None,
 ) -> dict[str, Any]:
     """Evaluate questions and return per-question results plus summary metrics."""
 
     typed_questions = normalize_questions(questions)
     agentic_runner = CallableRunnerAdapter(run_agent_fn)
+    resolved_judge = judge if judge is not None else build_configured_judge()
 
     if run_naive_fn is not None:
         return evaluate_typed_comparison(
@@ -56,12 +59,14 @@ def evaluate_questions(
             agentic_runner=agentic_runner,
             naive_runner=CallableRunnerAdapter(run_naive_fn),
             timer=timer,
+            judge=resolved_judge,
         ).to_dict()
 
     return evaluate_typed_single_system(
         typed_questions,
         agentic_runner,
         timer,
+        judge=resolved_judge,
     ).to_dict()
 
 
@@ -69,13 +74,16 @@ def evaluate_single_system(
     item: dict[str, Any],
     runner: Callable[[str], dict[str, Any]],
     timer: Callable[[], float] = time.perf_counter,
+    judge: Judge | None = None,
 ) -> dict[str, Any]:
     """Evaluate one raw question record with one system."""
 
+    resolved_judge = judge if judge is not None else build_configured_judge()
     report = evaluate_typed_single_system(
         [normalize_question(item, 0)],
         CallableRunnerAdapter(runner),
         timer,
+        judge=resolved_judge,
     )
     return report.results[0].to_dict()
 
