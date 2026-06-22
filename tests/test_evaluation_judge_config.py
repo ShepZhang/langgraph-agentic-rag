@@ -126,6 +126,12 @@ def test_judge_enabled_rejects_invalid_boolean():
         load_evaluation_judge_settings({"EVALUATION_JUDGE_ENABLED": "sometimes"})
 
 
+@pytest.mark.parametrize("raw_enabled", ["", "   "])
+def test_judge_enabled_rejects_explicit_blank_boolean(raw_enabled):
+    with pytest.raises(ValueError, match="EVALUATION_JUDGE_ENABLED"):
+        load_evaluation_judge_settings({"EVALUATION_JUDGE_ENABLED": raw_enabled})
+
+
 def test_disabled_judge_does_not_construct_client():
     calls = 0
 

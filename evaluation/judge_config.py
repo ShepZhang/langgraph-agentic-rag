@@ -20,7 +20,7 @@ class EvaluationJudgeSettings:
 
 
 def _parse_enabled(raw_value: str | None) -> bool:
-    if raw_value is None or not raw_value.strip():
+    if raw_value is None:
         return False
 
     normalized = raw_value.strip().lower()
