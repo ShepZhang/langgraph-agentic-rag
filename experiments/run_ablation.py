@@ -357,6 +357,9 @@ def _comparison_summary(
         "verification_rate",
         "fallback_correctness_rate",
         "average_latency",
+        "average_semantic_correctness",
+        "average_groundedness",
+        "judge_completion_rate",
     ]
     return {
         f"{system}_{key}": summary.get(key, "N/A")

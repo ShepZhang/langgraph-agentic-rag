@@ -1137,6 +1137,14 @@ def test_main_prints_report_with_injected_runner(tmp_path, capsys):
 def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
     path = tmp_path / "eval.json"
     output_dir = tmp_path / "artifacts"
+    for name in (
+        "EVALUATION_JUDGE_ENABLED",
+        "EVALUATION_JUDGE_API_KEY",
+        "EVALUATION_JUDGE_BASE_URL",
+        "EVALUATION_JUDGE_MODEL",
+        "EVALUATION_JUDGE_TEMPERATURE",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://secret-base.example/v1")
     monkeypatch.setenv("HYBRID_RETRIEVAL_ENABLED", "true")
@@ -1200,12 +1208,25 @@ def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
         agentic_payload["runtime_config"],
         comparison_payload["runtime_config"],
     ]
-    assert all(runtime_config["schema_version"] == 2 for runtime_config in runtime_configs)
+    assert all(runtime_config["schema_version"] == 3 for runtime_config in runtime_configs)
     assert all(
-        runtime_config["evaluator_version"] == "p4d"
+        runtime_config["evaluator_version"] == "p5a"
         for runtime_config in runtime_configs
     )
-    assert all(runtime_config["prompts"] for runtime_config in runtime_configs)
+    assert all(
+        runtime_config["judge"]
+        == {
+            "enabled": False,
+            "provider": "openai_compatible",
+            "model": None,
+            "temperature": 0.0,
+        }
+        for runtime_config in runtime_configs
+    )
+    assert all(
+        "evaluation.semantic_judge" in runtime_config["prompts"]
+        for runtime_config in runtime_configs
+    )
     serialized_payloads = json.dumps(
         [baseline_payload, agentic_payload, comparison_payload],
         ensure_ascii=False,
@@ -1218,9 +1239,17 @@ def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
     assert len(comparison_payload["results"]) == 1
 
 
-def test_main_writes_single_system_agentic_artifact_schema(tmp_path):
+def test_main_writes_single_system_agentic_artifact_schema(tmp_path, monkeypatch):
     path = tmp_path / "eval.json"
     output_dir = tmp_path / "artifacts"
+    for name in (
+        "EVALUATION_JUDGE_ENABLED",
+        "EVALUATION_JUDGE_API_KEY",
+        "EVALUATION_JUDGE_BASE_URL",
+        "EVALUATION_JUDGE_MODEL",
+        "EVALUATION_JUDGE_TEMPERATURE",
+    ):
+        monkeypatch.delenv(name, raising=False)
     path.write_text(
         json.dumps(
             [
@@ -1255,9 +1284,15 @@ def test_main_writes_single_system_agentic_artifact_schema(tmp_path):
     assert agentic_path.exists()
     assert payload["system"] == "agentic_rag"
     assert "runtime_config" in payload
-    assert payload["runtime_config"]["schema_version"] == 2
-    assert payload["runtime_config"]["evaluator_version"] == "p4d"
-    assert payload["runtime_config"]["prompts"]
+    assert payload["runtime_config"]["schema_version"] == 3
+    assert payload["runtime_config"]["evaluator_version"] == "p5a"
+    assert payload["runtime_config"]["judge"] == {
+        "enabled": False,
+        "provider": "openai_compatible",
+        "model": None,
+        "temperature": 0.0,
+    }
+    assert "evaluation.semantic_judge" in payload["runtime_config"]["prompts"]
     assert "llm" in payload["runtime_config"]
     assert "retriever" in payload["runtime_config"]
     assert "reranker" in payload["runtime_config"]

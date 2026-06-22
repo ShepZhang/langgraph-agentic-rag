@@ -254,6 +254,30 @@ def test_ablation_main_checkpoints_variants_and_derives_comparison_without_rerun
     assert baseline["results"] == payload["runs"][0]["results"]
     assert agentic["results"] == payload["runs"][-1]["results"]
     assert comparison["summary"]["mode"] == "comparison"
+    comparison_metrics = comparison["summary"]["comparison"]
+    expected_judge_metrics = {
+        "naive_average_semantic_correctness": baseline["summary"][
+            "average_semantic_correctness"
+        ],
+        "agentic_average_semantic_correctness": agentic["summary"][
+            "average_semantic_correctness"
+        ],
+        "naive_average_groundedness": baseline["summary"]["average_groundedness"],
+        "agentic_average_groundedness": agentic["summary"][
+            "average_groundedness"
+        ],
+        "naive_judge_completion_rate": baseline["summary"][
+            "judge_completion_rate"
+        ],
+        "agentic_judge_completion_rate": agentic["summary"][
+            "judge_completion_rate"
+        ],
+    }
+    assert {
+        key: comparison_metrics[key]
+        for key in expected_judge_metrics
+    } == expected_judge_metrics
+    assert set(expected_judge_metrics.values()) == {None}
     assert comparison["results"][0]["question_id"] == "q001"
     for variant in load_ablation_variants(CONFIG_DIR):
         assert (output_dir / "variants" / f"{variant.id}.json").exists()
