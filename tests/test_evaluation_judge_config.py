@@ -53,10 +53,35 @@ def test_judge_settings_are_frozen():
         settings.enabled = True  # type: ignore[misc]
 
 
-def test_judge_settings_repr_excludes_api_key():
-    settings = EvaluationJudgeSettings(api_key="judge-secret")
+def test_judge_settings_repr_excludes_secrets_and_internal_url():
+    settings = EvaluationJudgeSettings(
+        api_key="judge-secret",
+        base_url="https://judge.example/v1",
+    )
 
-    assert "judge-secret" not in repr(settings)
+    settings_repr = repr(settings)
+
+    for sensitive_value in [
+        "api_key",
+        "base_url",
+        "judge-secret",
+        "judge.example",
+    ]:
+        assert sensitive_value not in settings_repr
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_direct_settings_normalize_string_fields(enabled):
+    settings = EvaluationJudgeSettings(
+        enabled=enabled,
+        api_key=" judge-secret ",
+        base_url=" https://judge.example/v1/ ",
+        model=" deepseek-chat ",
+    )
+
+    assert settings.api_key == "judge-secret"
+    assert settings.base_url == "https://judge.example/v1/"
+    assert settings.model == "deepseek-chat"
 
 
 def test_disabled_judge_ignores_invalid_unused_temperature():
@@ -100,7 +125,12 @@ def test_enabled_judge_rejects_invalid_temperatures(raw_temperature):
     environ = _enabled_environment()
     environ["EVALUATION_JUDGE_TEMPERATURE"] = raw_temperature
 
-    with pytest.raises(ValueError, match="EVALUATION_JUDGE_TEMPERATURE"):
+    with pytest.raises(
+        ValueError,
+        match=(
+            "^EVALUATION_JUDGE_TEMPERATURE must be a finite number between 0 and 2$"
+        ),
+    ):
         load_evaluation_judge_settings(environ)
 
 
@@ -148,7 +178,12 @@ def test_direct_enabled_settings_require_each_independent_field(
     [-0.1, 2.1, float("nan"), float("inf"), float("-inf"), "not-a-number"],
 )
 def test_direct_enabled_settings_reject_invalid_temperature(temperature):
-    with pytest.raises(ValueError, match="EVALUATION_JUDGE_TEMPERATURE"):
+    with pytest.raises(
+        ValueError,
+        match=(
+            "^EVALUATION_JUDGE_TEMPERATURE must be a finite number between 0 and 2$"
+        ),
+    ):
         EvaluationJudgeSettings(
             enabled=True,
             api_key="judge-secret",
@@ -222,7 +257,7 @@ def test_disabled_judge_does_not_construct_client():
     assert calls == 0
 
 
-def test_invalid_enabled_settings_do_not_construct_client():
+def test_invalid_direct_settings_fail_before_client_construction():
     calls = 0
 
     def client_factory(**_kwargs):
@@ -253,9 +288,9 @@ def test_enabled_judge_constructs_injected_client_with_exact_kwargs():
 
     settings = EvaluationJudgeSettings(
         enabled=True,
-        api_key="judge-secret",
-        base_url="https://judge.example/v1",
-        model="deepseek-chat",
+        api_key=" judge-secret ",
+        base_url=" https://judge.example/v1/ ",
+        model=" deepseek-chat ",
         temperature=0.0,
     )
 
@@ -268,7 +303,7 @@ def test_enabled_judge_constructs_injected_client_with_exact_kwargs():
     assert captured == {
         "model": "deepseek-chat",
         "api_key": "judge-secret",
-        "base_url": "https://judge.example/v1",
+        "base_url": "https://judge.example/v1/",
         "temperature": 0.0,
     }
 

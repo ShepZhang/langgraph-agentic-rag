@@ -15,12 +15,15 @@ class EvaluationJudgeSettings:
 
     enabled: bool = False
     api_key: str = field(default="", repr=False)
-    base_url: str = ""
+    base_url: str = field(default="", repr=False)
     model: str = ""
     temperature: float = 0.0
 
     def __post_init__(self) -> None:
         """Validate settings required by an enabled evaluation Judge."""
+
+        for name in ("api_key", "base_url", "model"):
+            object.__setattr__(self, name, getattr(self, name).strip())
 
         if not self.enabled:
             return
@@ -43,7 +46,9 @@ class EvaluationJudgeSettings:
         except TypeError:
             temperature_is_valid = False
         if not temperature_is_valid:
-            raise ValueError("EVALUATION_JUDGE_TEMPERATURE must be between 0 and 2")
+            raise ValueError(
+                "EVALUATION_JUDGE_TEMPERATURE must be a finite number between 0 and 2"
+            )
 
 
 def _parse_enabled(raw_value: str | None) -> bool:
@@ -65,9 +70,9 @@ def load_evaluation_judge_settings(
 
     source = os.environ if environ is None else environ
     enabled = _parse_enabled(source.get("EVALUATION_JUDGE_ENABLED"))
-    api_key = source.get("EVALUATION_JUDGE_API_KEY", "").strip()
-    base_url = source.get("EVALUATION_JUDGE_BASE_URL", "").strip()
-    model = source.get("EVALUATION_JUDGE_MODEL", "").strip()
+    api_key = source.get("EVALUATION_JUDGE_API_KEY", "")
+    base_url = source.get("EVALUATION_JUDGE_BASE_URL", "")
+    model = source.get("EVALUATION_JUDGE_MODEL", "")
 
     if not enabled:
         return EvaluationJudgeSettings(
@@ -83,7 +88,7 @@ def load_evaluation_judge_settings(
         temperature = float(raw_temperature)
     except ValueError as exc:
         raise ValueError(
-            f"EVALUATION_JUDGE_TEMPERATURE must be a number, got {raw_temperature!r}"
+            "EVALUATION_JUDGE_TEMPERATURE must be a finite number between 0 and 2"
         ) from exc
 
     return EvaluationJudgeSettings(
