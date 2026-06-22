@@ -2,7 +2,7 @@
 
 Date: 2026-06-22
 
-Status: Approved architecture; awaiting written-spec review
+Status: Approved
 
 Target version: `v0.5.0-p5a`
 
