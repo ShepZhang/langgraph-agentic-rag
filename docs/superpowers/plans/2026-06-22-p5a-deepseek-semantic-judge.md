@@ -140,7 +140,7 @@ error)` remains valid. New fields are appended with defaults.
 - Create: `evaluation/judge_config.py`
 - Create: `tests/test_evaluation_judge_config.py`
 
-- [ ] **Step 1: Write failing configuration tests**
+- [x] **Step 1: Write failing configuration tests**
 
 Create `tests/test_evaluation_judge_config.py`:
 
@@ -315,7 +315,7 @@ def test_runtime_metadata_excludes_secret_and_base_url() -> None:
     assert "judge.example" not in repr(metadata)
 ```
 
-- [ ] **Step 2: Run tests to verify the module is missing**
+- [x] **Step 2: Run tests to verify the module is missing**
 
 Run:
 
@@ -325,7 +325,7 @@ Run:
 
 Expected: collection fails because `evaluation.judge_config` does not exist.
 
-- [ ] **Step 3: Implement isolated settings and client construction**
+- [x] **Step 3: Implement isolated settings and client construction**
 
 Create `evaluation/judge_config.py`:
 
@@ -448,7 +448,7 @@ def _parse_float(raw_value: str | None, *, default: float) -> float:
         ) from exc
 ```
 
-- [ ] **Step 4: Run the focused tests**
+- [x] **Step 4: Run the focused tests**
 
 Run:
 
@@ -458,7 +458,7 @@ Run:
 
 Expected: all configuration tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evaluation/judge_config.py tests/test_evaluation_judge_config.py
@@ -473,7 +473,7 @@ git commit -m "feat: add independent evaluation judge config"
 - Modify: `prompting/catalog.py`
 - Modify: `tests/test_prompt_catalog.py`
 
-- [ ] **Step 1: Add the failing prompt identity test**
+- [x] **Step 1: Add the failing prompt identity test**
 
 Extend `EXPECTED_PROMPTS` in `tests/test_prompt_catalog.py`:
 
@@ -515,7 +515,7 @@ def test_semantic_judge_prompt_renders_strict_json_contract() -> None:
     assert rendered.endswith("JSON:")
 ```
 
-- [ ] **Step 2: Run the prompt catalog tests to verify failure**
+- [x] **Step 2: Run the prompt catalog tests to verify failure**
 
 Run:
 
@@ -525,7 +525,7 @@ Run:
 
 Expected: failure because `evaluation.semantic_judge@v1` is not registered.
 
-- [ ] **Step 3: Add the exact immutable prompt**
+- [x] **Step 3: Add the exact immutable prompt**
 
 Add this constant to `prompting/catalog.py`:
 
@@ -599,7 +599,7 @@ Add the active version:
         "evaluation.semantic_judge": "v1",
 ```
 
-- [ ] **Step 4: Run prompt tests**
+- [x] **Step 4: Run prompt tests**
 
 Run:
 
@@ -612,7 +612,7 @@ Run:
 
 Expected: all prompt tests pass and the active manifest contains 9 entries.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add prompting/catalog.py tests/test_prompt_catalog.py
@@ -627,7 +627,7 @@ git commit -m "feat: register semantic judge prompt"
 - Create: `evaluation/judge_evidence.py`
 - Create: `tests/test_evaluation_judge_evidence.py`
 
-- [ ] **Step 1: Write failing evidence tests**
+- [x] **Step 1: Write failing evidence tests**
 
 Create `tests/test_evaluation_judge_evidence.py`:
 
@@ -742,7 +742,7 @@ def test_citations_are_metadata_only_and_bounded() -> None:
     assert "private" not in format_judge_citations(result)
 ```
 
-- [ ] **Step 2: Run tests to verify the module is missing**
+- [x] **Step 2: Run tests to verify the module is missing**
 
 Run:
 
@@ -752,7 +752,7 @@ Run:
 
 Expected: collection fails because `evaluation.judge_evidence` does not exist.
 
-- [ ] **Step 3: Implement pure bounded formatting**
+- [x] **Step 3: Implement pure bounded formatting**
 
 Create `evaluation/judge_evidence.py`:
 
@@ -864,7 +864,7 @@ def _bounded_text(value: Any) -> str:
     return normalized[:MAX_JUDGE_EVIDENCE_CHARS]
 ```
 
-- [ ] **Step 4: Run focused evidence tests**
+- [x] **Step 4: Run focused evidence tests**
 
 Run:
 
@@ -874,7 +874,7 @@ Run:
 
 Expected: all evidence tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evaluation/judge_evidence.py tests/test_evaluation_judge_evidence.py
@@ -889,7 +889,7 @@ git commit -m "feat: bound semantic judge evidence"
 - Create: `evaluation/judge_parsing.py`
 - Create: `tests/test_evaluation_judge_parsing.py`
 
-- [ ] **Step 1: Write failing parser tests**
+- [x] **Step 1: Write failing parser tests**
 
 Create `tests/test_evaluation_judge_parsing.py`:
 
@@ -1080,7 +1080,7 @@ def test_parser_rejects_blank_or_non_string_reasons(
         )
 ```
 
-- [ ] **Step 2: Run tests to verify the module is missing**
+- [x] **Step 2: Run tests to verify the module is missing**
 
 Run:
 
@@ -1090,7 +1090,7 @@ Run:
 
 Expected: collection fails because `evaluation.judge_parsing` does not exist.
 
-- [ ] **Step 3: Implement exact-key parsing and normalization**
+- [x] **Step 3: Implement exact-key parsing and normalization**
 
 Create `evaluation/judge_parsing.py`:
 
@@ -1237,7 +1237,7 @@ def _require_reason(value: Any, field_name: str) -> str:
     return value.strip()
 ```
 
-- [ ] **Step 4: Run focused parser tests**
+- [x] **Step 4: Run focused parser tests**
 
 Run:
 
@@ -1247,7 +1247,7 @@ Run:
 
 Expected: all parser tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evaluation/judge_parsing.py tests/test_evaluation_judge_parsing.py
@@ -1262,7 +1262,7 @@ git commit -m "feat: parse semantic judge responses strictly"
 - Modify: `evaluation/schemas.py`
 - Modify: `tests/test_evaluation_schemas.py`
 
-- [ ] **Step 1: Add failing schema compatibility tests**
+- [x] **Step 1: Add failing schema compatibility tests**
 
 Append to `tests/test_evaluation_schemas.py`:
 
@@ -1369,7 +1369,7 @@ Update the exact key set in
 `test_empty_result_covers_current_single_question_result_shape()` to include
 `"judge"`.
 
-- [ ] **Step 2: Run schema tests to verify failure**
+- [x] **Step 2: Run schema tests to verify failure**
 
 Run:
 
@@ -1380,7 +1380,7 @@ Run:
 Expected: failures for missing Judge metadata, `EvaluationResult.judge`, and
 summary fields.
 
-- [ ] **Step 3: Move and expand `JudgeResult` without breaking old call forms**
+- [x] **Step 3: Move and expand `JudgeResult` without breaking old call forms**
 
 Move `JudgeResult` from the bottom of `evaluation/schemas.py` to immediately
 after `EvaluationQuestion` and before `EvaluationResult`, then replace it with:
@@ -1467,7 +1467,7 @@ class JudgeResult:
         return cls(**values)
 ```
 
-- [ ] **Step 4: Add Judge fields to result and summary records**
+- [x] **Step 4: Add Judge fields to result and summary records**
 
 Add to `EvaluationResult`:
 
@@ -1496,7 +1496,7 @@ Add to `EvaluationSummary`:
     groundedness_applicable_count: int = 0
 ```
 
-- [ ] **Step 5: Run schema and Judge contract tests**
+- [x] **Step 5: Run schema and Judge contract tests**
 
 Run:
 
@@ -1509,7 +1509,7 @@ Run:
 
 Expected: all existing and new compatibility tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add evaluation/schemas.py tests/test_evaluation_schemas.py
@@ -1524,7 +1524,7 @@ git commit -m "feat: add semantic judge result schemas"
 - Modify: `evaluation/judges.py`
 - Modify: `tests/test_evaluation_judges.py`
 
-- [ ] **Step 1: Add failing fake-LLM and factory tests**
+- [x] **Step 1: Add failing fake-LLM and factory tests**
 
 Extend `tests/test_evaluation_judges.py` with:
 
@@ -1705,7 +1705,7 @@ def test_configured_judge_constructs_deepseek_judge_when_enabled() -> None:
     assert judge.evaluate(_question(), _result()).status == "completed"
 ```
 
-- [ ] **Step 2: Run Judge tests to verify failure**
+- [x] **Step 2: Run Judge tests to verify failure**
 
 Run:
 
@@ -1716,7 +1716,7 @@ Run:
 Expected: failures because `DeepSeekJudge` and `build_configured_judge` do not
 exist.
 
-- [ ] **Step 3: Implement the Judge and sanitized error boundary**
+- [x] **Step 3: Implement the Judge and sanitized error boundary**
 
 Replace `evaluation/judges.py` with:
 
@@ -1892,7 +1892,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: Run Judge, parser, evidence, and prompt tests**
+- [x] **Step 4: Run Judge, parser, evidence, and prompt tests**
 
 Run:
 
@@ -1907,7 +1907,7 @@ Run:
 
 Expected: all focused tests pass, with no network access.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evaluation/judges.py tests/test_evaluation_judges.py
@@ -1928,7 +1928,7 @@ git commit -m "feat: implement deepseek semantic judge"
 - Modify: `tests/test_evaluate.py`
 - Modify: `tests/test_evaluation_matrix.py`
 
-- [ ] **Step 1: Add failing orchestration tests**
+- [x] **Step 1: Add failing orchestration tests**
 
 In `tests/test_evaluation_comparison.py`, add a recording Judge:
 
@@ -2136,7 +2136,7 @@ import evaluation.evaluate as evaluator
 from evaluation.schemas import JudgeResult
 ```
 
-- [ ] **Step 2: Update runner tests for the new layer boundary**
+- [x] **Step 2: Update runner tests for the new layer boundary**
 
 Rename the runner tests to:
 
@@ -2171,7 +2171,7 @@ Run:
 Expected: failures for missing `judge` parameters and because failure analysis
 still runs inside the runner.
 
-- [ ] **Step 3: Keep `evaluate_question()` limited to system execution**
+- [x] **Step 3: Keep `evaluate_question()` limited to system execution**
 
 In `evaluation/runners.py`, remove `attach_failure_analysis` from the imports
 and replace the final return:
@@ -2184,7 +2184,7 @@ and replace the final return:
 
 This preserves `latency` as system latency and does not measure Judge time.
 
-- [ ] **Step 4: Add orchestration finalization**
+- [x] **Step 4: Add orchestration finalization**
 
 In `evaluation/comparison.py`, import:
 
@@ -2249,7 +2249,7 @@ In `evaluate_comparison()`, finalize naive and Agentic independently:
         )
 ```
 
-- [ ] **Step 5: Add Judge injection to the compatibility facade**
+- [x] **Step 5: Add Judge injection to the compatibility facade**
 
 In `evaluation/evaluate.py`, import:
 
@@ -2280,7 +2280,7 @@ The complete single-item facade call becomes:
     )
 ```
 
-- [ ] **Step 6: Reuse one Judge for all matrix variants**
+- [x] **Step 6: Reuse one Judge for all matrix variants**
 
 In `evaluation/matrix.py`, import `Judge` and `build_configured_judge`. Add
 `judge: Judge | None = None` to `evaluate_matrix()` and resolve once:
@@ -2357,7 +2357,7 @@ def test_evaluate_matrix_reuses_one_judge_across_variants() -> None:
     )
 ```
 
-- [ ] **Step 7: Run orchestration and consumer tests**
+- [x] **Step 7: Run orchestration and consumer tests**
 
 Run:
 
@@ -2372,7 +2372,7 @@ Run:
 
 Expected: all tests pass. Existing public calls without a Judge remain valid.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add \
@@ -2407,7 +2407,7 @@ git commit -m "feat: integrate semantic judge orchestration"
 - Modify: `tests/test_dashboard_service.py`
 - Modify: `tests/test_fastapi_routes.py`
 
-- [ ] **Step 1: Add failing aggregation tests**
+- [x] **Step 1: Add failing aggregation tests**
 
 Append to `tests/test_evaluation_metrics.py`:
 
@@ -2480,7 +2480,7 @@ Extend the comparison key assertion in
         "agentic_judge_completion_rate",
 ```
 
-- [ ] **Step 2: Add failing report and metadata tests**
+- [x] **Step 2: Add failing report and metadata tests**
 
 In `tests/test_evaluation_reporting.py`, extend the single summary fixture:
 
@@ -2569,7 +2569,7 @@ def test_runtime_snapshot_records_safe_enabled_judge_metadata() -> None:
     assert "judge.example" not in serialized
 ```
 
-- [ ] **Step 3: Run focused tests to verify missing aggregation**
+- [x] **Step 3: Run focused tests to verify missing aggregation**
 
 Run:
 
@@ -2586,7 +2586,7 @@ Run:
 Expected: failures for missing summary fields, comparison keys, report rows,
 runtime schema `3`, and Judge metadata.
 
-- [ ] **Step 4: Aggregate optional Judge values**
+- [x] **Step 4: Aggregate optional Judge values**
 
 In `evaluation/metrics.py`, calculate before constructing
 `EvaluationSummary`:
@@ -2646,7 +2646,7 @@ def _optional_average(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 4)
 ```
 
-- [ ] **Step 5: Add flattened comparison fields**
+- [x] **Step 5: Add flattened comparison fields**
 
 Extend `build_comparison_summary()` in `evaluation/comparison.py`:
 
@@ -2663,7 +2663,7 @@ Extend `build_comparison_summary()` in `evaluation/comparison.py`:
         "agentic_judge_completion_rate": agentic.judge_completion_rate,
 ```
 
-- [ ] **Step 6: Render Judge metrics in terminal reports**
+- [x] **Step 6: Render Judge metrics in terminal reports**
 
 The single-system formatter already iterates every summary field, so retain
 that behavior. Add these rows to `_format_comparison_report()` in
@@ -2694,7 +2694,7 @@ def _format_optional(value: Any) -> Any:
     return "N/A" if value is None else value
 ```
 
-- [ ] **Step 7: Advance runtime metadata safely**
+- [x] **Step 7: Advance runtime metadata safely**
 
 In `evaluation/runtime_config.py`, import:
 
@@ -2730,7 +2730,7 @@ Add to the config dictionary:
             "judge": build_judge_runtime_metadata(resolved_judge),
 ```
 
-- [ ] **Step 8: Show Judge metrics in matrix and ablation reports**
+- [x] **Step 8: Show Judge metrics in matrix and ablation reports**
 
 Add to `MATRIX_METRICS` in `evaluation/matrix.py`:
 
@@ -2793,7 +2793,7 @@ Add these assertions:
     assert "one model call per successful system result" in report
 ```
 
-- [ ] **Step 9: Verify API and Dashboard inherit additive raw fields without UI changes**
+- [x] **Step 9: Verify API and Dashboard inherit additive raw fields without UI changes**
 
 In the parameterized
 `test_run_quick_evaluation_dispatches_runners_and_builds_summary_rows()` test
@@ -2864,7 +2864,7 @@ Run:
 
 Expected: all aggregation, report, metadata, and direct-consumer tests pass.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add \
@@ -2896,7 +2896,7 @@ git commit -m "feat: report semantic judge metrics"
 - Modify: `docs/github_release_checklist.md`
 - Modify: `docs/superpowers/plans/2026-06-22-p5a-deepseek-semantic-judge.md`
 
-- [ ] **Step 1: Add the disabled-by-default environment contract**
+- [x] **Step 1: Add the disabled-by-default environment contract**
 
 Add to `.env.example` after the primary chat LLM settings:
 
@@ -2910,7 +2910,7 @@ EVALUATION_JUDGE_MODEL=
 EVALUATION_JUDGE_TEMPERATURE=0
 ```
 
-- [ ] **Step 2: Document behavior, cost, and limitations**
+- [x] **Step 2: Document behavior, cost, and limitations**
 
 Add a `DeepSeek Semantic Judge` section to `README.md` after the versioned
 prompt section. It must state:
@@ -2944,7 +2944,7 @@ Move P5a into `Completed Work` and leave the next route:
 2. Background Evaluation
 3. Trace Drill-down
 
-- [ ] **Step 3: Update changelog and release checklist**
+- [x] **Step 3: Update changelog and release checklist**
 
 Prepend to `CHANGELOG.md`:
 
@@ -2996,7 +2996,7 @@ Update `docs/github_release_checklist.md` to:
 - include Judge call-cost and bias scope notes
 - keep tag creation after integration and explicit user approval
 
-- [ ] **Step 4: Run static safety checks**
+- [x] **Step 4: Run static safety checks**
 
 Run:
 
@@ -3020,7 +3020,7 @@ Expected:
 - the prompt and environment contract are documented and tested
 - `git diff --check` reports no whitespace errors
 
-- [ ] **Step 5: Run focused Judge verification**
+- [x] **Step 5: Run focused Judge verification**
 
 Run:
 
@@ -3043,7 +3043,7 @@ Run:
 Expected: all focused Judge, schema, orchestration, metric, report, and prompt
 tests pass with no live network call.
 
-- [ ] **Step 6: Run direct-consumer and CLI verification**
+- [x] **Step 6: Run direct-consumer and CLI verification**
 
 Run:
 
@@ -3064,7 +3064,7 @@ Run:
 Expected: both commands pass. Record exact observed counts in the changelog and
 release checklist.
 
-- [ ] **Step 7: Run the full project suite**
+- [x] **Step 7: Run the full project suite**
 
 Run:
 
@@ -3075,7 +3075,7 @@ Run:
 Expected: all tests pass. Record the exact observed count; do not retain the
 P4d `489 passed` count after new tests are added.
 
-- [ ] **Step 8: Inspect scope and secret safety**
+- [x] **Step 8: Inspect scope and secret safety**
 
 Run:
 
@@ -3097,7 +3097,19 @@ Expected:
 - commits remain separated by configuration, prompt, evidence, parser, schema,
   Judge implementation, orchestration, metrics/metadata, and docs
 
-- [ ] **Step 9: Mark the plan complete and commit release documentation**
+Observed verification on 2026-06-22:
+
+- full project suite: `636 passed`
+- focused Judge and evaluation suite: `185 passed`
+- CLI compatibility smoke tests: `3 passed`
+- ablation, matrix, Dashboard, and FastAPI compatibility suite: `91 passed`
+- `compileall` across prompting, Agent, RAG, API, evaluation, experiments,
+  baseline, tools, and observability: success
+- documentation prompt/environment scan: expected references found
+- secret scan excluding this plan: no matches
+- `git diff --check`: clean
+
+- [x] **Step 9: Mark the plan complete and commit release documentation**
 
 Mark completed checkboxes and record observed verification output in this plan.
 Then run:

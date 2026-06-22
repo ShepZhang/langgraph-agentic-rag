@@ -487,23 +487,24 @@ optional judges, and atomic JSON result storage. Internal dataclasses provide
 typed records, while compatibility adapters preserve the existing CLI, FastAPI,
 Gradio Evaluation Dashboard, ablation, and JSON artifact contracts.
 
-The default evaluator remains deterministic and offline-testable. `Judge` and
-`ResultStore` protocols are extension boundaries for later semantic judging and
-historical storage. A configurable DeepSeek semantic judge, SQLite-backed trend
-storage, and a higher-level `EvaluationEngine` remain roadmap work rather than
-claimed completed features.
+The evaluator's deterministic metrics remain offline-testable and independent
+of optional semantic scoring. `Judge` and `ResultStore` protocols provide
+extension boundaries for P5a semantic judging and later historical storage.
+P5a implements the configurable DeepSeek semantic Judge; SQLite-backed trend
+storage and a higher-level `EvaluationEngine` remain roadmap work.
 
 ### Versioned Prompt Registry
 
 P4d moves Agent, baseline, and LLM-backed tool prompts into a code-native
-registry with 10 registered `v1` templates: 8 active runtime prompts and 2
-inactive compatibility-only templates. Each template has a stable prompt ID,
-immutable version, strict input variables, and a deterministic SHA-256
-fingerprint. Existing `agent.prompts` constants remain available as
-compatibility exports, while runtime call sites render active versions through
-the registry without changing prompt text or parser contracts.
+registry. With the P5a semantic Judge prompt, the registry contains 11
+registered `v1` templates: 9 active runtime prompts and 2 inactive
+compatibility-only templates. Each template has a stable prompt ID, immutable
+version, strict input variables, and a deterministic SHA-256 fingerprint.
+Existing `agent.prompts` constants remain available as compatibility exports,
+while runtime call sites render active versions through the registry without
+changing prompt text or parser contracts.
 
-The new `runtime_config.prompts` and trace `prompts` fields record the 8 active
+The `runtime_config.prompts` and trace `prompts` fields record the 9 active
 prompt IDs, versions, and fingerprints. Those fields do not contain templates
 or rendered prompt payloads. This is a field-level safety boundary: existing
 trace records still contain the original question, compact document snippets,
@@ -511,6 +512,29 @@ answers, citations, and diagnostics as documented observability data. The
 manifest supports reproducibility and template-drift detection, but P4d does
 not add dynamic prompt selection, online prompt editing, or LLM-based behavioral
 prompt regression.
+
+### DeepSeek Semantic Judge
+
+P5a adds an optional OpenAI-compatible DeepSeek semantic Judge for evaluation.
+It is configured only through the independent `EVALUATION_JUDGE_*` variables
+and never falls back to the evaluated system's chat LLM configuration. When
+disabled, evaluation creates no Judge client and makes no Judge calls.
+
+The Judge scores semantic correctness and groundedness with raw integer values
+from `0` to `4`, then records normalized values from `0` to `1`. Fallback
+results still receive semantic correctness, while groundedness is `null`.
+Evidence selection prefers relevant documents and otherwise uses retrieved
+documents, preserving order and limiting input to 8 chunks and 1,200 characters
+per chunk.
+
+Each successful system result creates one Judge call. A naive-versus-agentic
+comparison therefore creates two Judge calls per question, which can materially
+increase latency and cost. Judge failures are isolated per result: deterministic
+metrics remain unchanged and available even when semantic scoring fails.
+
+LLM-as-a-Judge scores can inherit model bias and are not human ground truth.
+P5a adds no Evaluation Dashboard UI for these scores; raw JSON reports and
+other report consumers carry the additive Judge fields.
 
 Metric fields include:
 
@@ -529,6 +553,10 @@ Metric fields include:
 - `estimated_cost`
 - `error_count`
 - `failure_type_counts`
+- `judge_completion_rate`
+- `average_semantic_correctness`
+- `average_groundedness`
+- `judge_failed_count`
 
 ### Evaluation Dashboard
 
@@ -627,6 +655,11 @@ Example answer payload:
 - `OPENAI_API_KEY`: API key for the OpenAI-compatible remote LLM.
 - `OPENAI_BASE_URL`: Base URL for the OpenAI-compatible API.
 - `OPENAI_MODEL`: Remote chat model used by the agent.
+- `EVALUATION_JUDGE_ENABLED`: Enable the independent semantic evaluation Judge. Default is `false`.
+- `EVALUATION_JUDGE_API_KEY`: API key used only by the semantic Judge.
+- `EVALUATION_JUDGE_BASE_URL`: OpenAI-compatible endpoint used only by the semantic Judge.
+- `EVALUATION_JUDGE_MODEL`: Model used only by the semantic Judge.
+- `EVALUATION_JUDGE_TEMPERATURE`: Semantic Judge temperature. Default is `0`.
 - `OLLAMA_BASE_URL`: Local Ollama server URL. Default is `http://localhost:11434`.
 - `OLLAMA_MODEL`: Local Ollama model name, such as `qwen2.5:7b`.
 - `EMBEDDING_PROVIDER`: Embedding backend. MVP default is `sentence_transformers`.
@@ -831,13 +864,13 @@ langgraph-agentic-rag/
 - P4b Evaluation Dashboard implemented: Gradio supports synchronous smoke or manually selected quick comparisons, filterable failed-case inspection, and a read-only V0-V6 ablation snapshot with runtime configuration and transparent stored or derived diagnostics.
 - P4c modular evaluation framework implemented: `evaluation.evaluate` is now a compatibility facade over typed schemas, dataset normalization, deterministic metrics, runner execution, comparison orchestration, report rendering, optional judge contracts, atomic JSON storage, and sanitized runtime metadata.
 - P4d prompt versioning implemented: 10 registered `v1` templates—8 active runtime prompts and 2 inactive compatibility-only templates—have stable IDs, strict rendering contracts, SHA-256 fingerprints, compatibility exports, and safe evaluation/trace manifests.
+- P5a DeepSeek semantic Judge implemented: optional independent configuration, versioned prompts, bounded evidence, strict semantic correctness and groundedness scoring, isolated failures, and additive report metrics preserve deterministic evaluation behavior.
 
 ### Next Milestones
 
-- P5a: implement a configurable DeepSeek semantic correctness and groundedness judge through the existing judge protocol, with its judge prompt registered and versioned.
-- P5b: add SQLite-backed historical evaluation runs, prompt-aware run comparison, and a trend dashboard.
-- Add background evaluation status, progress, cancellation, and checkpoint recovery.
-- Link failed evaluation cases to `trace_id` and a node-level trace drill-down view.
+- P5b SQLite historical evaluation + trend dashboard.
+- Background Evaluation.
+- Trace Drill-down.
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
 - Add decomposition sub-question retrieval for multi-hop workflows.
 - Harden workspace isolation with optional per-workspace Chroma collections and authorization checks.

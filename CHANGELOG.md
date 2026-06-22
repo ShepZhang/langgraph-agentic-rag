@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.5.0-p5a - DeepSeek Semantic Judge
+
+Date: 2026-06-22
+
+### Added
+
+- Added an optional independently configured OpenAI-compatible DeepSeek Judge
+  for semantic correctness and groundedness.
+- Added strict `0-4` Judge scoring, normalized `0-1` metrics, bounded evidence,
+  versioned prompt metadata, and isolated per-result failures.
+- Added Judge summaries to JSON artifacts, terminal reports, matrix output, and
+  ablation output.
+
+### Changed
+
+- Advanced evaluation artifact metadata to schema version `3` and evaluator
+  version `p5a`.
+- Moved failure analysis after optional Judge invocation while preserving
+  system-only latency semantics.
+
+### Notes
+
+- The Judge is disabled by default and never reuses the evaluated system's LLM
+  configuration.
+- Enabling it adds one model call per successful system result and can increase
+  latency and cost substantially for comparison and ablation runs.
+- Judge scores are model-based signals, not human ground truth.
+
+### Verification
+
+- Full test suite: `636 passed`.
+- Focused Judge and evaluation tests: `185 passed`.
+- CLI compatibility smoke tests: `3 passed`.
+- Ablation, matrix, Dashboard, and FastAPI compatibility tests: `91 passed`.
+
 ## v0.4.3-p4d - Prompt Versioning
 
 Date: 2026-06-18
