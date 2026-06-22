@@ -161,8 +161,9 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
         "",
         "| Method | Correctness | Context Relevance | Citation Accuracy | "
         "Fallback Accuracy | Unsupported Claims | Supported Claim Ratio | "
-        "Avg Retry | Avg Latency | Errors | Status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "Avg Retry | Avg Latency | Semantic Correctness | Groundedness | "
+        "Judge Completion | Errors | Status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for run in runs:
         if not isinstance(run, dict):
@@ -181,6 +182,9 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
                 f"{_format_metric(summary.get('supported_claim_ratio'))} | "
                 f"{_format_metric(summary.get('average_retry_count'))} | "
                 f"{_format_metric(summary.get('average_latency'))} | "
+                f"{_format_metric(summary.get('average_semantic_correctness'))} | "
+                f"{_format_metric(summary.get('average_groundedness'))} | "
+                f"{_format_metric(summary.get('judge_completion_rate'))} | "
                 f"{_format_metric(summary.get('error_count'))} | "
                 f"{run.get('status', 'incomplete')} |"
             )
@@ -204,6 +208,10 @@ def format_ablation_report(payload: dict[str, Any]) -> str:
             "- A single run does not provide confidence intervals or statistical significance.",
             "- Citation verification metrics are N/A when that capability is disabled.",
             "- Token usage and cost remain N/A unless the model client exposes reliable metadata.",
+            "- Semantic Judge scores are model-based signals and can reflect model bias "
+            "in grading patterns.",
+            "- Enabling Judge adds one model call per successful system result; "
+            "comparison and ablation runs multiply latency and cost accordingly.",
         ]
     )
     return "\n".join(lines)

@@ -451,7 +451,8 @@ def test_format_ablation_report_handles_missing_failure_analysis_inputs():
     report = format_ablation_report(payload)
 
     assert (
-        "| V0 Naive RAG | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | incomplete |"
+        "| V0 Naive RAG | N/A | N/A | N/A | N/A | N/A | N/A | "
+        "N/A | N/A | N/A | N/A | N/A | N/A | incomplete |"
         in report
     )
     assert (
@@ -502,6 +503,9 @@ def test_format_ablation_report_uses_observed_metrics_and_explicit_limitations()
                     "average_retry_count": 0.0,
                     "average_latency": 1.0,
                     "error_count": 0,
+                    "average_semantic_correctness": None,
+                    "average_groundedness": None,
+                    "judge_completion_rate": None,
                 },
             },
             {
@@ -518,6 +522,9 @@ def test_format_ablation_report_uses_observed_metrics_and_explicit_limitations()
                     "average_retry_count": 0.5,
                     "average_latency": 2.0,
                     "error_count": 0,
+                    "average_semantic_correctness": 0.875,
+                    "average_groundedness": 0.92,
+                    "judge_completion_rate": 1.0,
                 },
             },
         ]
@@ -527,11 +534,98 @@ def test_format_ablation_report_uses_observed_metrics_and_explicit_limitations()
 
     assert "| V0 Naive RAG |" in report
     assert "| V6 + Claim-level Citation Verification |" in report
+    assert "Semantic Correctness" in report
+    assert "Groundedness" in report
+    assert "Judge Completion" in report
+    # Parse cells by header index to assert exact formatted judge values
+    header = next(
+        line for line in report.splitlines() if line.startswith("| Method |")
+    )
+    header_cols = [col.strip() for col in header.split("|") if col.strip()]
+    sem_idx = header_cols.index("Semantic Correctness")
+    ground_idx = header_cols.index("Groundedness")
+    judge_idx = header_cols.index("Judge Completion")
+
+    v6_line = next(
+        line
+        for line in report.splitlines()
+        if line.startswith("| V6 + Claim-level Citation Verification |")
+    )
+    v6_cells = [cell.strip() for cell in v6_line.split("|") if cell.strip()]
+    assert v6_cells[sem_idx] == "0.8750"
+    assert v6_cells[ground_idx] == "0.9200"
+    assert v6_cells[judge_idx] == "1.0000"
+
+    v0_line = next(
+        line for line in report.splitlines() if line.startswith("| V0 Naive RAG |")
+    )
+    v0_cells = [cell.strip() for cell in v0_line.split("|") if cell.strip()]
+    assert v0_cells[sem_idx] == "N/A"
+    assert v0_cells[ground_idx] == "N/A"
+    assert v0_cells[judge_idx] == "N/A"
+
     assert "## Observed Trade-offs" in report
     assert "correctness" in report.lower()
     assert "latency" in report.lower()
     assert "## Limitations" in report
+    assert "semantic judge scores are model-based signals" in report.lower()
+    assert (
+        "enabling judge adds one model call per successful system result"
+        in report.lower()
+    )
     assert "N/A" in report
+
+
+def test_format_ablation_report_renders_none_semantic_judge_values_as_na():
+    """None judge metrics render as N/A in the ablation summary table."""
+    payload = {
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "summary": {
+                    "correctness_score": 0.5,
+                    "average_semantic_correctness": None,
+                    "average_groundedness": None,
+                    "judge_completion_rate": None,
+                },
+            },
+        ]
+    }
+
+    report = format_ablation_report(payload)
+
+    # Header/separator parity
+    header = next(
+        line for line in report.splitlines() if line.startswith("| Method |")
+    )
+    separator = next(
+        line
+        for line in report.splitlines()
+        if line.startswith("|---") and "---:" in line
+    )
+    header_cols = [col.strip() for col in header.split("|") if col.strip()]
+    sep_cols = [col.strip() for col in separator.split("|") if col.strip()]
+    assert len(header_cols) == len(sep_cols), (
+        f"header={len(header_cols)} != separator={len(sep_cols)}"
+    )
+    assert "Semantic Correctness" in header_cols
+    assert "Groundedness" in header_cols
+    assert "Judge Completion" in header_cols
+
+    # Parse data row cells and assert judge columns are exactly N/A by header index
+    sem_idx = header_cols.index("Semantic Correctness")
+    ground_idx = header_cols.index("Groundedness")
+    judge_idx = header_cols.index("Judge Completion")
+
+    data_line = next(
+        line for line in report.splitlines() if line.startswith("| V0 Naive RAG |")
+    )
+    data_cells = [cell.strip() for cell in data_line.split("|") if cell.strip()]
+    assert data_cells[sem_idx] == "N/A"
+    assert data_cells[ground_idx] == "N/A"
+    assert data_cells[judge_idx] == "N/A"
 
 
 def test_runtime_config_includes_safe_judge_metadata_disabled():

@@ -76,7 +76,7 @@ class FakeEvaluationService:
             "run_id": "eval_1",
             "workspace_id": workspace_id,
             "status": "completed",
-            "summary": {"total_questions": 1},
+            "summary": {"total_questions": 1, "judge_completion_rate": 1.0},
             "result_path": "data/evaluation_runs/eval_1.json",
         }
 
@@ -85,7 +85,7 @@ class FakeEvaluationService:
             "run_id": run_id,
             "workspace_id": "workspace_1",
             "status": "completed",
-            "summary": {"total_questions": 1},
+            "summary": {"total_questions": 1, "judge_completion_rate": 1.0},
             "result_path": "data/evaluation_runs/eval_1.json",
         }
 
@@ -200,8 +200,15 @@ def test_evaluation_routes_run_and_read_results():
     )
     assert run_response.status_code == 200
     assert run_response.json()["run_id"] == "eval_1"
-    assert run_response.json()["summary"] == {"total_questions": 1}
+    assert run_response.json()["summary"] == {
+        "total_questions": 1,
+        "judge_completion_rate": 1.0,
+    }
 
     get_response = client.get("/evaluation/eval_1")
     assert get_response.status_code == 200
     assert get_response.json()["run_id"] == "eval_1"
+    assert get_response.json()["summary"] == {
+        "total_questions": 1,
+        "judge_completion_rate": 1.0,
+    }

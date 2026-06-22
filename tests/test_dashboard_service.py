@@ -1152,6 +1152,27 @@ def test_run_quick_evaluation_dispatches_runners_and_builds_summary_rows(
     assert "2 question" in view["message"]
     assert "0 failure" in view["message"]
 
+    # Judge completion rate is None when no judge is configured
+    raw_summary = view["raw_report"]["summary"]
+    if system_mode == "comparison":
+        assert raw_summary["naive"]["judge_completion_rate"] is None
+        assert raw_summary["agentic"]["judge_completion_rate"] is None
+    else:
+        assert raw_summary["judge_completion_rate"] is None
+
+    # Every result has judge.status disabled for single modes
+    if system_mode != "comparison":
+        for result in view["raw_report"]["results"]:
+            assert result["judge"]["status"] == "disabled"
+    else:
+        for paired in view["raw_report"]["results"]:
+            assert paired["naive"]["judge"]["status"] == "disabled"
+            assert paired["agentic"]["judge"]["status"] == "disabled"
+
+    # Visible summary_rows columns remain unchanged (no judge columns added)
+    for row in view["summary_rows"]:
+        assert len(row) == 8  # System + 7 metric columns
+
 
 @pytest.mark.parametrize(
     ("question_ids", "system_mode", "message"),

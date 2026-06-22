@@ -50,6 +50,9 @@ MATRIX_METRICS = (
     ("Average Retry Count", "average_retry_count"),
     ("Average Retrieved Docs", "average_retrieved_docs"),
     ("Average Relevant Docs", "average_relevant_docs"),
+    ("Semantic Correctness", "average_semantic_correctness"),
+    ("Groundedness", "average_groundedness"),
+    ("Judge Completion Rate", "judge_completion_rate"),
     ("Average Latency", "average_latency"),
     ("Error Count", "error_count"),
 )
@@ -126,7 +129,9 @@ def format_matrix_report(report: dict[str, Any]) -> str:
     ]
     for label, metric_name in MATRIX_METRICS:
         values = [
-            str(variants.get(name, {}).get(metric_name, "N/A"))
+            str(variant_value)
+            if (variant_value := variants.get(name, {}).get(metric_name)) is not None
+            else "N/A"
             for name in VARIANT_ORDER
         ]
         lines.append(f"| {label} | {' | '.join(values)} |")

@@ -358,9 +358,86 @@ def test_format_matrix_report_has_all_metrics_in_fixed_order():
         "| Average Retry Count | N/A | N/A | N/A |",
         "| Average Retrieved Docs | N/A | N/A | N/A |",
         "| Average Relevant Docs | N/A | N/A | N/A |",
+        "| Semantic Correctness | N/A | N/A | N/A |",
+        "| Groundedness | N/A | N/A | N/A |",
+        "| Judge Completion Rate | N/A | N/A | N/A |",
         "| Average Latency | N/A | N/A | N/A |",
         "| Error Count | N/A | N/A | N/A |",
     ]
+
+
+def test_format_matrix_report_renders_semantic_judge_summary_values():
+    """Prove actual semantic judge summary values render when present."""
+    matrix = _matrix_module()
+    report = {
+        "summary": {
+            "variants": {
+                "naive": {
+                    "source_hit_rate": None,
+                    "average_semantic_correctness": None,
+                    "average_groundedness": None,
+                    "judge_completion_rate": None,
+                },
+                "agentic": {
+                    "source_hit_rate": None,
+                    "average_semantic_correctness": 0.875,
+                    "average_groundedness": 0.92,
+                    "judge_completion_rate": 1.0,
+                },
+                "agentic_reranker": {
+                    "source_hit_rate": None,
+                    "average_semantic_correctness": 0.91,
+                    "average_groundedness": 0.87,
+                    "judge_completion_rate": 0.95,
+                },
+            }
+        }
+    }
+
+    text = matrix.format_matrix_report(report)
+    lines = text.splitlines()
+
+    # Resolve variant column positions from header
+    header_cols = [col.strip() for col in lines[0].split("|") if col.strip()]
+    naive_idx = header_cols.index("Naive RAG")
+    agentic_idx = header_cols.index("Agentic RAG")
+    reranker_idx = header_cols.index("Agentic + Reranker")
+
+    # Semantic Correctness row: naive N/A, agentic 0.875, reranker 0.91
+    sem_cells = [
+        cell.strip()
+        for cell in next(
+            line for line in lines if line.startswith("| Semantic Correctness")
+        ).split("|")
+        if cell.strip()
+    ]
+    assert sem_cells[naive_idx] == "N/A"
+    assert sem_cells[agentic_idx] == "0.875"
+    assert sem_cells[reranker_idx] == "0.91"
+
+    # Groundedness row: naive N/A, agentic 0.92, reranker 0.87
+    grd_cells = [
+        cell.strip()
+        for cell in next(
+            line for line in lines if line.startswith("| Groundedness")
+        ).split("|")
+        if cell.strip()
+    ]
+    assert grd_cells[naive_idx] == "N/A"
+    assert grd_cells[agentic_idx] == "0.92"
+    assert grd_cells[reranker_idx] == "0.87"
+
+    # Judge Completion row: naive N/A, agentic 1.0, reranker 0.95
+    jcr_cells = [
+        cell.strip()
+        for cell in next(
+            line for line in lines if line.startswith("| Judge Completion Rate")
+        ).split("|")
+        if cell.strip()
+    ]
+    assert jcr_cells[naive_idx] == "N/A"
+    assert jcr_cells[agentic_idx] == "1.0"
+    assert jcr_cells[reranker_idx] == "0.95"
 
 
 def test_build_benchmark_runners_isolates_managers_and_retrievers(monkeypatch):
