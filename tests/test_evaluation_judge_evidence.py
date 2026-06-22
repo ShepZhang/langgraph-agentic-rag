@@ -33,7 +33,7 @@ def test_relevant_priority_deep_copy_and_exact_normalized_evidence_record():
     ]
     result.relevant_documents = [
         {
-            "source_path": "/workspace/private/selected.md",
+            "source": "/workspace/private/selected.md",
             "page": 7,
             "chunk_id": " c-1 ",
             "content": "  Line 1\nLine 2\t",
@@ -47,10 +47,25 @@ def test_relevant_priority_deep_copy_and_exact_normalized_evidence_record():
 
     assert result.relevant_documents[0]["matched_queries"] == ["rag"]
     assert selected[0] is not result.relevant_documents[0]
-    assert selected[0]["source_path"] == "/workspace/private/selected.md"
+    assert selected[0]["source"] == "/workspace/private/selected.md"
     assert format_judge_evidence(result) == (
         '[{"source":"selected.md","page":7,"chunk_id":"c-1","content":"Line 1 Line 2"}]'
     )
+
+
+def test_source_path_only_records_do_not_emit_source():
+    for field_name in ("source_path", "file_path"):
+        result = _empty_result()
+        result.relevant_documents = [
+            {
+                field_name: "/workspace/private/hidden.md",
+                "content": "hidden evidence",
+            }
+        ]
+
+        assert json.loads(format_judge_evidence(result)) == [
+            {"content": "hidden evidence"}
+        ]
 
 
 def test_retrieved_fallback_when_relevant_is_empty():
@@ -100,7 +115,7 @@ def test_format_judge_citations_is_metadata_only_bounded_and_path_safe():
     result = _empty_result()
     result.citations = [
         {
-            "source_path": rf"C:\private\case\doc{i}.md",
+            "source": rf"C:\private\case\doc{i}.md",
             "page": i,
             "chunk_id": f" c{i} ",
             "snippet": "  Alpha\nBeta\t",
@@ -139,11 +154,11 @@ def test_windows_and_posix_paths_are_reduced_to_basenames():
     ]
     result.citations = [
         {
-            "source_path": r"C:\Users\alice\Desktop\windows\gamma.txt",
+            "source": r"C:\Users\alice\Desktop\windows\gamma.txt",
             "snippet": "windows citation",
         },
         {
-            "source_path": "/home/alice/docs/linux/delta.txt",
+            "source": "/home/alice/docs/linux/delta.txt",
             "snippet": "posix citation",
         },
     ]

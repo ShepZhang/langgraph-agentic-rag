@@ -75,11 +75,7 @@ def _format_citation_record(record: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _select_source(record: Mapping[str, Any]) -> str:
-    for key in ("source", "source_path", "file_path"):
-        candidate = _basename_value(record.get(key))
-        if candidate:
-            return candidate
-    return ""
+    return _basename_value(record.get("source"))
 
 
 def _basename_value(value: Any) -> str:
