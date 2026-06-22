@@ -30,7 +30,9 @@ def parse_semantic_judge_response(
     fallback_triggered: bool,
 ) -> ParsedJudgeResult:
     if not isinstance(raw_text, str) or not raw_text.strip():
-        raise ValueError("raw_text must be a non-blank string; blank values are not blank")
+        raise ValueError(
+            "raw_text must be a non-blank string; blank values are not allowed"
+        )
 
     try:
         parsed = json.loads(raw_text.strip())

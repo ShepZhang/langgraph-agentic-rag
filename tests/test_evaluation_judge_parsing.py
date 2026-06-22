@@ -94,7 +94,10 @@ def test_parse_semantic_judge_response_rejects_invalid_grounded_scores(score):
 
 @pytest.mark.parametrize("raw_text", ["", "   ", None])
 def test_parse_semantic_judge_response_rejects_blank_or_non_string_input(raw_text):
-    with pytest.raises(ValueError, match=r"blank.*not blank|not blank.*blank"):
+    with pytest.raises(
+        ValueError,
+        match=r"raw_text must be a non-blank string; blank values are not allowed",
+    ):
         parse_semantic_judge_response(raw_text, fallback_triggered=False)  # type: ignore[arg-type]
 
 
@@ -104,6 +107,8 @@ def test_parse_semantic_judge_response_rejects_blank_or_non_string_input(raw_tex
         "```json\n{}\n```",
         'Here is the answer: {"semantic_correctness": {"score": 1, "reason": "ok"}, "groundedness": {"applicable": true, "score": 1, "reason": "ok"}}',
         "[]",
+        '""',
+        "1",
     ],
 )
 def test_parse_semantic_judge_response_rejects_fenced_prose_or_non_object_json(raw_text):
@@ -157,6 +162,49 @@ def test_parse_semantic_judge_response_rejects_extra_or_missing_nested_keys():
     for payload in invalid_payloads:
         with pytest.raises(ValueError, match=r"semantic_correctness|groundedness"):
             parse_semantic_judge_response(json.dumps(payload), fallback_triggered=False)
+
+
+@pytest.mark.parametrize(
+    "semantic_value, grounded_value, field",
+    [
+        ("oops", {"applicable": True, "score": 1, "reason": "ok"}, "semantic_correctness"),
+        (3, {"applicable": True, "score": 1, "reason": "ok"}, "semantic_correctness"),
+        (
+            [1, 2],
+            {"applicable": True, "score": 1, "reason": "ok"},
+            "semantic_correctness",
+        ),
+        (
+            {"score": 1, "reason": "ok"},
+            "oops",
+            "groundedness",
+        ),
+        (
+            {"score": 1, "reason": "ok"},
+            3,
+            "groundedness",
+        ),
+        (
+            {"score": 1, "reason": "ok"},
+            [1, 2],
+            "groundedness",
+        ),
+    ],
+)
+def test_parse_semantic_judge_response_rejects_non_dict_nested_json_values(
+    semantic_value,
+    grounded_value,
+    field,
+):
+    payload = json.dumps(
+        {
+            "semantic_correctness": semantic_value,
+            "groundedness": grounded_value,
+        }
+    )
+
+    with pytest.raises(ValueError, match=rf"{field} must be an object"):
+        parse_semantic_judge_response(payload, fallback_triggered=False)
 
 
 @pytest.mark.parametrize("applicable", [1, 0, "true", None])
