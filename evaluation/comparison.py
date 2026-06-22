@@ -131,4 +131,10 @@ def build_comparison_summary(
         "agentic_fallback_correctness_rate": agentic.fallback_correctness_rate,
         "naive_average_latency": naive.average_latency,
         "agentic_average_latency": agentic.average_latency,
+        "naive_average_semantic_correctness": naive.average_semantic_correctness,
+        "agentic_average_semantic_correctness": agentic.average_semantic_correctness,
+        "naive_average_groundedness": naive.average_groundedness,
+        "agentic_average_groundedness": agentic.average_groundedness,
+        "naive_judge_completion_rate": naive.judge_completion_rate,
+        "agentic_judge_completion_rate": agentic.judge_completion_rate,
     }

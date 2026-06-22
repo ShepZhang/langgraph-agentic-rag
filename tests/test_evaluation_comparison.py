@@ -291,6 +291,12 @@ def test_evaluate_comparison_preserves_dataset_order_and_paired_shape() -> None:
         "agentic_fallback_correctness_rate",
         "naive_average_latency",
         "agentic_average_latency",
+        "naive_average_semantic_correctness",
+        "agentic_average_semantic_correctness",
+        "naive_average_groundedness",
+        "agentic_average_groundedness",
+        "naive_judge_completion_rate",
+        "agentic_judge_completion_rate",
     }
     assert report.to_dict()["results"][0].keys() == {
         "question",

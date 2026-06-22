@@ -278,15 +278,48 @@ def summarize_results(
         for result in results
     ]
     estimated_cost = sum(
-        cost
+        _safe_cost(result.estimated_cost) or 0.0
         for result in results
-        for cost in [_safe_cost(result.estimated_cost)]
-        if cost is not None
     )
     registered = {
         metric.name: metric.compute(results, questions)
         for metric in DEFAULT_SUMMARY_METRICS
     }
+
+    # --- Semantic judge aggregation ---
+    judge_completed = [
+        r for r in results
+        if r.judge.status == "completed"
+    ]
+    judge_failed = [
+        r for r in results
+        if r.judge.status == "failed"
+    ]
+    judge_attempted = len(judge_completed) + len(judge_failed)
+
+    if judge_attempted > 0:
+        judge_completion_rate: float | None = round(
+            len(judge_completed) / judge_attempted, 4
+        )
+        semantic_scores = _judge_scores(judge_completed, "semantic_correctness")
+        grounded_scores = _judge_scores(judge_completed, "groundedness")
+        grounded_applicable = len(grounded_scores)
+
+        average_semantic: float | None = (
+            round(sum(semantic_scores) / len(semantic_scores), 4)
+            if semantic_scores
+            else None
+        )
+        average_grounded: float | None = (
+            round(sum(grounded_scores) / len(grounded_scores), 4)
+            if grounded_scores
+            else None
+        )
+    else:
+        judge_completion_rate = None
+        average_semantic = None
+        average_grounded = None
+        grounded_applicable = 0
 
     return EvaluationSummary(
         total_questions=total_questions,
@@ -321,6 +354,12 @@ def summarize_results(
         average_latency=_average(result.latency for result in results),
         rewrite_triggered_count=rewrite_triggered_count,
         error_count=error_count,
+        judge_completed_count=len(judge_completed),
+        judge_failed_count=len(judge_failed),
+        judge_completion_rate=judge_completion_rate,
+        average_semantic_correctness=average_semantic,
+        average_groundedness=average_grounded,
+        groundedness_applicable_count=grounded_applicable,
         failure_type_counts=summarize_failure_types(
             [result.to_dict() for result in results]
         ),
@@ -435,13 +474,20 @@ def _count_unsupported_claims(claims: list[Any]) -> int:
     )
 
 
+def _safe_float(value: Any) -> float | None:
+    """Return value as a finite float, or None if bool/string/NaN/Inf/None."""
+    if isinstance(value, bool):
+        return None
+    if not isinstance(value, int | float):
+        return None
+    if not math.isfinite(value):
+        return None
+    return float(value)
+
+
 def _safe_cost(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    cost = float(value)
-    if not math.isfinite(cost):
-        return None
-    return cost
+    """Return estimated cost as finite float or None. Semantic alias for _safe_float."""
+    return _safe_float(value)
 
 
 def _extract_total_tokens(token_usage: Any) -> int | None:
@@ -457,6 +503,18 @@ def _extract_total_tokens(token_usage: Any) -> int | None:
             return None
         return int(value)
     return None
+
+
+def _judge_scores(
+    results: list[EvaluationResult], dimension: str
+) -> list[float]:
+    """Return valid finite scores for a judge dimension from completed results."""
+    scores: list[float] = []
+    for r in results:
+        score = _safe_float(r.judge.scores.get(dimension))
+        if score is not None:
+            scores.append(score)
+    return scores
 
 
 def _rate(count: int, denominator: int) -> float:

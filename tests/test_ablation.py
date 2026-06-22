@@ -16,7 +16,11 @@ from experiments.variants import (
 )
 from agent.features import AgentFeatureFlags
 from config import get_settings
-from evaluation.runtime_config import build_runtime_config_snapshot
+from evaluation.judge_config import EvaluationJudgeSettings
+from evaluation.runtime_config import (
+    build_runtime_config_snapshot,
+    build_runtime_metadata,
+)
 
 
 CONFIG_DIR = Path("experiments/configs")
@@ -101,8 +105,8 @@ def test_runtime_config_snapshot_includes_agent_feature_flags():
 def test_runtime_config_snapshot_includes_safe_active_prompt_manifest():
     snapshot = build_runtime_config_snapshot()
 
-    assert snapshot["schema_version"] == 2
-    assert snapshot["evaluator_version"] == "p4d"
+    assert snapshot["schema_version"] == 3
+    assert snapshot["evaluator_version"] == "p5a"
     assert set(snapshot["prompts"]) == {
         "agent.query_transform",
         "agent.retry_query_rewrite",
@@ -111,6 +115,7 @@ def test_runtime_config_snapshot_includes_safe_active_prompt_manifest():
         "agent.claim_extraction",
         "agent.citation_verification",
         "agent.answer_revision",
+        "evaluation.semantic_judge",
         "tool.document_summary",
     }
     assert all(
@@ -527,3 +532,104 @@ def test_format_ablation_report_uses_observed_metrics_and_explicit_limitations()
     assert "latency" in report.lower()
     assert "## Limitations" in report
     assert "N/A" in report
+
+
+def test_runtime_config_includes_safe_judge_metadata_disabled():
+    """Default disabled judge → metadata includes enabled=False, no secrets."""
+    metadata = build_runtime_metadata()
+
+    config = metadata.to_dict()
+    assert "judge" in config
+    assert config["judge"] == {
+        "enabled": False,
+        "provider": "openai_compatible",
+        "model": None,
+        "temperature": 0.0,
+    }
+    # Prove secrets are absent from the serialized config
+    assert "api_key" not in config["judge"]
+    assert "base_url" not in config["judge"]
+    serialized = str(config)
+    assert "api_key" not in serialized
+    assert "base_url" not in serialized
+
+
+def test_runtime_config_redacts_judge_credentials_when_enabled():
+    """Enabled judge → metadata includes enabled=True, temperature, but redacts secrets."""
+    settings = EvaluationJudgeSettings(
+        enabled=True,
+        api_key="sk-secret-key-12345",
+        base_url="https://judge.example.com/v1",
+        model="deepseek-v4",
+        temperature=0.0,
+    )
+    metadata = build_runtime_metadata(judge_settings=settings)
+
+    config = metadata.to_dict()
+    assert config["judge"]["enabled"] is True
+    assert config["judge"]["provider"] == "openai_compatible"
+    assert config["judge"]["model"] == "deepseek-v4"
+    assert config["judge"]["temperature"] == 0.0
+    # Secrets must be redacted
+    assert "api_key" not in config["judge"]
+    assert "base_url" not in config["judge"]
+    assert "sk-secret-key-12345" not in str(config)
+    assert "judge.example.com" not in str(config)
+
+
+def test_runtime_config_judge_settings_cached_in_snapshot():
+    """build_runtime_config_snapshot forwards judge_settings to metadata."""
+    settings = EvaluationJudgeSettings(
+        enabled=True,
+        api_key="sk-redacted-key",
+        base_url="https://judge.example.com/v1",
+        model="deepseek-v4",
+        temperature=0.0,
+    )
+    snapshot = build_runtime_config_snapshot(judge_settings=settings)
+
+    assert snapshot["judge"]["enabled"] is True
+    assert snapshot["judge"]["model"] == "deepseek-v4"
+    assert snapshot["judge"]["temperature"] == 0.0
+    assert "sk-redacted" not in str(snapshot)
+    assert "judge.example.com" not in str(snapshot)
+    assert "api_key" not in snapshot["judge"]
+    assert "base_url" not in snapshot["judge"]
+
+
+def test_build_runtime_metadata_calls_load_judge_settings_once_when_omitted(
+    monkeypatch,
+):
+    """load_evaluation_judge_settings is called exactly once when judge_settings
+    is omitted, and not called when judge_settings is injected."""
+    from evaluation import runtime_config as rc_module
+
+    call_count = 0
+
+    def fake_load():
+        nonlocal call_count
+        call_count += 1
+        return EvaluationJudgeSettings(
+            enabled=False,
+            api_key="",
+            base_url="",
+            model="",
+            temperature=0.0,
+        )
+
+    monkeypatch.setattr(rc_module, "load_evaluation_judge_settings", fake_load)
+
+    # Omitted → load_evaluation_judge_settings called exactly once
+    build_runtime_metadata()
+    assert call_count == 1
+
+    # Injected → load_evaluation_judge_settings NOT called (call count stays 1)
+    settings = EvaluationJudgeSettings(
+        enabled=True,
+        api_key="sk-key-123",
+        base_url="https://example.com/v1",
+        model="deepseek-v4",
+        temperature=0.0,
+    )
+    build_runtime_metadata(judge_settings=settings)
+    assert call_count == 1

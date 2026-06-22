@@ -6,36 +6,53 @@ from typing import Any
 
 from agent.features import AgentFeatureFlags
 from config import Settings, get_settings
+from evaluation.judge_config import (
+    EvaluationJudgeSettings,
+    build_judge_runtime_metadata,
+    load_evaluation_judge_settings,
+)
 from evaluation.schemas import RuntimeMetadata
 from prompting import get_active_prompt_manifest
 
 
-EVALUATION_SCHEMA_VERSION = 2
-EVALUATOR_VERSION = "p4d"
+EVALUATION_SCHEMA_VERSION = 3
+EVALUATOR_VERSION = "p5a"
 
 
 def build_runtime_config_snapshot(
     settings: Settings | None = None,
     features: AgentFeatureFlags | None = None,
+    judge_settings: EvaluationJudgeSettings | None = None,
 ) -> dict[str, Any]:
     """Return reproducibility metadata without secrets or local paths."""
 
-    return build_runtime_metadata(settings=settings, features=features).to_dict()
+    return build_runtime_metadata(
+        settings=settings,
+        features=features,
+        judge_settings=judge_settings,
+    ).to_dict()
 
 
 def build_runtime_metadata(
     settings: Settings | None = None,
     features: AgentFeatureFlags | None = None,
+    judge_settings: EvaluationJudgeSettings | None = None,
 ) -> RuntimeMetadata:
     """Return versioned reproducibility metadata without secrets or local paths."""
 
     resolved = settings or get_settings()
     resolved_features = features or AgentFeatureFlags()
+    resolved_judge = (
+        judge_settings
+        if judge_settings is not None
+        else load_evaluation_judge_settings()
+    )
     return RuntimeMetadata(
         schema_version=EVALUATION_SCHEMA_VERSION,
         evaluator_version=EVALUATOR_VERSION,
         config={
             "agent_features": resolved_features.to_dict(),
+            "judge": build_judge_runtime_metadata(resolved_judge),
             "llm": {
                 "provider": resolved.llm_provider,
                 "model": resolved.effective_llm_model,

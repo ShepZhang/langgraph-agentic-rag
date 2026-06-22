@@ -127,8 +127,8 @@ def test_compatibility_writer_keeps_comparison_artifact_names_and_metadata(tmp_p
         "results": [{"question": "What is Agentic RAG?"}],
     }
     assert comparison_payload == {"runtime_config": runtime_config, **report}
-    assert comparison_payload["runtime_config"]["schema_version"] == 2
-    assert comparison_payload["runtime_config"]["evaluator_version"] == "p4d"
+    assert comparison_payload["runtime_config"]["schema_version"] == 3
+    assert comparison_payload["runtime_config"]["evaluator_version"] == "p5a"
     assert comparison_payload["runtime_config"]["prompts"] == runtime_config["prompts"]
 
 

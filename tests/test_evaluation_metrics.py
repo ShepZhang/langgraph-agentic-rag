@@ -9,7 +9,7 @@ from evaluation.metrics import (
     score_system_output,
     summarize_results,
 )
-from evaluation.schemas import EvaluationQuestion, EvaluationResult
+from evaluation.schemas import EvaluationQuestion, EvaluationResult, JudgeResult
 
 
 def _question(**overrides: object) -> EvaluationQuestion:
@@ -212,3 +212,172 @@ def test_summarize_results_keeps_verification_metrics_unavailable():
     assert summary.unsupported_claim_count is None
     assert summary.supported_claim_ratio is None
     assert summary.citation_verification_pass_rate is None
+
+
+def test_summarize_results_computes_judge_completion_counts():
+    """completed/failed counts; attempted excludes disabled."""
+    question = normalize_question({"question": "Judge test?"}, index=0)
+
+    r_completed = EvaluationResult.empty(
+        question_id="q1", question_type="single_doc", question="Judge test?"
+    )
+    r_completed.answer_returned = True
+    r_completed.judge = JudgeResult.completed(
+        {"semantic_correctness": 0.75, "groundedness": 0.5},
+        reason="ok",
+    )
+
+    r_failed = EvaluationResult.empty(
+        question_id="q2", question_type="single_doc", question="Judge test?"
+    )
+    r_failed.answer_returned = True
+    r_failed.judge = JudgeResult.failed("some error")
+
+    r_disabled = EvaluationResult.empty(
+        question_id="q3", question_type="single_doc", question="Judge test?"
+    )
+    r_disabled.answer_returned = True
+    r_disabled.judge = JudgeResult.disabled()
+
+    summary = summarize_results(
+        [r_completed, r_failed, r_disabled],
+        [question, question, question],
+    )
+
+    assert summary.judge_completed_count == 1
+    assert summary.judge_failed_count == 1
+    assert summary.judge_completion_rate == 0.5  # 1/2 attempted, rounded 4
+    assert summary.average_semantic_correctness == 0.75
+    assert summary.average_groundedness == 0.5
+    assert summary.groundedness_applicable_count == 1
+
+
+def test_summarize_results_judge_metrics_none_when_all_disabled_or_empty():
+    """Disabled or empty judge results → all judge metrics are None."""
+    question = normalize_question({"question": "No judge?"}, index=0)
+
+    r_disabled = EvaluationResult.empty(
+        question_id="q1", question_type="single_doc", question="No judge?"
+    )
+    r_disabled.answer_returned = True
+    r_disabled.judge = JudgeResult.disabled()
+
+    summary = summarize_results([r_disabled], [question])
+
+    assert summary.judge_completed_count == 0
+    assert summary.judge_failed_count == 0
+    assert summary.judge_completion_rate is None
+    assert summary.average_semantic_correctness is None
+    assert summary.average_groundedness is None
+    assert summary.groundedness_applicable_count == 0
+
+    # Empty results list
+    summary_empty = summarize_results([], [])
+    assert summary_empty.judge_completion_rate is None
+    assert summary_empty.average_semantic_correctness is None
+    assert summary_empty.average_groundedness is None
+    assert summary_empty.groundedness_applicable_count == 0
+
+
+def test_summarize_results_ignores_invalid_judge_scores():
+    """String, NaN, Inf, and bool scores are ignored for both semantic and
+    groundedness; only finite numeric values contribute to count and average."""
+    question = normalize_question({"question": "Invalid scores?"}, index=0)
+
+    r_str = EvaluationResult.empty(
+        question_id="q1", question_type="single_doc", question="Invalid scores?"
+    )
+    r_str.answer_returned = True
+    r_str.judge = JudgeResult.completed(
+        {"semantic_correctness": "not-a-number", "groundedness": 0.5},
+        reason="string semantic, valid grounded",
+    )
+
+    r_nan = EvaluationResult.empty(
+        question_id="q2", question_type="single_doc", question="Invalid scores?"
+    )
+    r_nan.answer_returned = True
+    r_nan.judge = JudgeResult.completed(
+        {"semantic_correctness": float("nan"), "groundedness": float("nan")},
+        reason="nan semantic, nan grounded",
+    )
+
+    r_inf = EvaluationResult.empty(
+        question_id="q3", question_type="single_doc", question="Invalid scores?"
+    )
+    r_inf.answer_returned = True
+    r_inf.judge = JudgeResult.completed(
+        {"semantic_correctness": float("inf"), "groundedness": float("inf")},
+        reason="inf semantic, inf grounded",
+    )
+
+    r_bool = EvaluationResult.empty(
+        question_id="q4", question_type="single_doc", question="Invalid scores?"
+    )
+    r_bool.answer_returned = True
+    r_bool.judge = JudgeResult.completed(
+        {"semantic_correctness": True, "groundedness": True},
+        reason="bool semantic, bool grounded",
+    )
+
+    r_str_grounded = EvaluationResult.empty(
+        question_id="q5", question_type="single_doc", question="Invalid scores?"
+    )
+    r_str_grounded.answer_returned = True
+    r_str_grounded.judge = JudgeResult.completed(
+        {"semantic_correctness": 0.5, "groundedness": "bad_value"},
+        reason="valid semantic, string grounded",
+    )
+
+    r_finite = EvaluationResult.empty(
+        question_id="q6", question_type="single_doc", question="Invalid scores?"
+    )
+    r_finite.answer_returned = True
+    r_finite.judge = JudgeResult.completed(
+        {"semantic_correctness": 0.75, "groundedness": 0.3},
+        reason="valid",
+    )
+
+    summary = summarize_results(
+        [r_str, r_nan, r_inf, r_bool, r_str_grounded, r_finite],
+        [question] * 6,
+    )
+
+    # Semantic: only r_str_grounded (0.5) and r_finite (0.75) are finite
+    assert summary.average_semantic_correctness == 0.625  # (0.5 + 0.75) / 2
+
+    # Groundedness: r_str=0.5 (valid), r_finite=0.3 (valid).
+    # r_nan=NaN (ignored), r_inf=Inf (ignored), r_bool=True (ignored),
+    # r_str_grounded="bad_value" (ignored).
+    # Average: (0.5 + 0.3) / 2 = 0.4
+    assert summary.average_groundedness == 0.4
+    assert summary.groundedness_applicable_count == 2
+
+
+def test_summarize_results_groundedness_excludes_none_scores():
+    """Groundedness None scores are excluded from count and average."""
+    question = normalize_question({"question": "None groundedness?"}, index=0)
+
+    r_none = EvaluationResult.empty(
+        question_id="q1", question_type="single_doc", question="None groundedness?"
+    )
+    r_none.answer_returned = True
+    r_none.judge = JudgeResult.completed(
+        {"semantic_correctness": 0.5, "groundedness": None},
+        reason="fallback case",
+    )
+
+    r_scored = EvaluationResult.empty(
+        question_id="q2", question_type="single_doc", question="None groundedness?"
+    )
+    r_scored.answer_returned = True
+    r_scored.judge = JudgeResult.completed(
+        {"semantic_correctness": 0.75, "groundedness": 1.0},
+        reason="full support",
+    )
+
+    summary = summarize_results([r_none, r_scored], [question, question])
+
+    assert summary.groundedness_applicable_count == 1  # only r_scored
+    assert summary.average_groundedness == 1.0  # only r_scored's score
+    assert summary.average_semantic_correctness == 0.625  # (0.5 + 0.75) / 2

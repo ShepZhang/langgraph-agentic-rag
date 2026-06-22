@@ -74,6 +74,21 @@ def _format_comparison_report(report: dict[str, Any]) -> str:
             f"{agentic.get('fallback_correctness_rate', 'N/A')} |"
         ),
         (
+            f"| Judge Completion Rate | "
+            f"{_fmt_optional(naive.get('judge_completion_rate'))} | "
+            f"{_fmt_optional(agentic.get('judge_completion_rate'))} |"
+        ),
+        (
+            f"| Semantic Correctness | "
+            f"{_fmt_optional(naive.get('average_semantic_correctness'))} | "
+            f"{_fmt_optional(agentic.get('average_semantic_correctness'))} |"
+        ),
+        (
+            f"| Groundedness | "
+            f"{_fmt_optional(naive.get('average_groundedness'))} | "
+            f"{_fmt_optional(agentic.get('average_groundedness'))} |"
+        ),
+        (
             f"| Avg Latency | {naive.get('average_latency', 'N/A')} | "
             f"{agentic.get('average_latency', 'N/A')} |"
         ),
@@ -108,6 +123,13 @@ def _format_comparison_report(report: dict[str, Any]) -> str:
         )
 
     return "\n".join(lines)
+
+
+def _fmt_optional(value: Any) -> str:
+    """Format an optional numeric value: None → N/A, otherwise the value itself."""
+    if value is None:
+        return "N/A"
+    return str(value)
 
 
 def _format_bool(value: Any) -> str:
