@@ -31,31 +31,20 @@ def format_judge_citations(result: EvaluationResult) -> str:
 
     citations = [
         _format_citation_record(record)
-        for record in deepcopy(result.citations[:MAX_JUDGE_EVIDENCE_CHUNKS])
+        for record in result.citations[:MAX_JUDGE_EVIDENCE_CHUNKS]
     ]
     return json.dumps(citations, ensure_ascii=False, separators=(",", ":"))
 
 
 def _format_evidence_record(record: Mapping[str, Any]) -> dict[str, Any]:
-    formatted: dict[str, Any] = {}
-
-    source = _select_source(record)
-    if source:
-        formatted["source"] = source
-
-    page = record.get("page")
-    if isinstance(page, int) and not isinstance(page, bool):
-        formatted["page"] = page
-
-    chunk_id = _clean_chunk_id(record.get("chunk_id"))
-    if chunk_id:
-        formatted["chunk_id"] = chunk_id
-
-    formatted["content"] = _normalize_text(record.get("content"))
-    return formatted
+    return _format_record(record, text_key="content")
 
 
 def _format_citation_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    return _format_record(record, text_key="snippet")
+
+
+def _format_record(record: Mapping[str, Any], text_key: str) -> dict[str, Any]:
     formatted: dict[str, Any] = {}
 
     source = _select_source(record)
@@ -70,7 +59,7 @@ def _format_citation_record(record: Mapping[str, Any]) -> dict[str, Any]:
     if chunk_id:
         formatted["chunk_id"] = chunk_id
 
-    formatted["snippet"] = _normalize_text(record.get("snippet"))
+    formatted[text_key] = _normalize_text(record.get(text_key))
     return formatted
 
 
