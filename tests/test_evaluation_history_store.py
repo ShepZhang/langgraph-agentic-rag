@@ -193,6 +193,11 @@ def test_extract_single_system_report_records_agentic_metrics():
     assert record.failure_counts == {"agentic": {"no_failure": 1}}
 
 
+def test_extract_history_record_requires_keyword_metadata_arguments():
+    with pytest.raises(TypeError):
+        extract_history_record({}, "run", "date", "cli")
+
+
 def test_extract_comparison_report_records_naive_and_agentic_metrics():
     payload = {
         "runtime_config": _runtime_config(),
@@ -302,6 +307,39 @@ def test_extract_ablation_payload_records_completed_variants():
     assert [(m.system_id, m.system_label, m.metric_name) for m in record.metrics] == [
         ("v0_naive", "v0_naive Naive RAG", "correctness_score")
     ]
+
+
+def test_extract_ablation_fallback_questions_ignore_incomplete_runs():
+    payload = {
+        "kind": "ablation_result",
+        "runs": [
+            {
+                "id": "v1_query_rewrite",
+                "method": "+ Query Transformation",
+                "status": "incomplete",
+                "summary": {"correctness_score": 0.4},
+                "results": [{"question_id": "q_bad"}],
+            },
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "runtime_config": _runtime_config(),
+                "summary": {"correctness_score": 0.3},
+                "results": [{"question_id": "q_good"}],
+            },
+        ],
+    }
+
+    record = extract_history_record(
+        payload,
+        run_id="ablation_fallback",
+        created_at="2026-06-27T12:00:00.000000Z",
+        source="ablation",
+    )
+
+    assert record.question_ids == ["q_good"]
+    assert record.question_count == 1
 
 
 def test_extract_api_wrapper_uses_nested_report_and_workspace():

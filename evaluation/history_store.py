@@ -84,6 +84,7 @@ def compute_prompt_manifest_hash(manifest: Mapping[str, Any]) -> str:
 
 def extract_history_record(
     payload: Mapping[str, Any],
+    *,
     run_id: str,
     created_at: str,
     source: str,
@@ -361,6 +362,8 @@ def _question_ids(
 
     if mode == "ablation":
         for run in _ablation_runs(payload, report):
+            if run.get("status") not in _COMPLETED_ABLATION_STATUSES:
+                continue
             run_ids = _question_ids_from_results(run.get("results"))
             if run_ids:
                 return run_ids
@@ -427,15 +430,17 @@ def _question_count(
     if question_ids:
         return len(question_ids)
 
-    results = report.get("results")
-    if isinstance(results, list):
-        return len(results)
-
     if mode == "ablation":
         for run in _ablation_runs(payload, report):
+            if run.get("status") not in _COMPLETED_ABLATION_STATUSES:
+                continue
             results = run.get("results")
             if isinstance(results, list):
                 return len(results)
+
+    results = report.get("results")
+    if isinstance(results, list):
+        return len(results)
     return 0
 
 
