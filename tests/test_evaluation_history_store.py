@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -10,6 +11,8 @@ from evaluation.history_store import (
     HistoryStore,
     MetricRecord,
     compute_prompt_manifest_hash,
+    extract_history_record,
+    import_history_artifact,
 )
 
 
@@ -155,3 +158,199 @@ def test_history_store_rejects_unsupported_metric_names(tmp_path):
 
     with pytest.raises(ValueError, match="Unsupported history metric"):
         store.query_trends(metric="not_a_metric", system=None, limit=5)
+
+
+def test_extract_single_system_report_records_agentic_metrics():
+    payload = {
+        "system": "agentic_rag",
+        "runtime_config": _runtime_config(),
+        "summary": {
+            "total_questions": 1,
+            "correctness_score": 1.0,
+            "average_latency": 0.25,
+            "failure_type_counts": {"no_failure": 1},
+        },
+        "results": [{"question_id": "q001"}],
+    }
+
+    record = extract_history_record(
+        payload,
+        run_id="eval_single",
+        created_at="2026-06-27T12:00:00.000000Z",
+        source="cli",
+        result_path="agentic_result.json",
+    )
+
+    assert record.mode == "single"
+    assert record.schema_version == 4
+    assert record.evaluator_version == "p5b"
+    assert record.question_count == 1
+    assert record.question_ids == ["q001"]
+    assert [(m.system_id, m.metric_name, m.metric_value) for m in record.metrics] == [
+        ("agentic", "correctness_score", 1.0),
+        ("agentic", "average_latency", 0.25),
+    ]
+    assert record.failure_counts == {"agentic": {"no_failure": 1}}
+
+
+def test_extract_comparison_report_records_naive_and_agentic_metrics():
+    payload = {
+        "runtime_config": _runtime_config(),
+        "summary": {
+            "mode": "comparison",
+            "total_questions": 1,
+            "naive": {
+                "total_questions": 1,
+                "correctness_score": 0.5,
+                "failure_type_counts": {"retrieval_failure": 1},
+            },
+            "agentic": {
+                "total_questions": 1,
+                "correctness_score": 0.75,
+                "judge_completion_rate": 1.0,
+                "failure_type_counts": {"no_failure": 1},
+            },
+        },
+        "results": [{"naive": {"question_id": "q001"}, "agentic": {"question_id": "q001"}}],
+    }
+
+    record = extract_history_record(
+        payload,
+        run_id="eval_comparison",
+        created_at="2026-06-27T12:00:00.000000Z",
+        source="cli",
+        result_path="comparison_result.json",
+    )
+
+    metrics = {
+        (metric.system_id, metric.metric_name): metric.metric_value
+        for metric in record.metrics
+    }
+    assert record.mode == "comparison"
+    assert metrics[("naive", "correctness_score")] == 0.5
+    assert metrics[("agentic", "correctness_score")] == 0.75
+    assert metrics[("agentic", "judge_completion_rate")] == 1.0
+    assert record.failure_counts["naive"] == {"retrieval_failure": 1}
+
+
+def test_extract_legacy_matrix_report_uses_legacy_metadata():
+    payload = {
+        "summary": {
+            "mode": "matrix",
+            "total_questions": 1,
+            "variants": {
+                "naive": {"correctness_score": 0.2},
+                "agentic": {"correctness_score": 0.6},
+                "agentic_reranker": {"correctness_score": 0.7},
+            },
+        },
+        "results": [{"question": "What?"}],
+    }
+
+    record = extract_history_record(
+        payload,
+        run_id="legacy_matrix",
+        created_at="2026-06-27T12:00:00.000000Z",
+        source="matrix",
+        result_path="matrix.json",
+    )
+
+    assert record.mode == "matrix"
+    assert record.schema_version is None
+    assert record.evaluator_version is None
+    assert record.prompt_manifest_hash == ""
+    assert {metric.system_id for metric in record.metrics} == {
+        "naive",
+        "agentic",
+        "agentic_reranker",
+    }
+
+
+def test_extract_ablation_payload_records_completed_variants():
+    payload = {
+        "kind": "ablation_result",
+        "question_ids": ["q001"],
+        "runs": [
+            {
+                "id": "v0_naive",
+                "method": "Naive RAG",
+                "status": "completed",
+                "runtime_config": _runtime_config(),
+                "summary": {"correctness_score": 0.3},
+                "results": [{"question_id": "q001"}],
+            },
+            {
+                "id": "v1_query_rewrite",
+                "method": "+ Query Transformation",
+                "status": "incomplete",
+                "summary": {"correctness_score": 0.4},
+                "results": [{"question_id": "q001"}],
+            },
+        ],
+    }
+
+    record = extract_history_record(
+        payload,
+        run_id="ablation_1",
+        created_at="2026-06-27T12:00:00.000000Z",
+        source="ablation",
+        result_path="ablation_result.json",
+    )
+
+    assert record.mode == "ablation"
+    assert record.question_ids == ["q001"]
+    assert [(m.system_id, m.system_label, m.metric_name) for m in record.metrics] == [
+        ("v0_naive", "v0_naive Naive RAG", "correctness_score")
+    ]
+
+
+def test_extract_api_wrapper_uses_nested_report_and_workspace():
+    payload = {
+        "run_id": "eval_api",
+        "workspace_id": "workspace_1",
+        "status": "completed",
+        "result_path": "data/evaluation_runs/eval_api.json",
+        "summary": {"total_questions": 1},
+        "report": {
+            "runtime_config": _runtime_config(),
+            "summary": {"total_questions": 1, "correctness_score": 0.9},
+            "results": [{"question_id": "q001"}],
+        },
+    }
+
+    record = extract_history_record(
+        payload,
+        run_id="eval_api",
+        created_at="2026-06-27T12:00:00.000000Z",
+        source="api",
+        result_path=payload["result_path"],
+    )
+
+    assert record.workspace_id == "workspace_1"
+    assert record.status == "completed"
+    assert record.mode == "single"
+    assert record.metrics[0].system_id == "agentic"
+
+
+def test_import_history_artifact_generates_stable_id(tmp_path):
+    path = tmp_path / "agentic_result.json"
+    path.write_text(
+        json.dumps(
+            {
+                "system": "agentic_rag",
+                "runtime_config": _runtime_config(),
+                "summary": {"total_questions": 1, "correctness_score": 1.0},
+                "results": [{"question_id": "q001"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = HistoryStore(tmp_path / "history.sqlite3")
+
+    first = import_history_artifact(path, store=store)
+    second = import_history_artifact(path, store=store)
+
+    assert first["status"] == "stored"
+    assert second["status"] == "stored"
+    assert first["run_id"] == second["run_id"]
+    assert store.list_runs()[0]["run_id"] == first["run_id"]
