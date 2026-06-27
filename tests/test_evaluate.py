@@ -1249,9 +1249,9 @@ def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
         agentic_payload["runtime_config"],
         comparison_payload["runtime_config"],
     ]
-    assert all(runtime_config["schema_version"] == 3 for runtime_config in runtime_configs)
+    assert all(runtime_config["schema_version"] == 4 for runtime_config in runtime_configs)
     assert all(
-        runtime_config["evaluator_version"] == "p5a"
+        runtime_config["evaluator_version"] == "p5b"
         for runtime_config in runtime_configs
     )
     assert all(
@@ -1325,8 +1325,8 @@ def test_main_writes_single_system_agentic_artifact_schema(tmp_path, monkeypatch
     assert agentic_path.exists()
     assert payload["system"] == "agentic_rag"
     assert "runtime_config" in payload
-    assert payload["runtime_config"]["schema_version"] == 3
-    assert payload["runtime_config"]["evaluator_version"] == "p5a"
+    assert payload["runtime_config"]["schema_version"] == 4
+    assert payload["runtime_config"]["evaluator_version"] == "p5b"
     assert payload["runtime_config"]["judge"] == {
         "enabled": False,
         "provider": "openai_compatible",

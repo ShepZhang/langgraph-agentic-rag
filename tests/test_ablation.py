@@ -105,8 +105,8 @@ def test_runtime_config_snapshot_includes_agent_feature_flags():
 def test_runtime_config_snapshot_includes_safe_active_prompt_manifest():
     snapshot = build_runtime_config_snapshot()
 
-    assert snapshot["schema_version"] == 3
-    assert snapshot["evaluator_version"] == "p5a"
+    assert snapshot["schema_version"] == 4
+    assert snapshot["evaluator_version"] == "p5b"
     assert set(snapshot["prompts"]) == {
         "agent.query_transform",
         "agent.retry_query_rewrite",
