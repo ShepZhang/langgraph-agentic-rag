@@ -238,3 +238,10 @@ def test_settings_rejects_empty_evaluation_history_db(monkeypatch):
 
     with pytest.raises(ValueError, match="EVALUATION_HISTORY_DB"):
         get_settings()
+
+
+def test_settings_rejects_empty_string_evaluation_history_db(monkeypatch):
+    monkeypatch.setenv("EVALUATION_HISTORY_DB", "")
+
+    with pytest.raises(ValueError, match="EVALUATION_HISTORY_DB"):
+        get_settings()
