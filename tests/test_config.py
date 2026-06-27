@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from config import get_settings
@@ -205,3 +207,34 @@ def test_get_settings_accepts_llm_temperature_alias(monkeypatch):
     settings = get_settings()
 
     assert settings.temperature == 0.3
+
+
+def test_settings_loads_evaluation_history_defaults(monkeypatch):
+    for name in (
+        "EVALUATION_HISTORY_ENABLED",
+        "EVALUATION_HISTORY_DB",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = get_settings()
+
+    assert settings.evaluation_history_enabled is True
+    assert settings.evaluation_history_db == Path("./data/evaluation_history.sqlite3")
+
+
+def test_settings_loads_evaluation_history_overrides(monkeypatch, tmp_path):
+    db_path = tmp_path / "history.sqlite3"
+    monkeypatch.setenv("EVALUATION_HISTORY_ENABLED", "false")
+    monkeypatch.setenv("EVALUATION_HISTORY_DB", str(db_path))
+
+    settings = get_settings()
+
+    assert settings.evaluation_history_enabled is False
+    assert settings.evaluation_history_db == db_path
+
+
+def test_settings_rejects_empty_evaluation_history_db(monkeypatch):
+    monkeypatch.setenv("EVALUATION_HISTORY_DB", "   ")
+
+    with pytest.raises(ValueError, match="EVALUATION_HISTORY_DB"):
+        get_settings()

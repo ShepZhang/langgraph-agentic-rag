@@ -17,8 +17,8 @@ from evaluation.schemas import RuntimeMetadata
 from prompting import get_active_prompt_manifest
 
 
-EVALUATION_SCHEMA_VERSION = 3
-EVALUATOR_VERSION = "p5a"
+EVALUATION_SCHEMA_VERSION = 4
+EVALUATOR_VERSION = "p5b"
 
 
 def build_runtime_config_snapshot(

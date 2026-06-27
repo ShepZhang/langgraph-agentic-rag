@@ -52,6 +52,8 @@ class Settings:
     api_upload_dir: Path
     api_document_registry_path: Path
     evaluation_run_dir: Path
+    evaluation_history_enabled: bool
+    evaluation_history_db: Path
 
     def __post_init__(self) -> None:
         """Validate settings early so runtime failures are explicit."""
@@ -104,6 +106,8 @@ class Settings:
             raise ValueError("API_DOCUMENT_REGISTRY_PATH must not be empty")
         if not str(self.evaluation_run_dir).strip():
             raise ValueError("EVALUATION_RUN_DIR must not be empty")
+        if not str(self.evaluation_history_db).strip():
+            raise ValueError("EVALUATION_HISTORY_DB must not be empty")
 
     @property
     def max_rewrite_attempts(self) -> int:
@@ -271,5 +275,9 @@ def get_settings() -> Settings:
         ),
         evaluation_run_dir=Path(
             os.getenv("EVALUATION_RUN_DIR", "./data/evaluation_runs")
+        ),
+        evaluation_history_enabled=_get_bool("EVALUATION_HISTORY_ENABLED", True),
+        evaluation_history_db=Path(
+            os.getenv("EVALUATION_HISTORY_DB", "./data/evaluation_history.sqlite3")
         ),
     )
