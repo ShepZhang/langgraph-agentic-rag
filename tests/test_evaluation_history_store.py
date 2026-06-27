@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
+from evaluation.history_service import EvaluationHistoryService
 from evaluation.history_store import (
     EVALUATION_HISTORY_DB_SCHEMA_VERSION,
     HistoryRecord,
@@ -392,3 +394,62 @@ def test_import_history_artifact_generates_stable_id(tmp_path):
     assert second["status"] == "stored"
     assert first["run_id"] == second["run_id"]
     assert store.list_runs()[0]["run_id"] == first["run_id"]
+
+
+def test_history_service_disabled_returns_disabled(tmp_path):
+    settings = SimpleNamespace(
+        evaluation_history_enabled=False,
+        evaluation_history_db=tmp_path / "history.sqlite3",
+    )
+    service = EvaluationHistoryService(settings=settings)
+
+    status = service.record_payload(
+        {
+            "runtime_config": _runtime_config(),
+            "summary": {"total_questions": 1, "correctness_score": 1.0},
+            "results": [{"question_id": "q001"}],
+        },
+        source="cli",
+        result_path="agentic_result.json",
+    )
+
+    assert status == {"status": "disabled", "run_id": None, "error": None}
+    assert not settings.evaluation_history_db.exists()
+
+
+def test_history_service_stores_payload_and_isolates_failures(tmp_path, monkeypatch):
+    settings = SimpleNamespace(
+        evaluation_history_enabled=True,
+        evaluation_history_db=tmp_path / "history.sqlite3",
+    )
+    service = EvaluationHistoryService(settings=settings)
+
+    stored = service.record_payload(
+        {
+            "runtime_config": _runtime_config(),
+            "summary": {"total_questions": 1, "correctness_score": 1.0},
+            "results": [{"question_id": "q001"}],
+        },
+        source="cli",
+        result_path="agentic_result.json",
+        run_id="eval_history_service",
+    )
+
+    assert stored["status"] == "stored"
+    assert stored["run_id"] == "eval_history_service"
+    assert service.list_runs(limit=1)[0]["run_id"] == "eval_history_service"
+
+    def fail_save(_record):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(service._store, "save_record", fail_save)
+    failed = service.record_payload(
+        {"summary": {}, "results": []},
+        source="cli",
+        result_path="broken.json",
+        run_id="eval_failed",
+    )
+
+    assert failed["status"] == "failed"
+    assert failed["run_id"] == "eval_failed"
+    assert "database is locked" in str(failed["error"])
