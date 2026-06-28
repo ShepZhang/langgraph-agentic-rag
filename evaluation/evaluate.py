@@ -22,6 +22,7 @@ from evaluation.dataset import (
     normalize_question,
     normalize_questions,
 )
+from evaluation.history_service import EvaluationHistoryService
 from evaluation.judges import Judge, build_configured_judge, describe_judge_runtime
 from evaluation.metrics import summarize_results as summarize_metric_results
 from evaluation.reporting import format_evaluation_report
@@ -156,14 +157,40 @@ def main(
 def write_evaluation_artifacts(report: dict[str, Any], output_dir: str | Path) -> None:
     """Write structured JSON artifacts for downstream evaluation analysis."""
 
+    output_path = Path(output_dir)
     runtime_config = report.get("runtime_config")
     if not isinstance(runtime_config, dict):
         runtime_config = build_runtime_config_snapshot()
     write_compatibility_artifacts(
         report,
-        output_dir,
+        output_path,
         runtime_config=runtime_config,
     )
+    _record_evaluation_history_best_effort(
+        report,
+        output_path / _history_artifact_filename(report),
+    )
+
+
+def _record_evaluation_history_best_effort(
+    report: dict[str, Any],
+    result_path: Path,
+) -> None:
+    try:
+        EvaluationHistoryService().record_payload(
+            report,
+            source="cli",
+            result_path=str(result_path),
+        )
+    except Exception:  # noqa: BLE001 - history sidecar must not block JSON artifacts.
+        return
+
+
+def _history_artifact_filename(report: dict[str, Any]) -> str:
+    summary = report.get("summary")
+    if isinstance(summary, dict) and summary.get("mode") == "comparison":
+        return "comparison_result.json"
+    return "agentic_result.json"
 
 
 def _find_judge_model(value: Any) -> str | None:

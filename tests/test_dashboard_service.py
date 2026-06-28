@@ -18,11 +18,15 @@ from evaluation.dashboard_formatters import (
     filter_failure_cases,
     get_failure_detail,
     get_runtime_config,
+    history_runs_to_table,
+    history_trends_to_table,
 )
 from evaluation.dashboard_models import (
     DEFAULT_ABLATION_RESULT_PATH,
     FAILURE_CASE_COLUMNS,
     FAILURE_COUNT_COLUMNS,
+    HISTORY_RUN_COLUMNS,
+    HISTORY_TREND_COLUMNS,
     METRIC_COLUMNS,
     SMOKE_QUESTION_IDS,
 )
@@ -74,6 +78,51 @@ class StaticAblationProvider:
         return self.payload
 
 
+class FakeHistoryService:
+    def __init__(self, fail=False, runs=None, trends=None):
+        self.fail = fail
+        self.runs = runs if runs is not None else [
+            {
+                "run_id": "eval_1",
+                "created_at": "2026-06-27T12:00:00.000000Z",
+                "source": "api",
+                "workspace_id": "workspace_1",
+                "status": "completed",
+                "mode": "comparison",
+                "schema_version": 4,
+                "evaluator_version": "p5b",
+                "prompt_manifest_hash": "sha256:abcdef",
+                "question_count": 5,
+                "result_path": "data/evaluation_runs/eval_1.json",
+            }
+        ]
+        self.trends = trends if trends is not None else [
+            {
+                "created_at": "2026-06-27T12:00:00.000000Z",
+                "run_id": "eval_1",
+                "system_id": "agentic",
+                "system_label": "Agentic RAG",
+                "evaluator_version": "p5b",
+                "prompt_manifest_hash": "sha256:abcdef",
+                "metric_name": "correctness_score",
+                "metric_value": 0.75,
+            }
+        ]
+
+    def list_runs(self, limit=20):
+        if self.fail:
+            raise RuntimeError("database unavailable")
+        return self.runs[:limit]
+
+    def query_trends(self, metric="correctness_score", system=None, limit=20):
+        if self.fail:
+            raise RuntimeError("database unavailable")
+        return self.trends[:limit]
+
+    def metric_names(self):
+        return ("correctness_score", "average_latency")
+
+
 def _ablation_payload(result: dict) -> dict:
     return {
         "kind": "ablation_result",
@@ -115,6 +164,89 @@ def test_dashboard_constants_define_exact_table_contracts():
         "Diagnostics",
         "Question",
     ]
+
+
+def test_history_table_contracts_are_stable():
+    assert HISTORY_RUN_COLUMNS == [
+        "Run ID",
+        "Created At",
+        "Source",
+        "Workspace",
+        "Status",
+        "Mode",
+        "Evaluator",
+        "Schema",
+        "Prompt Hash",
+        "Questions",
+        "Result Path",
+    ]
+    assert HISTORY_TREND_COLUMNS == [
+        "Created At",
+        "Run ID",
+        "System",
+        "Evaluator",
+        "Prompt Hash",
+        "Metric",
+        "Value",
+    ]
+
+
+def test_history_formatters_convert_rows_for_tables():
+    run_rows = history_runs_to_table(FakeHistoryService().runs)
+    trend_rows = history_trends_to_table(FakeHistoryService().trends)
+
+    assert run_rows[0] == [
+        "eval_1",
+        "2026-06-27T12:00:00.000000Z",
+        "api",
+        "workspace_1",
+        "completed",
+        "comparison",
+        "p5b",
+        4,
+        "sha256:abcde",
+        5,
+        "data/evaluation_runs/eval_1.json",
+    ]
+    assert trend_rows[0] == [
+        "2026-06-27T12:00:00.000000Z",
+        "eval_1",
+        "Agentic RAG",
+        "p5b",
+        "sha256:abcde",
+        "correctness_score",
+        0.75,
+    ]
+
+
+def test_dashboard_service_loads_history_snapshot_and_trends():
+    service = EvaluationDashboardService(history_service=FakeHistoryService())
+
+    snapshot = service.load_history_snapshot(limit=10)
+    trends = service.load_history_trends(metric="correctness_score", limit=10)
+
+    assert snapshot["status"] == "completed"
+    assert snapshot["run_rows"][0][0] == "eval_1"
+    assert snapshot["trend_rows"] == []
+    assert "Loaded 1 historical evaluation run(s)." in snapshot["message"]
+    assert trends["status"] == "completed"
+    assert trends["trend_rows"][0][2] == "Agentic RAG"
+
+
+def test_dashboard_service_returns_unavailable_history_view_on_failure():
+    service = EvaluationDashboardService(
+        history_service=FakeHistoryService(fail=True),
+    )
+
+    view = service.load_history_snapshot(limit=10)
+
+    assert view["status"] == "unavailable"
+    assert view["run_rows"] == []
+    assert view["trend_rows"] == []
+    assert (
+        "History unavailable: RuntimeError: database unavailable"
+        == view["message"]
+    )
 
 
 def test_build_summary_rows_supports_single_and_comparison_reports():

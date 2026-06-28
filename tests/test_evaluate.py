@@ -15,6 +15,14 @@ from evaluation.evaluate import evaluate_questions, format_report, load_eval_que
 from evaluation.schemas import JudgeResult
 
 
+def _disable_history_recording(monkeypatch: pytest.MonkeyPatch) -> None:
+    class NoopHistoryService:
+        def record_payload(self, *args: Any, **kwargs: Any) -> dict[str, str | None]:
+            return {"status": "disabled", "run_id": None, "error": None}
+
+    monkeypatch.setattr(evaluator, "EvaluationHistoryService", lambda: NoopHistoryService())
+
+
 def test_public_facade_exports_owned_callables():
     public_names = [
         "load_eval_questions",
@@ -597,6 +605,8 @@ def test_injected_judge_runtime_metadata_is_preserved_in_written_artifacts(
     tmp_path,
     monkeypatch,
 ) -> None:
+    _disable_history_recording(monkeypatch)
+
     class InjectedJudge:
         def evaluate(self, question, result) -> JudgeResult:
             return JudgeResult.completed(
@@ -632,6 +642,98 @@ def test_injected_judge_runtime_metadata_is_preserved_in_written_artifacts(
     }
     assert report["runtime_config"]["judge"] == expected_metadata
     assert payload["runtime_config"]["judge"] == expected_metadata
+
+
+def test_write_evaluation_artifacts_records_history_after_json_write(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    class SpyHistoryService:
+        def record_payload(self, payload, *, source, result_path, run_id=None):
+            calls.append(
+                {
+                    "payload": payload,
+                    "source": source,
+                    "result_path": result_path,
+                    "run_id": run_id,
+                }
+            )
+            return {"status": "stored", "run_id": "eval_spy", "error": None}
+
+    monkeypatch.setattr(
+        evaluator,
+        "EvaluationHistoryService",
+        lambda: SpyHistoryService(),
+    )
+    report = {
+        "runtime_config": evaluator.build_runtime_config_snapshot(),
+        "summary": {"total_questions": 1, "correctness_score": 1.0},
+        "results": [{"question_id": "q001"}],
+    }
+
+    evaluator.write_evaluation_artifacts(report, tmp_path)
+
+    assert (tmp_path / "agentic_result.json").exists()
+    assert calls == [
+        {
+            "payload": report,
+            "source": "cli",
+            "result_path": str(tmp_path / "agentic_result.json"),
+            "run_id": None,
+        }
+    ]
+
+
+def test_write_evaluation_artifacts_records_comparison_artifact_path(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    class SpyHistoryService:
+        def record_payload(self, payload, *, source, result_path, run_id=None):
+            calls.append((source, result_path))
+            return {"status": "stored", "run_id": "eval_spy", "error": None}
+
+    monkeypatch.setattr(
+        evaluator,
+        "EvaluationHistoryService",
+        lambda: SpyHistoryService(),
+    )
+    report = {
+        "runtime_config": evaluator.build_runtime_config_snapshot(),
+        "summary": {
+            "mode": "comparison",
+            "naive": {"total_questions": 1},
+            "agentic": {"total_questions": 1},
+        },
+        "results": [
+            {"naive": {"question_id": "q001"}, "agentic": {"question_id": "q001"}}
+        ],
+    }
+
+    evaluator.write_evaluation_artifacts(report, tmp_path)
+
+    assert calls == [("cli", str(tmp_path / "comparison_result.json"))]
+
+
+def test_write_evaluation_artifacts_ignores_history_service_construction_failure(
+    tmp_path, monkeypatch
+):
+    class BrokenHistoryService:
+        def __init__(self) -> None:
+            raise ValueError("history is misconfigured")
+
+    monkeypatch.setattr(evaluator, "EvaluationHistoryService", BrokenHistoryService)
+    report = {
+        "runtime_config": evaluator.build_runtime_config_snapshot(),
+        "summary": {"total_questions": 1, "correctness_score": 1.0},
+        "results": [{"question_id": "q001"}],
+    }
+
+    evaluator.write_evaluation_artifacts(report, tmp_path)
+
+    assert (tmp_path / "agentic_result.json").exists()
 
 
 def test_evaluate_questions_builds_configured_judge_once_when_omitted(
@@ -1176,6 +1278,8 @@ def test_main_prints_report_with_injected_runner(tmp_path, capsys):
 
 
 def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
+    _disable_history_recording(monkeypatch)
+
     path = tmp_path / "eval.json"
     output_dir = tmp_path / "artifacts"
     for name in (
@@ -1249,9 +1353,9 @@ def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
         agentic_payload["runtime_config"],
         comparison_payload["runtime_config"],
     ]
-    assert all(runtime_config["schema_version"] == 3 for runtime_config in runtime_configs)
+    assert all(runtime_config["schema_version"] == 4 for runtime_config in runtime_configs)
     assert all(
-        runtime_config["evaluator_version"] == "p5a"
+        runtime_config["evaluator_version"] == "p5b"
         for runtime_config in runtime_configs
     )
     assert all(
@@ -1281,6 +1385,8 @@ def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
 
 
 def test_main_writes_single_system_agentic_artifact_schema(tmp_path, monkeypatch):
+    _disable_history_recording(monkeypatch)
+
     path = tmp_path / "eval.json"
     output_dir = tmp_path / "artifacts"
     for name in (
@@ -1325,8 +1431,8 @@ def test_main_writes_single_system_agentic_artifact_schema(tmp_path, monkeypatch
     assert agentic_path.exists()
     assert payload["system"] == "agentic_rag"
     assert "runtime_config" in payload
-    assert payload["runtime_config"]["schema_version"] == 3
-    assert payload["runtime_config"]["evaluator_version"] == "p5a"
+    assert payload["runtime_config"]["schema_version"] == 4
+    assert payload["runtime_config"]["evaluator_version"] == "p5b"
     assert payload["runtime_config"]["judge"] == {
         "enabled": False,
         "provider": "openai_compatible",

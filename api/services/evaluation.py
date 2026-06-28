@@ -10,13 +10,19 @@ from typing import Any
 from baseline.naive_rag import run_naive_rag
 from config import Settings, get_settings
 from evaluation.evaluate import evaluate_questions, load_eval_questions
+from evaluation.history_service import EvaluationHistoryService
 
 
 class EvaluationService:
     """Run and persist lightweight evaluation reports."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        history_service: EvaluationHistoryService | None = None,
+    ) -> None:
         self.settings = settings or get_settings()
+        self._history = history_service or EvaluationHistoryService(settings=self.settings)
 
     def run_evaluation(
         self,
@@ -50,6 +56,17 @@ class EvaluationService:
             json.dumps(payload, indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
         )
+        history_status = self._history.record_payload(
+            payload,
+            source="api",
+            result_path=str(result_path),
+            run_id=run_id,
+        )
+        payload["history"] = history_status
+        result_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
         return _public_run(payload)
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
@@ -60,6 +77,17 @@ class EvaluationService:
             return None
         payload = json.loads(path.read_text(encoding="utf-8"))
         return _public_run(payload)
+
+    def list_history_runs(self, limit: int = 20) -> list[dict[str, Any]]:
+        return self._history.list_runs(limit=limit)
+
+    def query_history_trends(
+        self,
+        metric: str = "correctness_score",
+        system: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        return self._history.query_trends(metric=metric, system=system, limit=limit)
 
     def _run_path(self, run_id: str) -> Path:
         return self.settings.evaluation_run_dir / f"{run_id}.json"

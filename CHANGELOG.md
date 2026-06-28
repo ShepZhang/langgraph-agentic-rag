@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.5.1-p5b - SQLite Historical Evaluation + Trend Dashboard
+
+Date: 2026-06-27
+
+### Added
+
+- Added SQLite sidecar storage for historical evaluation runs.
+- Added prompt-aware historical metric trends for CLI/API evaluation artifacts.
+- Added FastAPI and Gradio read-only history views for recent runs and metric trends.
+
+### Changed
+
+- Advanced evaluation runtime metadata to schema version `4` and evaluator version `p5b`.
+- Preserved JSON artifacts as the complete compatibility payload while indexing summaries into SQLite.
+- Hardened SQLite history persistence so runtime config, prompt manifests, summaries, metrics, and failure counts are sanitized again at the `HistoryStore.save_record()` boundary.
+
+### Notes
+
+- SQLite history is local runtime data and is disabled safely with `EVALUATION_HISTORY_ENABLED=false`.
+- Legacy artifacts without schema or evaluator metadata import as `legacy`.
+- Background Evaluation and Trace Drill-down remain future work.
+
+### Verification
+
+- Full test suite: `.venv/bin/python -m pytest -q` → `672 passed in 4.31s`.
+- Focused history tests: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py -q` → `74 passed in 1.64s`.
+- API/Dashboard compatibility tests: `.venv/bin/python -m pytest tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py -q` → `83 passed in 4.45s`.
+
 ## v0.5.0-p5a - DeepSeek Semantic Judge
 
 Date: 2026-06-22

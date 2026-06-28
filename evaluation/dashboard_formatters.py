@@ -190,6 +190,48 @@ def failure_cases_to_table(cases: Sequence[FailureCaseRow]) -> list[list[str]]:
     ]
 
 
+def history_runs_to_table(rows: Sequence[Mapping[str, Any]]) -> list[list[Any]]:
+    """Convert persisted history run records to dashboard table rows."""
+
+    return [
+        [
+            _text(row.get("run_id")),
+            _text(row.get("created_at")),
+            _text(row.get("source")),
+            _text(row.get("workspace_id")),
+            _text(row.get("status")),
+            _text(row.get("mode")),
+            _text(row.get("evaluator_version")) or "legacy",
+            row.get("schema_version")
+            if row.get("schema_version") is not None
+            else "legacy",
+            _hash_prefix(row.get("prompt_manifest_hash")),
+            row.get("question_count")
+            if row.get("question_count") is not None
+            else 0,
+            _text(row.get("result_path")),
+        ]
+        for row in rows
+    ]
+
+
+def history_trends_to_table(rows: Sequence[Mapping[str, Any]]) -> list[list[Any]]:
+    """Convert persisted history metric records to dashboard table rows."""
+
+    return [
+        [
+            _text(row.get("created_at")),
+            _text(row.get("run_id")),
+            _text(row.get("system_label")) or _text(row.get("system_id")),
+            _text(row.get("evaluator_version")) or "legacy",
+            _hash_prefix(row.get("prompt_manifest_hash")),
+            _text(row.get("metric_name")),
+            _metric_value(row.get("metric_value")),
+        ]
+        for row in rows
+    ]
+
+
 def get_runtime_config(
     payload: Mapping[str, Any],
     variant_id: str | None,
@@ -225,6 +267,14 @@ def _metric_value(value: Any) -> Any:
     if isinstance(value, float):
         return round(value, 4)
     return value
+
+
+def _hash_prefix(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    if len(value) <= 12:
+        return value
+    return value[:12]
 
 
 def _failure_case(
@@ -334,6 +384,12 @@ def _diagnostics_source(value: str) -> DiagnosticsSource:
     if value in {"stored", "derived", "unavailable"}:
         return cast(DiagnosticsSource, value)
     return "unavailable"
+
+
+def _text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:

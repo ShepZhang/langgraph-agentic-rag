@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from langchain_core.documents import Document
 
+import ui.gradio_app as gradio_app
 from ui.gradio_app import (
     answer_question,
     build_document_index,
@@ -208,6 +209,7 @@ def test_create_app_contains_document_and_evaluation_tabs():
     assert "Evaluation" in labels
     assert "Quick Compare" in labels
     assert "Ablation Snapshot" in labels
+    assert "History Trends" in labels
 
 
 def test_create_app_contains_dashboard_tables_and_filters():
@@ -224,6 +226,9 @@ def test_create_app_contains_dashboard_tables_and_filters():
     assert "Ablation reliability metrics" in labels
     assert "Ablation variant" in labels
     assert "Runtime configuration" in labels
+    assert "Recent evaluation runs" in labels
+    assert "Metric trend rows" in labels
+    assert "Trend metric" in labels
 
 
 def test_create_app_stacks_quick_controls_on_narrow_viewports():
@@ -624,6 +629,48 @@ def test_snapshot_helpers_return_dropdown_updates_and_runtime_config():
     assert format_variant_runtime_config(None, "v0_naive", service=service) == {}
     assert service.run_calls == []
     assert service.snapshot_calls == [()]
+
+
+def test_load_history_dashboard_returns_runs_and_metric_choices():
+    class FakeService:
+        def load_history_snapshot(self, limit=20):
+            return {
+                "status": "completed",
+                "run_rows": [["eval_1"]],
+                "trend_rows": [],
+                "metric_choices": ["correctness_score", "average_latency"],
+                "message": "Loaded 1 historical evaluation run(s).",
+            }
+
+    status, runs, metric_update, trends = gradio_app.load_history_dashboard(
+        service=FakeService()
+    )
+
+    assert status == "Loaded 1 historical evaluation run(s)."
+    assert runs == [["eval_1"]]
+    assert metric_update["choices"] == ["correctness_score", "average_latency"]
+    assert metric_update["value"] == "correctness_score"
+    assert trends == []
+
+
+def test_load_history_trends_returns_trend_rows():
+    class FakeService:
+        def load_history_trends(self, metric="correctness_score", system=None, limit=20):
+            return {
+                "status": "completed",
+                "run_rows": [],
+                "trend_rows": [["2026-06-27T12:00:00.000000Z"]],
+                "metric_choices": ["correctness_score"],
+                "message": "Loaded 1 trend row(s) for correctness_score.",
+            }
+
+    status, rows = gradio_app.load_history_trends(
+        metric="correctness_score",
+        service=FakeService(),
+    )
+
+    assert status == "Loaded 1 trend row(s) for correctness_score."
+    assert rows == [["2026-06-27T12:00:00.000000Z"]]
 
 
 def test_snapshot_failure_choices_disambiguate_same_case_across_variants():

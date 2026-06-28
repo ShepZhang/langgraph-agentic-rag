@@ -6,10 +6,12 @@ Use this checklist before publishing the repository or cutting a public version.
 
 - Repository: `ShepZhang/langgraph-agentic-rag`
 - URL: `https://github.com/ShepZhang/langgraph-agentic-rag`
-- Branch: `main`
-- Version label: `v0.5.0-p5a`
-- Evaluation artifact schema: `3`
-- Evaluator version: `p5a`
+- Branch: `codex/p5b-sqlite-eval-history`
+- Target integration branch: `main`
+- Version label: `v0.5.1-p5b`
+- Tag target: `v0.5.1-p5b`
+- Evaluation artifact schema: `4`
+- Evaluator version: `p5b`
 - Prompt registry: 11 registered `v1` prompts, 9 active
 - Positioning: reliability-oriented Agentic RAG document QA system
 - Main entry points:
@@ -18,50 +20,58 @@ Use this checklist before publishing the repository or cutting a public version.
   - Evaluation CLI: `python -m evaluation.evaluate --questions evaluation/eval_questions.json --output-dir evaluation/results`
   - Ablation CLI: `python -m experiments.run_ablation --questions evaluation/eval_questions.json --output-dir experiments/results`
 
+## P5b SQLite Historical Evaluation Release Notes
+
+- SQLite history database: `data/evaluation_history.sqlite3`
+- Runtime controls:
+  - `EVALUATION_HISTORY_ENABLED=true`
+  - `EVALUATION_HISTORY_DB=./data/evaluation_history.sqlite3`
+- `data/evaluation_history.sqlite3` is ignored runtime data and must not be
+  committed.
+- JSON artifacts remain the complete compatibility payload. SQLite stores only
+  normalized summaries, failure counts, sanitized runtime config, and prompt
+  manifests.
+- Prompt manifests store prompt IDs, versions, and fingerprints only. No
+  secrets, full prompt templates, or rendered prompt payloads are stored.
+- `HistoryStore.save_record()` re-applies sanitization to runtime config,
+  prompt manifests, summaries, metrics, and failure counts before SQLite writes.
+- Background evaluation and trace drill-down remain future milestones.
+
 ## Verification Commands
 
 Run these before publishing:
 
 ```bash
 .venv/bin/python -m pytest -q
+.venv/bin/python -m ruff check .
 .venv/bin/python -m compileall prompting agent rag api evaluation experiments baseline tools observability
 .venv/bin/python -m pytest \
-  tests/test_evaluation_judge_config.py \
-  tests/test_evaluation_judge_evidence.py \
-  tests/test_evaluation_judge_parsing.py \
-  tests/test_evaluation_judges.py \
-  tests/test_evaluation_schemas.py \
-  tests/test_evaluation_runners.py \
-  tests/test_evaluation_metrics.py \
-  tests/test_evaluation_comparison.py \
-  tests/test_evaluation_reporting.py \
-  tests/test_prompt_registry.py \
-  tests/test_prompt_catalog.py \
-  -q
-.venv/bin/python -m pytest \
-  tests/test_evaluate.py::test_main_prints_report_with_injected_runner \
-  tests/test_evaluate.py::test_main_writes_comparison_artifacts \
-  tests/test_evaluate.py::test_main_writes_single_system_agentic_artifact_schema \
-  -q
-.venv/bin/python -m pytest \
+  tests/test_evaluation_history_store.py \
+  tests/test_evaluation_storage.py \
+  tests/test_evaluate.py \
+  tests/test_fastapi_routes.py \
+  tests/test_dashboard_service.py \
+  tests/test_gradio_app.py \
   tests/test_ablation.py \
   tests/test_evaluation_matrix.py \
-  tests/test_dashboard_service.py \
-  tests/test_fastapi_routes.py \
   -q
 rg -n \
-  'evaluation\.semantic_judge|EVALUATION_JUDGE_' \
-  README.md .env.example prompting evaluation tests
+  'OPENAI_API_KEY|EVALUATION_JUDGE_API_KEY|Bearer |rendered prompt|full prompt template' \
+  evaluation api ui README.md CHANGELOG.md docs/github_release_checklist.md \
+  .env.example
 git diff --check
 ```
 
-Observed verification for `v0.5.0-p5a`:
+Observed verification for `v0.5.1-p5b`:
 
-- Full test suite: `641 passed`
-- Focused Judge and evaluation tests: `188 passed`
-- CLI compatibility smoke tests: `3 passed`
-- Ablation, matrix, Dashboard, and FastAPI compatibility tests: `92 passed`
-- Python `compileall`: success
+- Full test suite: `.venv/bin/python -m pytest -q` → `672 passed in 4.31s`
+- Focused compatibility suite: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py tests/test_ablation.py tests/test_evaluation_matrix.py -q` → `194 passed in 4.50s`
+- Focused history tests: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py -q` → `74 passed in 1.64s`
+- API/Dashboard compatibility tests: `.venv/bin/python -m pytest tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py -q` → `83 passed in 4.45s`
+- Ruff: `.venv/bin/python -m ruff check .` → `All checks passed!`
+- Python `compileall`: `Listing 'prompting'...` through `Listing 'observability'...`, exit code `0`
+- Whitespace check: `git diff --check` → no output, exit code `0`
+- Forbidden persistence scan: `rg -n 'OPENAI_API_KEY|EVALUATION_JUDGE_API_KEY|Bearer |rendered prompt|full prompt template' evaluation api ui README.md CHANGELOG.md docs/github_release_checklist.md .env.example` returned only environment variable names/placeholders, documentation safety statements, and sanitizer code references; no literal secrets were found.
 
 ## GitHub Project Narrative
 
@@ -71,7 +81,7 @@ Use this short description in the GitHub repository summary:
 > hybrid retrieval, reranking, retrieval grading, retry/fallback routing,
 > claim-level citation verification, optional DeepSeek semantic judging,
 > versioned prompt fingerprints, trace logging, FastAPI, Gradio, and
-> evaluation/ablation tooling.
+> evaluation/ablation tooling with SQLite-backed history trends.
 
 Recommended topics:
 
@@ -93,12 +103,12 @@ git switch main
 git status --short
 git log --oneline --decorate --max-count=5
 # Run every command in "Verification Commands" above and confirm expected counts.
-git tag v0.5.0-p5a
+git tag v0.5.1-p5b
 git push origin main
-git push origin v0.5.0-p5a
+git push origin v0.5.1-p5b
 ```
 
-The tag `v0.5.0-p5a` is created only after user-approved integration into an
+The tag `v0.5.1-p5b` is created only after user-approved integration into an
 updated `main` and a successful full-suite run on merged `main`. Also confirm
 the worktree is clean and the final local verification matches the observed
 baseline above.
@@ -118,6 +128,9 @@ baseline above.
   ground truth.
 - P5a adds Judge fields to raw reports and existing consumers but adds no
   Evaluation Dashboard UI.
+- P5b adds a read-only Dashboard history tab and FastAPI history routes. It does
+  not add background evaluation jobs, progress, cancellation, retries, or
+  per-question trace drill-down.
 - Prompt versioning provides deterministic template fingerprints and safe
   manifests for 11 registered `v1` templates: 9 active runtime prompts and 2
   inactive compatibility-only templates. It does not provide dynamic prompt

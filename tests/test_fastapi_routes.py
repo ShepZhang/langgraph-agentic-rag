@@ -89,6 +89,39 @@ class FakeEvaluationService:
             "result_path": "data/evaluation_runs/eval_1.json",
         }
 
+    def list_history_runs(self, limit=20):
+        return [
+            {
+                "run_id": "eval_1",
+                "created_at": "2026-06-27T12:00:00.000000Z",
+                "source": "api",
+                "workspace_id": "workspace_1",
+                "status": "completed",
+                "mode": "comparison",
+                "schema_version": 4,
+                "evaluator_version": "p5b",
+                "prompt_manifest_hash": "sha256:abc",
+                "question_count": 1,
+                "result_path": "data/evaluation_runs/eval_1.json",
+            }
+        ]
+
+    def query_history_trends(self, metric="correctness_score", system=None, limit=20):
+        if metric == "not_a_metric":
+            raise ValueError("Unsupported history metric: not_a_metric")
+        return [
+            {
+                "created_at": "2026-06-27T12:00:00.000000Z",
+                "run_id": "eval_1",
+                "system_id": system or "agentic",
+                "system_label": "Agentic RAG",
+                "evaluator_version": "p5b",
+                "prompt_manifest_hash": "sha256:abc",
+                "metric_name": metric,
+                "metric_value": 0.75,
+            }
+        ]
+
 
 def create_test_client():
     from api.dependencies import (
@@ -118,10 +151,10 @@ def create_test_client():
     return TestClient(app)
 
 
-def test_api_reports_p4b_version():
+def test_api_reports_p5b_version():
     from api.main import create_app
 
-    assert create_app().version == "0.4.1-p4b"
+    assert create_app().version == "0.5.1-p5b"
 
 
 def test_chat_route_returns_agent_response_schema():
@@ -212,3 +245,46 @@ def test_evaluation_routes_run_and_read_results():
         "total_questions": 1,
         "judge_completion_rate": 1.0,
     }
+
+
+def test_evaluation_history_routes_list_runs_and_trends_before_run_id_capture():
+    client = create_test_client()
+
+    history_response = client.get("/evaluation/history", params={"limit": 5})
+    trends_response = client.get(
+        "/evaluation/history/trends",
+        params={"metric": "correctness_score", "system": "agentic", "limit": 5},
+    )
+
+    assert history_response.status_code == 200
+    assert history_response.json()["runs"][0]["run_id"] == "eval_1"
+    assert history_response.json()["runs"][0]["evaluator_version"] == "p5b"
+    assert trends_response.status_code == 200
+    assert trends_response.json() == {
+        "metric": "correctness_score",
+        "system": "agentic",
+        "rows": [
+            {
+                "created_at": "2026-06-27T12:00:00.000000Z",
+                "run_id": "eval_1",
+                "system_id": "agentic",
+                "system_label": "Agentic RAG",
+                "evaluator_version": "p5b",
+                "prompt_manifest_hash": "sha256:abc",
+                "metric_name": "correctness_score",
+                "metric_value": 0.75,
+            }
+        ],
+    }
+
+
+def test_evaluation_history_trends_returns_client_error_for_unsupported_metric():
+    client = create_test_client()
+
+    response = client.get(
+        "/evaluation/history/trends",
+        params={"metric": "not_a_metric"},
+    )
+
+    assert response.status_code == 400
+    assert "Unsupported history metric: not_a_metric" in response.json()["detail"]

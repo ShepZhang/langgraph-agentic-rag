@@ -5,7 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.dependencies import get_evaluation_service
-from api.schemas import EvaluationRunRequest, EvaluationRunResponse
+from api.schemas import (
+    EvaluationHistoryListResponse,
+    EvaluationRunRequest,
+    EvaluationRunResponse,
+    EvaluationTrendResponse,
+)
 from api.services.evaluation import EvaluationService
 
 
@@ -25,6 +30,42 @@ def run_evaluation(
             question_ids=request.question_ids,
             include_baseline=request.include_baseline,
         )
+    )
+
+
+@router.get("/history", response_model=EvaluationHistoryListResponse)
+def list_evaluation_history(
+    limit: int = 20,
+    evaluation_service: EvaluationService = Depends(get_evaluation_service),
+) -> EvaluationHistoryListResponse:
+    """List persisted evaluation history runs."""
+
+    return EvaluationHistoryListResponse(
+        runs=evaluation_service.list_history_runs(limit=limit)
+    )
+
+
+@router.get("/history/trends", response_model=EvaluationTrendResponse)
+def get_evaluation_history_trends(
+    metric: str = "correctness_score",
+    system: str | None = None,
+    limit: int = 20,
+    evaluation_service: EvaluationService = Depends(get_evaluation_service),
+) -> EvaluationTrendResponse:
+    """Return persisted evaluation history trend rows."""
+
+    try:
+        rows = evaluation_service.query_history_trends(
+            metric=metric,
+            system=system,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return EvaluationTrendResponse(
+        metric=metric,
+        system=system,
+        rows=rows,
     )
 
 

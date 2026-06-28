@@ -33,6 +33,28 @@ FAILURE_CASE_COLUMNS = [
     "Diagnostics",
     "Question",
 ]
+HISTORY_RUN_COLUMNS = [
+    "Run ID",
+    "Created At",
+    "Source",
+    "Workspace",
+    "Status",
+    "Mode",
+    "Evaluator",
+    "Schema",
+    "Prompt Hash",
+    "Questions",
+    "Result Path",
+]
+HISTORY_TREND_COLUMNS = [
+    "Created At",
+    "Run ID",
+    "System",
+    "Evaluator",
+    "Prompt Hash",
+    "Metric",
+    "Value",
+]
 
 
 class QuestionOption(TypedDict):
@@ -70,6 +92,14 @@ class DashboardView(TypedDict):
     failure_count_rows: list[list[Any]]
     failure_cases: list[FailureCaseRow]
     raw_report: dict[str, Any]
+    message: str
+
+
+class HistoryDashboardView(TypedDict):
+    status: DashboardStatus
+    run_rows: list[list[Any]]
+    trend_rows: list[list[Any]]
+    metric_choices: list[str]
     message: str
 
 

@@ -12,7 +12,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Reliability-oriented Agentic RAG API",
-        version="0.4.1-p4b",
+        version="0.5.1-p5b",
     )
     app.include_router(chat.router)
     app.include_router(documents.router)
