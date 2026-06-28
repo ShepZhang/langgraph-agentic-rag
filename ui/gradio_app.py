@@ -17,6 +17,8 @@ from evaluation.dashboard_formatters import (
 from evaluation.dashboard_models import (
     FAILURE_CASE_COLUMNS,
     FAILURE_COUNT_COLUMNS,
+    HISTORY_RUN_COLUMNS,
+    HISTORY_TREND_COLUMNS,
     METRIC_COLUMNS,
     SMOKE_QUESTION_IDS,
 )
@@ -290,6 +292,35 @@ def load_ablation_dashboard(
         {},
         DEFAULT_FAILURE_DETAIL,
     )
+
+
+def load_history_dashboard(
+    service: EvaluationDashboardService | None = None,
+) -> tuple[str, list[list[Any]], dict[str, Any], list[list[Any]]]:
+    """Load recent historical runs for the History Trends tab."""
+
+    resolved_service = service or EvaluationDashboardService()
+    view = resolved_service.load_history_snapshot()
+    metric_choices = list(view.get("metric_choices", []))
+    metric_value = metric_choices[0] if metric_choices else None
+    return (
+        str(view["message"]),
+        list(view.get("run_rows", [])),
+        gr.update(choices=metric_choices, value=metric_value),
+        list(view.get("trend_rows", [])),
+    )
+
+
+def load_history_trends(
+    metric: str | None,
+    service: EvaluationDashboardService | None = None,
+) -> tuple[str, list[list[Any]]]:
+    """Load trend rows for the selected metric."""
+
+    resolved_service = service or EvaluationDashboardService()
+    selected_metric = metric or "correctness_score"
+    view = resolved_service.load_history_trends(metric=selected_metric)
+    return str(view["message"]), list(view.get("trend_rows", []))
 
 
 def format_variant_runtime_config(
@@ -710,6 +741,51 @@ def _build_evaluation_tab(
             gr.Markdown(
                 "Future upgrade: background live V0-V6 runs with progress, "
                 "cancel, checkpoint recovery, shared run IDs, and trace linkage."
+            )
+
+        with gr.Tab("History Trends"):
+            gr.Markdown(
+                "This view reads SQLite sidecar history and does not rerun models."
+            )
+            refresh_history = gr.Button("Refresh History", variant="primary")
+            history_status = gr.Markdown(
+                "Load SQLite-backed historical evaluation runs.",
+                elem_classes="dashboard-status",
+            )
+            history_runs = gr.Dataframe(
+                headers=HISTORY_RUN_COLUMNS,
+                value=[],
+                label="Recent evaluation runs",
+                interactive=False,
+                wrap=True,
+            )
+            history_metric = gr.Dropdown(
+                choices=["correctness_score"],
+                value="correctness_score",
+                label="Trend metric",
+            )
+            history_trends = gr.Dataframe(
+                headers=HISTORY_TREND_COLUMNS,
+                value=[],
+                label="Metric trend rows",
+                interactive=False,
+                wrap=True,
+            )
+
+            refresh_history.click(
+                fn=lambda: load_history_dashboard(service=service),
+                outputs=[
+                    history_status,
+                    history_runs,
+                    history_metric,
+                    history_trends,
+                ],
+            )
+            history_metric.change(
+                fn=lambda metric: load_history_trends(metric, service=service),
+                inputs=history_metric,
+                outputs=[history_status, history_trends],
+                queue=False,
             )
 
 
