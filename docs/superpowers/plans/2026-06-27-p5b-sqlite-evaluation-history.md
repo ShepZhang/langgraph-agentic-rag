@@ -2623,18 +2623,47 @@ Create tag `v0.5.1-p5b` only after:
 - merged `main` passes the full suite
 - final integration record is committed
 
+## Observed Verification
+
+- Focused compatibility suite:
+  `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py tests/test_ablation.py tests/test_evaluation_matrix.py -q`
+  → `193 passed in 4.52s`.
+- Full test suite:
+  `.venv/bin/python -m pytest -q`
+  → `671 passed in 4.34s`.
+- Focused history tests:
+  `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py -q`
+  → `73 passed in 2.00s`.
+- API/Dashboard compatibility tests:
+  `.venv/bin/python -m pytest tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py -q`
+  → `83 passed in 4.50s`.
+- Ruff:
+  `.venv/bin/python -m ruff check .`
+  → `All checks passed!`.
+- Python compileall:
+  `.venv/bin/python -m compileall prompting agent rag api evaluation experiments baseline tools observability`
+  → `Listing 'prompting'...` through `Listing 'observability'...`, exit code `0`.
+- Whitespace check:
+  `git diff --check`
+  → no output, exit code `0`.
+- Forbidden persistence scan:
+  `rg -n 'OPENAI_API_KEY|EVALUATION_JUDGE_API_KEY|Bearer |rendered prompt|full prompt template' evaluation api ui README.md CHANGELOG.md docs/github_release_checklist.md .env.example`
+  → matches were limited to environment variable names/placeholders,
+  documentation safety statements that prompt templates/rendered prompts are
+  not stored, and sanitizer code references; no literal secrets were found.
+
 ## Coverage Checklist
 
-- [ ] P5b config defaults and overrides covered
-- [ ] runtime metadata reports schema `4` / evaluator `p5b`
-- [ ] SQLite schema initializes idempotently
-- [ ] single, comparison, matrix, ablation, and API wrapper payloads extract correctly
-- [ ] legacy artifacts display as legacy
-- [ ] prompt manifest hash is canonical and template-free
-- [ ] history disabled path avoids DB writes
-- [ ] history write failure does not remove JSON artifacts
-- [ ] CLI artifact writer records history after JSON writes
-- [ ] FastAPI exposes history runs and trends without route capture
-- [ ] Dashboard service exposes UI-safe run and trend views
-- [ ] Gradio adds a read-only History Trends tab
-- [ ] docs record Background Evaluation and Trace Drill-down as deferred
+- [x] P5b config defaults and overrides covered
+- [x] runtime metadata reports schema `4` / evaluator `p5b`
+- [x] SQLite schema initializes idempotently
+- [x] single, comparison, matrix, ablation, and API wrapper payloads extract correctly
+- [x] legacy artifacts display as legacy
+- [x] prompt manifest hash is canonical and template-free
+- [x] history disabled path avoids DB writes
+- [x] history write failure does not remove JSON artifacts
+- [x] CLI artifact writer records history after JSON writes
+- [x] FastAPI exposes history runs and trends without route capture
+- [x] Dashboard service exposes UI-safe run and trend views
+- [x] Gradio adds a read-only History Trends tab
+- [x] docs record Background Evaluation and Trace Drill-down as deferred

@@ -2,7 +2,7 @@
 
 基于 LangGraph 的 Agentic RAG 智能文档问答系统，用于面向私有知识库的 PDF / Markdown / TXT 文档问答。
 
-`langgraph-agentic-rag` is a reliability-oriented Agentic RAG document QA system that upgrades naive retrieve-generate RAG into a stateful LangGraph Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, typed internal tools, answer revision, baseline comparison, an Evaluation Dashboard, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
+`langgraph-agentic-rag` is a reliability-oriented Agentic RAG document QA system that upgrades naive retrieve-generate RAG into a stateful LangGraph Agent workflow. It integrates structured query transformation, optional hybrid retrieval, reranking, structured retrieval grading, partial-relevance recovery, conditional retry, fallback handling, citation-aware answer generation, claim-level citation verification, typed internal tools, answer revision, baseline comparison, SQLite-backed evaluation history, an Evaluation Dashboard, and executable V0-V6 ablation artifacts to improve reliability, explainability, debuggability, and evaluability in complex document QA scenarios.
 
 The project is production-oriented as an architecture and evaluation exercise, but it is not a complete production deployment. Authentication, authorization, deployment hardening, and full observability are intentionally left for later milestones.
 
@@ -42,7 +42,7 @@ The system keeps a strict distinction between the original user question and the
 
 ```text
 UI Layer
-  Gradio Document QA and Evaluation tabs with QA, comparison, and diagnostics
+  Gradio Document QA and Evaluation tabs with QA, comparison, diagnostics, and history trends
 
 RAG Layer
   loader -> chunker -> embeddings -> Chroma vector store
@@ -55,7 +55,7 @@ Tool Registry
   typed internal tools -> validation -> dependency injection -> diagnostics
 
 Evaluation Layer
-  eval_questions.json -> baseline/agentic runners -> JSON artifacts -> report
+  eval_questions.json -> baseline/agentic runners -> JSON artifacts -> SQLite history index -> reports/trends
 ```
 
 ## Agent Workflow
@@ -166,10 +166,11 @@ Key state fields:
 - Citation-aware grounded answer generation using only selected evidence chunks.
 - Citation safety: normal answers without valid supporting citation indices or matching answer citation markers fall back instead of returning unsupported answers.
 - Claim-level citation verification: normal cited answers are split into atomic claims, verified against cited chunks, revised once if unsupported, and otherwise sent to fallback.
-- Gradio UI with Document QA and Evaluation tabs for upload, indexing, question answering, quick comparison, saved ablation inspection, citations, retrieved chunks, and failure diagnostics.
+- Gradio UI with Document QA and Evaluation tabs for upload, indexing, question answering, quick comparison, saved ablation inspection, SQLite history trends, citations, retrieved chunks, and failure diagnostics.
 - Naive RAG baseline package and CLI for retrieve-once comparison.
 - Reliability evaluation runner comparing naive RAG and Agentic RAG on shared documents and a shared structured question set.
 - JSON evaluation artifacts for baseline, agentic, comparison, and ablation runs.
+- SQLite sidecar history for local evaluation run summaries, prompt-aware metric trends, and read-only API/Dashboard views.
 - Real cumulative V0-V6 ablation using independent graph feature flags and per-variant retrieval settings.
 - Local JSONL trace logging for Agent node events, route decisions, compact tool calls, final answers, citations, latency, retry counts, and errors.
 - FastAPI service layer for chat, trace lookup, document upload/index/delete, and evaluation run retrieval.
@@ -489,9 +490,10 @@ Gradio Evaluation Dashboard, ablation, and JSON artifact contracts.
 
 The evaluator's deterministic metrics remain offline-testable and independent
 of optional semantic scoring. `Judge` and `ResultStore` protocols provide
-extension boundaries for P5a semantic judging and later historical storage.
-P5a implements the configurable DeepSeek semantic Judge; SQLite-backed trend
-storage and a higher-level `EvaluationEngine` remain roadmap work.
+extension boundaries for semantic judging and result storage. P5a implements
+the configurable DeepSeek semantic Judge, and P5b adds SQLite-backed historical
+trend storage while preserving the existing JSON artifact contracts. A
+higher-level `EvaluationEngine` remains roadmap work.
 
 ### Versioned Prompt Registry
 
@@ -563,12 +565,40 @@ Metric fields include:
 - `average_groundedness`
 - `judge_failed_count`
 
+### SQLite Historical Evaluation
+
+P5b adds local SQLite sidecar storage for historical evaluation summaries. JSON
+artifacts remain the complete compatibility payloads for CLI, FastAPI,
+Dashboard, ablation, and future trace drill-down workflows. SQLite stores only
+normalized run metadata, metric summaries, failure counts, sanitized runtime
+config JSON, and prompt manifests containing prompt IDs, versions, and
+fingerprints. It does not store API secrets, full prompt templates, or rendered
+prompt payloads.
+
+History is enabled by default through `.env`:
+
+```dotenv
+EVALUATION_HISTORY_ENABLED=true
+EVALUATION_HISTORY_DB=./data/evaluation_history.sqlite3
+```
+
+Set `EVALUATION_HISTORY_ENABLED=false` to keep JSON artifact behavior unchanged
+without creating or updating the SQLite index. `EVALUATION_HISTORY_DB` controls
+the local database path; the default lives under `data/` and is ignored runtime
+data. If SQLite writes fail, evaluation keeps the JSON artifacts and reports the
+history write as a sidecar failure rather than invalidating the completed run.
+
+The history store supports legacy imports. Artifacts without runtime schema or
+evaluator metadata display as `legacy`, and artifacts without prompt manifests
+receive an empty prompt-manifest fingerprint.
+
 ### Evaluation Dashboard
 
-P4b adds an `Evaluation` tab with two views:
+The `Evaluation` tab contains three views:
 
 - `Quick Compare` runs the same selected question records in `Naive RAG`, `Agentic RAG`, or `Compare Both` mode. It reports correctness, context relevance, citation accuracy, fallback accuracy, unsupported claims, latency, retry metrics, failure counts, filterable failed cases, and selected-case diagnostic details.
 - `Ablation Snapshot` reads `experiments/results/ablation_result.json` and displays the saved V0-V6 metrics, failed cases, diagnostics source, and runtime configuration. It is read-only and does not run V0-V6 from the browser.
+- `History Trends` reads the SQLite sidecar history and displays recent runs plus prompt-aware metric trend rows. It is read-only and does not rerun models.
 
 The default smoke selection is `q001`, `q016`, `q027`, `q030`, and `q033`. The dashboard can also select all 36 questions. Quick evaluation runs synchronously, so a full selection can be slow and may incur model cost.
 
@@ -809,6 +839,7 @@ langgraph-agentic-rag/
 - Added a Gradio Evaluation Dashboard for synchronous selected-record comparison, filterable failure diagnostics, and read-only inspection of saved V0-V6 artifacts and runtime configuration.
 - Refactored the evaluator into a modular typed framework with focused dataset, schema, metrics, runner, comparison, reporting, judge, storage, and compatibility facade modules while preserving existing CLI, dashboard, FastAPI, ablation, and artifact contracts.
 - Added code-native prompt identity and reproducibility metadata while preserving a roadmap toward behavioral prompt regression, background execution, trace drill-down, and historical evaluation trends.
+- Added SQLite-backed historical evaluation summaries with FastAPI and Gradio read-only trend views while keeping JSON artifacts as the full compatibility payload.
 
 ## Interview Talking Points
 
@@ -831,6 +862,7 @@ langgraph-agentic-rag/
 - Evaluation uses a local 36-question reliability dataset. It is useful for reproducible project-level comparison, but it is not a benchmark-grade public dataset.
 - P0b ablation variants are executable and distinct, but they are cumulative. They show incremental system trade-offs, not fully isolated causal effects for every module interaction.
 - Trace logging currently writes local JSONL records and exposes API lookup through the FastAPI layer. It does not yet provide database-backed retention or a visual trace explorer.
+- SQLite evaluation history indexes run summaries and trends only. Detailed per-question trace drill-down still uses JSON artifacts and remains future work.
 - FastAPI endpoints are integration-oriented but not production-hardened. They do not yet include authentication, authorization, async job queues, rate limiting, or tenant-level access control.
 - Workspace isolation currently uses metadata filtering inside a shared Chroma collection. It does not yet create separate collections per workspace or migrate historical unscoped chunks.
 - Token usage and estimated cost are recorded only when the active model client exposes usage metadata.
@@ -838,6 +870,7 @@ langgraph-agentic-rag/
 - Quick evaluation in the Gradio Evaluation Dashboard is synchronous. Selecting all 36 questions may be slow and may incur model cost.
 - The Ablation Snapshot is read-only and only loads the existing artifact; it cannot launch V0-V6 runs from the browser.
 - Dashboard failure diagnostics use deterministic heuristics for debugging and regression triage, not benchmark-grade causal attribution.
+- Dashboard history trends are read-only summaries. They do not launch background evaluations, show progress, support cancellation, or provide per-question trace drill-down.
 - Prompt fingerprints detect template drift, but they do not measure whether an LLM's behavior improved or regressed.
 - The project is not a complete production deployment without authentication, authorization, deployment hardening, durable trace storage, and operational monitoring.
 
@@ -870,10 +903,10 @@ langgraph-agentic-rag/
 - P4c modular evaluation framework implemented: `evaluation.evaluate` is now a compatibility facade over typed schemas, dataset normalization, deterministic metrics, runner execution, comparison orchestration, report rendering, optional judge contracts, atomic JSON storage, and sanitized runtime metadata.
 - P4d prompt versioning implemented: 10 registered `v1` templates—8 active runtime prompts and 2 inactive compatibility-only templates—have stable IDs, strict rendering contracts, SHA-256 fingerprints, compatibility exports, and safe evaluation/trace manifests.
 - P5a DeepSeek semantic Judge implemented: optional independent configuration, versioned prompts, bounded evidence, strict semantic correctness and groundedness scoring, isolated failures, and additive report metrics preserve deterministic evaluation behavior.
+- P5b SQLite historical evaluation implemented: local sidecar storage indexes evaluation run summaries, prompt-aware metric trends, FastAPI history routes, and a read-only Gradio History Trends tab while preserving JSON artifacts as the complete compatibility payload.
 
 ### Next Milestones
 
-- P5b SQLite historical evaluation + trend dashboard.
 - Background Evaluation.
 - Trace Drill-down.
 - Add dynamic partial-relevance recovery, such as increasing top-k or reranking again when chunks are only partially relevant.
