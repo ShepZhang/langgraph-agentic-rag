@@ -22,6 +22,8 @@ from evaluation.dashboard_formatters import (
     filter_failure_cases as filter_failure_case_rows,
     get_failure_detail as select_failure_detail,
     get_runtime_config as select_runtime_config,
+    history_runs_to_table,
+    history_trends_to_table,
     is_complete_ablation_run,
 )
 from evaluation.dashboard_models import (
@@ -32,10 +34,12 @@ from evaluation.dashboard_models import (
     DashboardView,
     FailureCaseDetail,
     FailureCaseRow,
+    HistoryDashboardView,
     QuestionOption,
 )
 from evaluation.evaluate import evaluate_questions, load_eval_questions
 from evaluation.failure_analyzer import analyze_failure
+from evaluation.history_service import EvaluationHistoryService
 
 
 QuestionLoader = Callable[[], list[dict[str, Any]]]
@@ -95,6 +99,7 @@ class EvaluationDashboardService:
         naive_runner: EvaluationRunner = run_naive_rag,
         ablation_provider: AblationResultProvider | None = None,
         id_factory: IdFactory | None = None,
+        history_service: EvaluationHistoryService | None = None,
     ) -> None:
         self._question_loader = question_loader
         self._agentic_runner = agentic_runner
@@ -103,6 +108,7 @@ class EvaluationDashboardService:
             ablation_provider or JsonAblationResultProvider()
         )
         self._id_factory = id_factory or _default_id_factory
+        self._history_service = history_service or EvaluationHistoryService()
 
     def list_questions(self) -> list[QuestionOption]:
         """Return dashboard question choices in dataset order."""
@@ -267,6 +273,80 @@ class EvaluationDashboardService:
                     f"{type(exc).__name__}: {exc}"
                 ),
             )
+
+    def load_history_snapshot(self, limit: int = 20) -> HistoryDashboardView:
+        """Load persisted evaluation runs for the dashboard history view."""
+
+        try:
+            runs = self._history_service.list_runs(limit=limit)
+            metric_choices = list(self._history_service.metric_names())
+            run_rows = history_runs_to_table(runs)
+        except Exception as exc:  # noqa: BLE001 - return UI-safe history data.
+            return {
+                "status": "unavailable",
+                "run_rows": [],
+                "trend_rows": [],
+                "metric_choices": [],
+                "message": (
+                    "History unavailable: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            }
+
+        message = (
+            f"Loaded {len(run_rows)} historical evaluation run(s)."
+            if run_rows
+            else "No historical evaluation runs found."
+        )
+        return {
+            "status": "completed",
+            "run_rows": run_rows,
+            "trend_rows": [],
+            "metric_choices": metric_choices,
+            "message": message,
+        }
+
+    def load_history_trends(
+        self,
+        metric: str = "correctness_score",
+        system: str | None = None,
+        limit: int = 20,
+    ) -> HistoryDashboardView:
+        """Load persisted history metric trends for the dashboard."""
+
+        query_system = None if system in {None, "", "all"} else system
+        try:
+            trends = self._history_service.query_trends(
+                metric=metric,
+                system=query_system,
+                limit=limit,
+            )
+            metric_choices = list(self._history_service.metric_names())
+            trend_rows = history_trends_to_table(trends)
+        except Exception as exc:  # noqa: BLE001 - return UI-safe history data.
+            return {
+                "status": "unavailable",
+                "run_rows": [],
+                "trend_rows": [],
+                "metric_choices": [],
+                "message": (
+                    "History unavailable: "
+                    f"{type(exc).__name__}: {exc}"
+                ),
+            }
+
+        message = (
+            f"Loaded {len(trend_rows)} trend row(s) for {metric}."
+            if trend_rows
+            else f"No trend rows found for {metric}."
+        )
+        return {
+            "status": "completed",
+            "run_rows": [],
+            "trend_rows": trend_rows,
+            "metric_choices": metric_choices,
+            "message": message,
+        }
 
     def get_runtime_config(
         self,
