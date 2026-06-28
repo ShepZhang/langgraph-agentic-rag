@@ -15,6 +15,14 @@ from evaluation.evaluate import evaluate_questions, format_report, load_eval_que
 from evaluation.schemas import JudgeResult
 
 
+def _disable_history_recording(monkeypatch: pytest.MonkeyPatch) -> None:
+    class NoopHistoryService:
+        def record_payload(self, *args: Any, **kwargs: Any) -> dict[str, str | None]:
+            return {"status": "disabled", "run_id": None, "error": None}
+
+    monkeypatch.setattr(evaluator, "EvaluationHistoryService", lambda: NoopHistoryService())
+
+
 def test_public_facade_exports_owned_callables():
     public_names = [
         "load_eval_questions",
@@ -597,6 +605,8 @@ def test_injected_judge_runtime_metadata_is_preserved_in_written_artifacts(
     tmp_path,
     monkeypatch,
 ) -> None:
+    _disable_history_recording(monkeypatch)
+
     class InjectedJudge:
         def evaluate(self, question, result) -> JudgeResult:
             return JudgeResult.completed(
@@ -705,6 +715,25 @@ def test_write_evaluation_artifacts_records_comparison_artifact_path(
     evaluator.write_evaluation_artifacts(report, tmp_path)
 
     assert calls == [("cli", str(tmp_path / "comparison_result.json"))]
+
+
+def test_write_evaluation_artifacts_ignores_history_service_construction_failure(
+    tmp_path, monkeypatch
+):
+    class BrokenHistoryService:
+        def __init__(self) -> None:
+            raise ValueError("history is misconfigured")
+
+    monkeypatch.setattr(evaluator, "EvaluationHistoryService", BrokenHistoryService)
+    report = {
+        "runtime_config": evaluator.build_runtime_config_snapshot(),
+        "summary": {"total_questions": 1, "correctness_score": 1.0},
+        "results": [{"question_id": "q001"}],
+    }
+
+    evaluator.write_evaluation_artifacts(report, tmp_path)
+
+    assert (tmp_path / "agentic_result.json").exists()
 
 
 def test_evaluate_questions_builds_configured_judge_once_when_omitted(
@@ -1249,6 +1278,8 @@ def test_main_prints_report_with_injected_runner(tmp_path, capsys):
 
 
 def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
+    _disable_history_recording(monkeypatch)
+
     path = tmp_path / "eval.json"
     output_dir = tmp_path / "artifacts"
     for name in (
@@ -1354,6 +1385,8 @@ def test_main_writes_comparison_artifacts(tmp_path, monkeypatch):
 
 
 def test_main_writes_single_system_agentic_artifact_schema(tmp_path, monkeypatch):
+    _disable_history_recording(monkeypatch)
+
     path = tmp_path / "eval.json"
     output_dir = tmp_path / "artifacts"
     for name in (

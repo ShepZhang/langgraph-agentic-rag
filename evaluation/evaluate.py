@@ -166,11 +166,24 @@ def write_evaluation_artifacts(report: dict[str, Any], output_dir: str | Path) -
         output_path,
         runtime_config=runtime_config,
     )
-    EvaluationHistoryService().record_payload(
+    _record_evaluation_history_best_effort(
         report,
-        source="cli",
-        result_path=str(output_path / _history_artifact_filename(report)),
+        output_path / _history_artifact_filename(report),
     )
+
+
+def _record_evaluation_history_best_effort(
+    report: dict[str, Any],
+    result_path: Path,
+) -> None:
+    try:
+        EvaluationHistoryService().record_payload(
+            report,
+            source="cli",
+            result_path=str(result_path),
+        )
+    except Exception:  # noqa: BLE001 - history sidecar must not block JSON artifacts.
+        return
 
 
 def _history_artifact_filename(report: dict[str, Any]) -> str:
