@@ -107,6 +107,8 @@ class FakeEvaluationService:
         ]
 
     def query_history_trends(self, metric="correctness_score", system=None, limit=20):
+        if metric == "not_a_metric":
+            raise ValueError("Unsupported history metric: not_a_metric")
         return [
             {
                 "created_at": "2026-06-27T12:00:00.000000Z",
@@ -274,3 +276,15 @@ def test_evaluation_history_routes_list_runs_and_trends_before_run_id_capture():
             }
         ],
     }
+
+
+def test_evaluation_history_trends_returns_client_error_for_unsupported_metric():
+    client = create_test_client()
+
+    response = client.get(
+        "/evaluation/history/trends",
+        params={"metric": "not_a_metric"},
+    )
+
+    assert response.status_code == 400
+    assert "Unsupported history metric: not_a_metric" in response.json()["detail"]

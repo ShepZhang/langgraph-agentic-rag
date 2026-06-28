@@ -54,14 +54,18 @@ def get_evaluation_history_trends(
 ) -> EvaluationTrendResponse:
     """Return persisted evaluation history trend rows."""
 
-    return EvaluationTrendResponse(
-        metric=metric,
-        system=system,
-        rows=evaluation_service.query_history_trends(
+    try:
+        rows = evaluation_service.query_history_trends(
             metric=metric,
             system=system,
             limit=limit,
-        ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return EvaluationTrendResponse(
+        metric=metric,
+        system=system,
+        rows=rows,
     )
 
 
