@@ -598,7 +598,7 @@ The `Evaluation` tab contains three views:
 
 - `Quick Compare` runs the same selected question records in `Naive RAG`, `Agentic RAG`, or `Compare Both` mode. It reports correctness, context relevance, citation accuracy, fallback accuracy, unsupported claims, latency, retry metrics, failure counts, filterable failed cases, and selected-case diagnostic details.
 - `Ablation Snapshot` reads `experiments/results/ablation_result.json` and displays the saved V0-V6 metrics, failed cases, diagnostics source, and runtime configuration. It is read-only and does not run V0-V6 from the browser.
-- `History Trends` reads the SQLite sidecar history and displays recent runs plus prompt-aware metric trend rows. It is read-only and does not rerun models.
+- `History Trends` reads the SQLite sidecar history, displays recent runs, and lets users load prompt-aware metric trend rows. It is read-only and does not rerun models.
 
 The default smoke selection is `q001`, `q016`, `q027`, `q030`, and `q033`. The dashboard can also select all 36 questions. Quick evaluation runs synchronously, so a full selection can be slow and may incur model cost.
 

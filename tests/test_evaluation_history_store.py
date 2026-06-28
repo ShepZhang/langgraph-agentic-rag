@@ -155,6 +155,90 @@ def test_prompt_manifest_hash_is_canonical():
     assert compute_prompt_manifest_hash({}) == ""
 
 
+def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence(
+    tmp_path,
+):
+    store = HistoryStore(tmp_path / "history.sqlite3")
+    payload = {
+        "runtime_config": {
+            "schema_version": 4,
+            "evaluator_version": "p5b",
+            "api_key": "sk-unsafe-runtime",
+            "secret": "unsafe-secret",
+            "token": "unsafe-token",
+            "llm": {
+                "provider": "openai_compatible",
+                "model": "safe-model",
+                "temperature": 0.0,
+                "api_key": "sk-unsafe-llm",
+            },
+            "prompts": {
+                "agent.answer_generation": {
+                    "version": "v1",
+                    "fingerprint": "sha256:safe",
+                    "template": "unsafe full prompt template",
+                    "rendered_prompt": "unsafe rendered prompt",
+                    "api_key": "sk-unsafe-prompt",
+                }
+            },
+        },
+        "summary": {
+            "total_questions": 1,
+            "correctness_score": 1.0,
+            "template": "unsafe summary template",
+            "secret": "unsafe summary secret",
+        },
+        "results": [{"question_id": "q001"}],
+    }
+
+    record = extract_history_record(
+        payload,
+        run_id="eval_sanitized",
+        created_at="2026-06-27T12:00:00.000000Z",
+        source="import",
+        result_path="unsafe.json",
+    )
+    store.save_record(record)
+
+    with sqlite3.connect(store.db_path) as connection:
+        runtime_config_json, prompt_manifest_json, summary_json = connection.execute(
+            """
+            SELECT runtime_config_json, prompt_manifest_json, summary_json
+            FROM evaluation_runs
+            WHERE run_id = ?
+            """,
+            ("eval_sanitized",),
+        ).fetchone()
+
+    persisted = "\n".join(
+        [runtime_config_json, prompt_manifest_json, summary_json]
+    )
+    for forbidden in (
+        "unsafe full prompt template",
+        "unsafe rendered prompt",
+        "sk-unsafe-runtime",
+        "sk-unsafe-llm",
+        "sk-unsafe-prompt",
+        "unsafe-secret",
+        "unsafe-token",
+        "unsafe summary template",
+        "unsafe summary secret",
+    ):
+        assert forbidden not in persisted
+
+    assert json.loads(prompt_manifest_json) == {
+        "agent.answer_generation": {
+            "fingerprint": "sha256:safe",
+            "version": "v1",
+        }
+    }
+    assert json.loads(runtime_config_json)["llm"] == {
+        "model": "safe-model",
+        "provider": "openai_compatible",
+        "temperature": 0.0,
+    }
+
+
 def test_history_store_rejects_unsupported_metric_names(tmp_path):
     store = HistoryStore(tmp_path / "history.sqlite3")
 

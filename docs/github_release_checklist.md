@@ -62,10 +62,10 @@ git diff --check
 
 Observed verification for `v0.5.1-p5b`:
 
-- Full test suite: `.venv/bin/python -m pytest -q` → `671 passed in 4.34s`
-- Focused compatibility suite: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py tests/test_ablation.py tests/test_evaluation_matrix.py -q` → `193 passed in 4.52s`
-- Focused history tests: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py -q` → `73 passed in 2.00s`
-- API/Dashboard compatibility tests: `.venv/bin/python -m pytest tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py -q` → `83 passed in 4.50s`
+- Full test suite: `.venv/bin/python -m pytest -q` → `672 passed in 4.71s`
+- Focused compatibility suite: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py tests/test_ablation.py tests/test_evaluation_matrix.py -q` → `194 passed in 4.15s`
+- Focused history tests: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py -q` → `74 passed in 1.44s`
+- API/Dashboard compatibility tests: `.venv/bin/python -m pytest tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py -q` → `83 passed in 3.64s`
 - Ruff: `.venv/bin/python -m ruff check .` → `All checks passed!`
 - Python `compileall`: `Listing 'prompting'...` through `Listing 'observability'...`, exit code `0`
 - Whitespace check: `git diff --check` → no output, exit code `0`

@@ -151,10 +151,10 @@ def create_test_client():
     return TestClient(app)
 
 
-def test_api_reports_p4b_version():
+def test_api_reports_p5b_version():
     from api.main import create_app
 
-    assert create_app().version == "0.4.1-p4b"
+    assert create_app().version == "0.5.1-p5b"
 
 
 def test_chat_route_returns_agent_response_schema():

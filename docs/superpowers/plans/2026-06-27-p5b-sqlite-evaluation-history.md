@@ -2627,16 +2627,16 @@ Create tag `v0.5.1-p5b` only after:
 
 - Focused compatibility suite:
   `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py tests/test_ablation.py tests/test_evaluation_matrix.py -q`
-  → `193 passed in 4.52s`.
+  → `194 passed in 4.15s`.
 - Full test suite:
   `.venv/bin/python -m pytest -q`
-  → `671 passed in 4.34s`.
+  → `672 passed in 4.71s`.
 - Focused history tests:
   `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py -q`
-  → `73 passed in 2.00s`.
+  → `74 passed in 1.44s`.
 - API/Dashboard compatibility tests:
   `.venv/bin/python -m pytest tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py -q`
-  → `83 passed in 4.50s`.
+  → `83 passed in 3.64s`.
 - Ruff:
   `.venv/bin/python -m ruff check .`
   → `All checks passed!`.

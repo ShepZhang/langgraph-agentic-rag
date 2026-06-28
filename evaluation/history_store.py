@@ -38,6 +38,47 @@ _SYSTEM_LABELS = {
     "naive": "Naive RAG",
     "agentic_reranker": "Agentic + Reranker",
 }
+_SAFE_RUNTIME_SECTION_KEYS = {
+    "agent_features": (
+        "query_transformation_enabled",
+        "retrieval_grading_enabled",
+        "conditional_retry_enabled",
+        "citation_verification_enabled",
+    ),
+    "judge": ("enabled", "provider", "model", "temperature"),
+    "llm": ("provider", "model", "temperature"),
+    "retriever": (
+        "top_k",
+        "hybrid_retrieval_enabled",
+        "dense_top_k",
+        "bm25_top_k",
+        "fusion_top_k",
+    ),
+    "reranker": ("enabled", "model", "top_n", "candidate_top_k"),
+    "vectorstore": ("collection_name",),
+}
+_PROMPT_MANIFEST_KEYS = ("version", "fingerprint")
+_PROMPT_TEXT_KEYS = {
+    "prompt",
+    "prompt_text",
+    "system_prompt",
+    "user_prompt",
+    "rendered_prompt",
+    "rendered_prompt_payload",
+    "full_prompt_template",
+    "prompt_template",
+    "template",
+}
+_SENSITIVE_KEY_PARTS = (
+    "api_key",
+    "apikey",
+    "secret",
+    "token",
+    "password",
+    "authorization",
+    "bearer",
+)
+_MISSING = object()
 
 
 @dataclass(frozen=True)
@@ -97,10 +138,13 @@ def extract_history_record(
 
     report = _nested_report(payload)
     mode = _history_mode(payload, report)
-    runtime_config = _runtime_config_for_history(payload, report, mode)
+    runtime_config = _sanitize_runtime_config(
+        _runtime_config_for_history(payload, report, mode)
+    )
     prompt_manifest = _prompt_manifest(runtime_config)
     system_summaries = _system_summaries(payload, report, mode)
     question_ids = _question_ids(payload, report, mode)
+    summary = _sanitize_json_object(_mapping(report.get("summary")))
 
     return HistoryRecord(
         run_id=run_id,
@@ -122,7 +166,7 @@ def extract_history_record(
         runtime_config=runtime_config,
         prompt_manifest=prompt_manifest,
         prompt_manifest_hash=compute_prompt_manifest_hash(prompt_manifest),
-        summary=dict(_mapping(report.get("summary"))),
+        summary=summary,
         metrics=_metric_records(system_summaries),
         failure_counts=_failure_counts(system_summaries),
     )
@@ -210,6 +254,104 @@ def _runtime_config_for_history(
             if isinstance(runtime_config, Mapping):
                 return dict(runtime_config)
     return {}
+
+
+def _sanitize_runtime_config(runtime_config: Mapping[str, Any]) -> dict[str, Any]:
+    metadata = _metadata_runtime_config(runtime_config)
+    sanitized: dict[str, Any] = {}
+
+    schema_version = _schema_version(metadata)
+    if schema_version is not None:
+        sanitized["schema_version"] = schema_version
+
+    evaluator_version = _evaluator_version(metadata)
+    if evaluator_version is not None:
+        sanitized["evaluator_version"] = evaluator_version
+
+    for section, allowed_keys in _SAFE_RUNTIME_SECTION_KEYS.items():
+        section_value = metadata.get(section)
+        if not isinstance(section_value, Mapping):
+            continue
+        sanitized_section = _sanitize_allowed_mapping(section_value, allowed_keys)
+        if sanitized_section:
+            sanitized[section] = sanitized_section
+
+    prompt_manifest = _sanitize_prompt_manifest(metadata.get("prompts"))
+    if prompt_manifest:
+        sanitized["prompts"] = prompt_manifest
+
+    return sanitized
+
+
+def _sanitize_allowed_mapping(
+    value: Mapping[str, Any],
+    allowed_keys: tuple[str, ...],
+) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for key in allowed_keys:
+        if key not in value:
+            continue
+        safe_value = _safe_json_scalar(value[key])
+        if safe_value is not _MISSING:
+            sanitized[key] = safe_value
+    return sanitized
+
+
+def _sanitize_prompt_manifest(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+
+    sanitized: dict[str, Any] = {}
+    for prompt_id, metadata in value.items():
+        if not isinstance(prompt_id, str) or not isinstance(metadata, Mapping):
+            continue
+        prompt_metadata = _sanitize_allowed_mapping(metadata, _PROMPT_MANIFEST_KEYS)
+        if prompt_metadata:
+            sanitized[prompt_id] = prompt_metadata
+    return sanitized
+
+
+def _sanitize_json_object(value: Mapping[str, Any]) -> dict[str, Any]:
+    sanitized = _sanitize_json_value(value)
+    return sanitized if isinstance(sanitized, dict) else {}
+
+
+def _sanitize_json_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): sanitized_value
+            for key, item in value.items()
+            if not _is_unsafe_json_key(key)
+            for sanitized_value in [_sanitize_json_value(item)]
+            if sanitized_value is not _MISSING
+        }
+    if isinstance(value, list):
+        return [
+            sanitized_item
+            for item in value
+            for sanitized_item in [_sanitize_json_value(item)]
+            if sanitized_item is not _MISSING
+        ]
+    return _safe_json_scalar(value)
+
+
+def _safe_json_scalar(value: Any) -> Any:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    return _MISSING
+
+
+def _is_unsafe_json_key(key: Any) -> bool:
+    if not isinstance(key, str):
+        return False
+    normalized = key.strip().lower().replace("-", "_")
+    if normalized in _PROMPT_TEXT_KEYS:
+        return True
+    if "rendered" in normalized and "prompt" in normalized:
+        return True
+    if "template" in normalized:
+        return True
+    return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
 
 
 def _metadata_runtime_config(runtime_config: Mapping[str, Any]) -> Mapping[str, Any]:
