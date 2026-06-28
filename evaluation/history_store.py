@@ -29,6 +29,7 @@ HISTORY_METRIC_NAMES = (
 )
 
 _RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9_.-]+")
+_PROMPT_ID_PATTERN = re.compile(r"[A-Za-z0-9_.-]+")
 _COMPLETED_ABLATION_STATUSES = {"completed", "completed_with_errors"}
 _SYSTEM_ID_ALIASES = {
     "agentic_rag": "agentic",
@@ -371,7 +372,11 @@ def _sanitize_prompt_manifest(value: Any) -> dict[str, Any]:
 
     sanitized: dict[str, Any] = {}
     for prompt_id, metadata in value.items():
-        if not isinstance(prompt_id, str) or not isinstance(metadata, Mapping):
+        if (
+            not isinstance(prompt_id, str)
+            or not _is_safe_prompt_id(prompt_id)
+            or not isinstance(metadata, Mapping)
+        ):
             continue
         prompt_metadata = _sanitize_allowed_mapping(metadata, _PROMPT_MANIFEST_KEYS)
         if prompt_metadata:
@@ -493,6 +498,14 @@ def _is_safe_system_id(value: str) -> bool:
     if _is_unsafe_json_value(value):
         return False
     return value in _SYSTEM_LABELS or _ABLATION_SYSTEM_ID_PATTERN.fullmatch(value) is not None
+
+
+def _is_safe_prompt_id(value: str) -> bool:
+    if _is_unsafe_json_key(value):
+        return False
+    if _is_unsafe_json_value(value):
+        return False
+    return _PROMPT_ID_PATTERN.fullmatch(value) is not None
 
 
 def _safe_system_label(system_id: str) -> str:

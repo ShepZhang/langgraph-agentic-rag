@@ -189,6 +189,10 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
                     "version": "unsafe full prompt template in prompt version",
                     "fingerprint": "Bearer token sk-prompt-fingerprint",
                 },
+                "sk-live-prompt-id": {
+                    "version": "v1",
+                    "fingerprint": "sha256:unsafe-prompt-id",
+                },
             },
         },
         "summary": {
@@ -265,6 +269,10 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
                 "version": "Bearer token sk-direct-prompt-version",
                 "fingerprint": "unsafe full prompt template direct fingerprint",
                 "template": "direct unsafe prompt template",
+            },
+            "sk-direct-prompt-id": {
+                "version": "v1",
+                "fingerprint": "sha256:direct-unsafe-prompt-id",
             }
         },
         summary={"error": "direct Bearer token sk-direct-summary"},
@@ -346,6 +354,7 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
         "sk-unsafe-prompt",
         "unsafe full prompt template in prompt version",
         "sk-prompt-fingerprint",
+        "sk-live-prompt-id",
         "unsafe-secret",
         "unsafe-token",
         "unsafe summary template",
@@ -360,6 +369,7 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
         "sk-direct-llm-model",
         "sk-direct-evaluator-version",
         "sk-direct-prompt-version",
+        "sk-direct-prompt-id",
         "direct unsafe prompt template",
         "sk-direct-summary",
         "sk-direct-metric",
