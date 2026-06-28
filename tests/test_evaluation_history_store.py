@@ -185,6 +185,8 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
         "summary": {
             "total_questions": 1,
             "correctness_score": 1.0,
+            "error": "provider rejected Bearer token sk-unsafe-summary",
+            "prompts": {"agent.answer_generation": "unsafe summary prompt text"},
             "template": "unsafe summary template",
             "secret": "unsafe summary secret",
         },
@@ -223,6 +225,8 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
         "unsafe-token",
         "unsafe summary template",
         "unsafe summary secret",
+        "sk-unsafe-summary",
+        "unsafe summary prompt text",
     ):
         assert forbidden not in persisted
 

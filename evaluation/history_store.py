@@ -57,6 +57,40 @@ _SAFE_RUNTIME_SECTION_KEYS = {
     "reranker": ("enabled", "model", "top_n", "candidate_top_k"),
     "vectorstore": ("collection_name",),
 }
+_SUMMARY_SCALAR_KEYS = {
+    "total_questions",
+    "answer_rate",
+    "fallback_rate",
+    "citation_rate",
+    "source_hit_rate",
+    "keyword_hit_rate",
+    "fallback_correctness_rate",
+    "verification_rate",
+    "average_claim_count",
+    "correctness_score",
+    "context_relevance_score",
+    "citation_hit_rate",
+    "fallback_accuracy",
+    "unsupported_claim_count",
+    "supported_claim_ratio",
+    "citation_verification_pass_rate",
+    "average_token_usage",
+    "estimated_cost",
+    "average_retry_count",
+    "average_retrieved_docs",
+    "average_relevant_docs",
+    "relevant_filtering_rate",
+    "average_latency",
+    "rewrite_triggered_count",
+    "error_count",
+    "judge_completed_count",
+    "judge_failed_count",
+    "judge_completion_rate",
+    "average_semantic_correctness",
+    "average_groundedness",
+    "groundedness_applicable_count",
+}
+_SUMMARY_NESTED_SYSTEM_KEYS = ("naive", "agentic")
 _PROMPT_MANIFEST_KEYS = ("version", "fingerprint")
 _PROMPT_TEXT_KEYS = {
     "prompt",
@@ -144,7 +178,7 @@ def extract_history_record(
     prompt_manifest = _prompt_manifest(runtime_config)
     system_summaries = _system_summaries(payload, report, mode)
     question_ids = _question_ids(payload, report, mode)
-    summary = _sanitize_json_object(_mapping(report.get("summary")))
+    summary = _sanitize_summary(_mapping(report.get("summary")))
 
     return HistoryRecord(
         run_id=run_id,
@@ -311,28 +345,72 @@ def _sanitize_prompt_manifest(value: Any) -> dict[str, Any]:
     return sanitized
 
 
-def _sanitize_json_object(value: Mapping[str, Any]) -> dict[str, Any]:
-    sanitized = _sanitize_json_value(value)
-    return sanitized if isinstance(sanitized, dict) else {}
+def _sanitize_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
 
+    mode = summary.get("mode")
+    if isinstance(mode, str) and mode in {"single", "comparison", "matrix", "ablation"}:
+        sanitized["mode"] = mode
 
-def _sanitize_json_value(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {
-            str(key): sanitized_value
-            for key, item in value.items()
-            if not _is_unsafe_json_key(key)
-            for sanitized_value in [_sanitize_json_value(item)]
-            if sanitized_value is not _MISSING
+    for key in _SUMMARY_SCALAR_KEYS:
+        if key not in summary:
+            continue
+        value = _safe_summary_scalar(summary[key])
+        if value is not _MISSING:
+            sanitized[key] = value
+
+    failure_counts = _safe_failure_type_counts(summary.get("failure_type_counts"))
+    if failure_counts:
+        sanitized["failure_type_counts"] = failure_counts
+
+    for system_key in _SUMMARY_NESTED_SYSTEM_KEYS:
+        system_summary = summary.get(system_key)
+        if isinstance(system_summary, Mapping):
+            sanitized[system_key] = _sanitize_summary(system_summary)
+
+    variants = summary.get("variants")
+    if isinstance(variants, Mapping):
+        sanitized_variants = {
+            str(variant_id): _sanitize_summary(variant_summary)
+            for variant_id, variant_summary in variants.items()
+            if isinstance(variant_id, str)
+            and not _is_unsafe_json_key(variant_id)
+            and isinstance(variant_summary, Mapping)
         }
-    if isinstance(value, list):
-        return [
-            sanitized_item
-            for item in value
-            for sanitized_item in [_sanitize_json_value(item)]
-            if sanitized_item is not _MISSING
-        ]
-    return _safe_json_scalar(value)
+        if sanitized_variants:
+            sanitized["variants"] = sanitized_variants
+
+    comparison = summary.get("comparison")
+    if isinstance(comparison, Mapping):
+        sanitized_comparison = {
+            str(key): value
+            for key, item in comparison.items()
+            if isinstance(key, str) and not _is_unsafe_json_key(key)
+            for value in [_safe_summary_scalar(item)]
+            if value is not _MISSING
+        }
+        if sanitized_comparison:
+            sanitized["comparison"] = sanitized_comparison
+
+    return sanitized
+
+
+def _safe_failure_type_counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(failure_type): int(count)
+        for failure_type, count in value.items()
+        if isinstance(failure_type, str)
+        and not _is_unsafe_json_key(failure_type)
+        and _is_int_like(count)
+    }
+
+
+def _safe_summary_scalar(value: Any) -> Any:
+    if value is None or isinstance(value, int | float | bool):
+        return value
+    return _MISSING
 
 
 def _safe_json_scalar(value: Any) -> Any:
@@ -734,6 +812,12 @@ class HistoryStore:
 
     def save_record(self, record: HistoryRecord) -> str:
         _validate_run_id(record.run_id)
+        runtime_config = _sanitize_runtime_config(record.runtime_config)
+        prompt_manifest = _sanitize_prompt_manifest(
+            record.prompt_manifest
+        ) or _prompt_manifest(runtime_config)
+        prompt_manifest_hash = compute_prompt_manifest_hash(prompt_manifest)
+        summary = _sanitize_summary(record.summary)
         self.initialize()
         with self._connect() as connection:
             connection.execute(
@@ -769,10 +853,10 @@ class HistoryStore:
                     record.result_path,
                     record.question_count,
                     _json_text(record.question_ids),
-                    _json_text(record.runtime_config),
-                    _json_text(record.prompt_manifest),
-                    record.prompt_manifest_hash,
-                    _json_text(record.summary),
+                    _json_text(runtime_config),
+                    _json_text(prompt_manifest),
+                    prompt_manifest_hash,
+                    _json_text(summary),
                 ),
             )
             connection.execute(
