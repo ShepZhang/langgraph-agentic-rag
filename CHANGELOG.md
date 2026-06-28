@@ -14,6 +14,7 @@ Date: 2026-06-27
 
 - Advanced evaluation runtime metadata to schema version `4` and evaluator version `p5b`.
 - Preserved JSON artifacts as the complete compatibility payload while indexing summaries into SQLite.
+- Hardened SQLite history persistence so runtime config, prompt manifests, summaries, metrics, and failure counts are sanitized again at the `HistoryStore.save_record()` boundary.
 
 ### Notes
 
@@ -23,9 +24,9 @@ Date: 2026-06-27
 
 ### Verification
 
-- Full test suite: `.venv/bin/python -m pytest -q` → `672 passed in 5.06s`.
-- Focused history tests: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py -q` → `74 passed in 1.52s`.
-- API/Dashboard compatibility tests: `.venv/bin/python -m pytest tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py -q` → `83 passed in 4.02s`.
+- Full test suite: `.venv/bin/python -m pytest -q` → `672 passed in 5.56s`.
+- Focused history tests: `.venv/bin/python -m pytest tests/test_evaluation_history_store.py tests/test_evaluation_storage.py tests/test_evaluate.py -q` → `74 passed in 2.18s`.
+- API/Dashboard compatibility tests: `.venv/bin/python -m pytest tests/test_fastapi_routes.py tests/test_dashboard_service.py tests/test_gradio_app.py -q` → `83 passed in 4.78s`.
 
 ## v0.5.0-p5a - DeepSeek Semantic Judge
 

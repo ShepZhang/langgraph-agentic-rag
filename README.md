@@ -573,7 +573,9 @@ Dashboard, ablation, and future trace drill-down workflows. SQLite stores only
 normalized run metadata, metric summaries, failure counts, sanitized runtime
 config JSON, and prompt manifests containing prompt IDs, versions, and
 fingerprints. It does not store API secrets, full prompt templates, or rendered
-prompt payloads.
+prompt payloads. The SQLite writer re-applies sanitization at the persistence
+boundary so directly constructed history records cannot bypass this field-level
+safety boundary.
 
 History is enabled by default through `.env`:
 

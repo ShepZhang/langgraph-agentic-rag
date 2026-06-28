@@ -172,6 +172,11 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
                 "temperature": 0.0,
                 "api_key": "sk-unsafe-llm",
             },
+            "judge": {
+                "enabled": True,
+                "provider": "deepseek",
+                "model": "Bearer token sk-runtime-judge-model",
+            },
             "prompts": {
                 "agent.answer_generation": {
                     "version": "v1",
@@ -179,16 +184,33 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
                     "template": "unsafe full prompt template",
                     "rendered_prompt": "unsafe rendered prompt",
                     "api_key": "sk-unsafe-prompt",
-                }
+                },
+                "agent.query_transform": {
+                    "version": "unsafe full prompt template in prompt version",
+                    "fingerprint": "Bearer token sk-prompt-fingerprint",
+                },
             },
         },
         "summary": {
             "total_questions": 1,
-            "correctness_score": 1.0,
+            "correctness_score": "Bearer token sk-metric-text-leak",
+            "context_relevance_score": 0.5,
             "error": "provider rejected Bearer token sk-unsafe-summary",
+            "comparison": {
+                "naive_source_hit_rate": 0.0,
+                "sk-live-comparison-key": 1.0,
+            },
+            "failure_type_counts": {
+                "retrieval_failure": 1,
+                "sk-live-failure": 2,
+            },
             "prompts": {"agent.answer_generation": "unsafe summary prompt text"},
             "template": "unsafe summary template",
             "secret": "unsafe summary secret",
+            "variants": {
+                "agentic": {"correctness_score": 0.5},
+                "sk-live-variant-id": {"correctness_score": 0.25},
+            },
         },
         "results": [{"question_id": "q001"}],
     }
@@ -201,8 +223,110 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
         result_path="unsafe.json",
     )
     store.save_record(record)
+    matrix_record = extract_history_record(
+        {
+            "summary": {
+                "mode": "matrix",
+                "variants": {
+                    "agentic": {"correctness_score": 0.5},
+                    "sk-live-variant-id": {"correctness_score": 0.25},
+                },
+            },
+            "results": [{"question_id": "q001"}],
+        },
+        run_id="eval_sanitized_matrix",
+        created_at="2026-06-27T12:00:01.000000Z",
+        source="import",
+        result_path="unsafe-matrix.json",
+    )
+    store.save_record(matrix_record)
+    direct_record = HistoryRecord(
+        run_id="eval_sanitized_direct",
+        created_at="2026-06-27T12:00:02.000000Z",
+        source="direct",
+        workspace_id=None,
+        status="completed",
+        mode="single",
+        schema_version=4,
+        evaluator_version="Bearer token sk-direct-evaluator-version",
+        result_path="direct.json",
+        question_count=1,
+        runtime_config={
+            "schema_version": 4,
+            "evaluator_version": "p5b",
+            "api_key": "sk-direct-runtime",
+            "llm": {
+                "provider": "openai_compatible",
+                "model": "sk-direct-llm-model",
+            },
+        },
+        prompt_manifest={
+            "agent.answer_generation": {
+                "version": "Bearer token sk-direct-prompt-version",
+                "fingerprint": "unsafe full prompt template direct fingerprint",
+                "template": "direct unsafe prompt template",
+            }
+        },
+        summary={"error": "direct Bearer token sk-direct-summary"},
+        metrics=[
+            MetricRecord(
+                system_id="agentic",
+                system_label="Agentic RAG",
+                metric_name="correctness_score",
+                metric_value=None,
+                metric_text="Bearer token sk-direct-metric",
+            )
+        ],
+        failure_counts={
+            "agentic": {"retrieval_failure": 1, "sk-direct-failure": 2}
+        },
+    )
+    store.save_record(direct_record)
 
     with sqlite3.connect(store.db_path) as connection:
+        persisted_values = [
+            value
+            for row in connection.execute(
+                """
+                SELECT
+                    workspace_id,
+                    status,
+                    mode,
+                    evaluator_version,
+                    result_path,
+                    question_ids_json,
+                    runtime_config_json,
+                    prompt_manifest_json,
+                    summary_json
+                FROM evaluation_runs
+                ORDER BY run_id
+                """
+            )
+            for value in row
+        ]
+        persisted_values.extend(
+            value
+            for row in connection.execute(
+                """
+                SELECT system_id, system_label, metric_name, metric_text
+                FROM evaluation_system_metrics
+                ORDER BY run_id, system_id, metric_name
+                """
+            )
+            for value in row
+            if value is not None
+        )
+        persisted_values.extend(
+            value
+            for row in connection.execute(
+                """
+                SELECT system_id, failure_type
+                FROM evaluation_failure_counts
+                ORDER BY run_id, system_id, failure_type
+                """
+            )
+            for value in row
+        )
         runtime_config_json, prompt_manifest_json, summary_json = connection.execute(
             """
             SELECT runtime_config_json, prompt_manifest_json, summary_json
@@ -212,21 +336,34 @@ def test_history_extraction_sanitizes_runtime_metadata_before_sqlite_persistence
             ("eval_sanitized",),
         ).fetchone()
 
-    persisted = "\n".join(
-        [runtime_config_json, prompt_manifest_json, summary_json]
-    )
+    persisted = "\n".join(str(value) for value in persisted_values)
     for forbidden in (
         "unsafe full prompt template",
         "unsafe rendered prompt",
         "sk-unsafe-runtime",
         "sk-unsafe-llm",
+        "sk-runtime-judge-model",
         "sk-unsafe-prompt",
+        "unsafe full prompt template in prompt version",
+        "sk-prompt-fingerprint",
         "unsafe-secret",
         "unsafe-token",
         "unsafe summary template",
         "unsafe summary secret",
         "sk-unsafe-summary",
         "unsafe summary prompt text",
+        "sk-metric-text-leak",
+        "sk-live-comparison-key",
+        "sk-live-failure",
+        "sk-live-variant-id",
+        "sk-direct-runtime",
+        "sk-direct-llm-model",
+        "sk-direct-evaluator-version",
+        "sk-direct-prompt-version",
+        "direct unsafe prompt template",
+        "sk-direct-summary",
+        "sk-direct-metric",
+        "sk-direct-failure",
     ):
         assert forbidden not in persisted
 

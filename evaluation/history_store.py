@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 from collections.abc import Mapping
@@ -38,6 +39,39 @@ _SYSTEM_LABELS = {
     "naive": "Naive RAG",
     "agentic_reranker": "Agentic + Reranker",
 }
+_ABLATION_SYSTEM_ID_PATTERN = re.compile(r"v[0-9]+_[a-z0-9]+(?:_[a-z0-9]+)*")
+_FAILURE_TYPES = {
+    "no_failure",
+    "tool_failure",
+    "fallback_failure",
+    "query_rewrite_failure",
+    "retrieval_failure",
+    "reranking_failure",
+    "citation_failure",
+    "generation_failure",
+    "unclassified_failure",
+}
+_COMPARISON_KEYS = {
+    "naive_source_hit_rate",
+    "agentic_source_hit_rate",
+    "naive_keyword_hit_rate",
+    "agentic_keyword_hit_rate",
+    "naive_citation_rate",
+    "agentic_citation_rate",
+    "naive_verification_rate",
+    "agentic_verification_rate",
+    "naive_fallback_correctness_rate",
+    "agentic_fallback_correctness_rate",
+    "naive_average_latency",
+    "agentic_average_latency",
+    "naive_average_semantic_correctness",
+    "agentic_average_semantic_correctness",
+    "naive_average_groundedness",
+    "agentic_average_groundedness",
+    "naive_judge_completion_rate",
+    "agentic_judge_completion_rate",
+}
+_HISTORY_MODES = {"single", "comparison", "matrix", "ablation"}
 _SAFE_RUNTIME_SECTION_KEYS = {
     "agent_features": (
         "query_transformation_enabled",
@@ -373,8 +407,7 @@ def _sanitize_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
         sanitized_variants = {
             str(variant_id): _sanitize_summary(variant_summary)
             for variant_id, variant_summary in variants.items()
-            if isinstance(variant_id, str)
-            and not _is_unsafe_json_key(variant_id)
+            if isinstance(variant_id, str) and _is_safe_system_id(variant_id)
             and isinstance(variant_summary, Mapping)
         }
         if sanitized_variants:
@@ -385,7 +418,7 @@ def _sanitize_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
         sanitized_comparison = {
             str(key): value
             for key, item in comparison.items()
-            if isinstance(key, str) and not _is_unsafe_json_key(key)
+            if isinstance(key, str) and _is_safe_comparison_key(key)
             for value in [_safe_summary_scalar(item)]
             if value is not _MISSING
         }
@@ -402,7 +435,7 @@ def _safe_failure_type_counts(value: Any) -> dict[str, int]:
         str(failure_type): int(count)
         for failure_type, count in value.items()
         if isinstance(failure_type, str)
-        and not _is_unsafe_json_key(failure_type)
+        and _is_safe_failure_type(failure_type)
         and _is_int_like(count)
     }
 
@@ -414,8 +447,16 @@ def _safe_summary_scalar(value: Any) -> Any:
 
 
 def _safe_json_scalar(value: Any) -> Any:
-    if value is None or isinstance(value, str | int | float | bool):
+    if value is None or isinstance(value, bool | int):
         return value
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return value
+        return _MISSING
+    if isinstance(value, str):
+        safe_value = value.strip()
+        if safe_value and not _is_unsafe_json_value(safe_value):
+            return safe_value
     return _MISSING
 
 
@@ -430,6 +471,40 @@ def _is_unsafe_json_key(key: Any) -> bool:
     if "template" in normalized:
         return True
     return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
+
+
+def _is_unsafe_json_value(value: str) -> bool:
+    normalized = value.strip().lower()
+    normalized_key = normalized.replace("-", "_")
+    if "\n" in value or "\r" in value:
+        return True
+    if "sk-" in normalized or "bearer " in normalized:
+        return True
+    if "rendered" in normalized_key and "prompt" in normalized_key:
+        return True
+    if "prompt" in normalized_key and "template" in normalized_key:
+        return True
+    return any(part in normalized_key for part in _SENSITIVE_KEY_PARTS)
+
+
+def _is_safe_system_id(value: str) -> bool:
+    if _is_unsafe_json_key(value):
+        return False
+    if _is_unsafe_json_value(value):
+        return False
+    return value in _SYSTEM_LABELS or _ABLATION_SYSTEM_ID_PATTERN.fullmatch(value) is not None
+
+
+def _safe_system_label(system_id: str) -> str:
+    return _SYSTEM_LABELS.get(system_id, system_id)
+
+
+def _is_safe_comparison_key(value: str) -> bool:
+    return value in _COMPARISON_KEYS
+
+
+def _is_safe_failure_type(value: str) -> bool:
+    return value in _FAILURE_TYPES
 
 
 def _metadata_runtime_config(runtime_config: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -452,6 +527,10 @@ def _metadata_runtime_config(runtime_config: Mapping[str, Any]) -> Mapping[str, 
 
 def _schema_version(runtime_config: Mapping[str, Any]) -> int | None:
     value = _metadata_runtime_config(runtime_config).get("schema_version")
+    return _safe_schema_version(value)
+
+
+def _safe_schema_version(value: Any) -> int | None:
     if value is None:
         return None
     try:
@@ -461,7 +540,9 @@ def _schema_version(runtime_config: Mapping[str, Any]) -> int | None:
 
 
 def _evaluator_version(runtime_config: Mapping[str, Any]) -> str | None:
-    return _optional_str(_metadata_runtime_config(runtime_config).get("evaluator_version"))
+    return _safe_history_text(
+        _metadata_runtime_config(runtime_config).get("evaluator_version")
+    )
 
 
 def _prompt_manifest(runtime_config: Mapping[str, Any]) -> dict[str, Any]:
@@ -531,28 +612,34 @@ def _metric_records(
 ) -> list[MetricRecord]:
     records: list[MetricRecord] = []
     for system_id, system_label, summary in system_summaries:
+        if not _is_safe_system_id(system_id):
+            continue
         for metric_name in HISTORY_METRIC_NAMES:
             if metric_name not in summary:
                 continue
-            metric_value, metric_text = _metric_value(summary[metric_name])
+            metric_value = _metric_value(summary[metric_name])
+            if metric_value is _MISSING:
+                continue
             records.append(
                 MetricRecord(
                     system_id=system_id,
                     system_label=system_label,
                     metric_name=metric_name,
                     metric_value=metric_value,
-                    metric_text=metric_text,
+                    metric_text=None,
                 )
             )
     return records
 
 
-def _metric_value(value: Any) -> tuple[float | None, str | None]:
+def _metric_value(value: Any) -> float | None | object:
     if value is None:
-        return None, None
+        return None
     if isinstance(value, int | float) and not isinstance(value, bool):
-        return float(value), None
-    return None, str(value)
+        metric_value = float(value)
+        if math.isfinite(metric_value):
+            return metric_value
+    return _MISSING
 
 
 def _failure_counts(
@@ -560,15 +647,49 @@ def _failure_counts(
 ) -> dict[str, dict[str, int]]:
     failures: dict[str, dict[str, int]] = {}
     for system_id, _system_label, summary in system_summaries:
+        if not _is_safe_system_id(system_id):
+            continue
         raw_counts = _mapping(summary.get("failure_type_counts"))
-        counts = {
-            str(failure_type): int(count)
-            for failure_type, count in raw_counts.items()
-            if _is_int_like(count)
-        }
+        counts = _safe_failure_type_counts(raw_counts)
         if counts:
             failures[system_id] = counts
     return failures
+
+
+def _sanitize_metric_records(metrics: list[MetricRecord]) -> list[MetricRecord]:
+    sanitized: list[MetricRecord] = []
+    for metric in metrics:
+        if (
+            metric.metric_name not in HISTORY_METRIC_NAMES
+            or not _is_safe_system_id(metric.system_id)
+        ):
+            continue
+        metric_value = _metric_value(metric.metric_value)
+        if metric_value is _MISSING:
+            continue
+        sanitized.append(
+            MetricRecord(
+                system_id=metric.system_id,
+                system_label=_safe_system_label(metric.system_id),
+                metric_name=metric.metric_name,
+                metric_value=metric_value if metric_value is not _MISSING else None,
+                metric_text=None,
+            )
+        )
+    return sanitized
+
+
+def _sanitize_failure_counts(
+    failure_counts: dict[str, dict[str, int]],
+) -> dict[str, dict[str, int]]:
+    sanitized: dict[str, dict[str, int]] = {}
+    for system_id, counts in failure_counts.items():
+        if not _is_safe_system_id(system_id):
+            continue
+        safe_counts = _safe_failure_type_counts(counts)
+        if safe_counts:
+            sanitized[system_id] = safe_counts
+    return sanitized
 
 
 def _question_ids(
@@ -679,6 +800,31 @@ def _optional_str(value: Any) -> str | None:
     return None
 
 
+def _safe_history_text(value: Any, *, default: str | None = None) -> str | None:
+    if not isinstance(value, str):
+        return default
+    safe_value = value.strip()
+    if not safe_value or _is_unsafe_json_value(safe_value):
+        return default
+    return safe_value
+
+
+def _safe_history_mode(value: Any) -> str:
+    mode = _safe_history_text(value)
+    if mode in _HISTORY_MODES:
+        return mode
+    return "single"
+
+
+def _safe_question_ids(values: list[str]) -> list[str]:
+    return [
+        safe_value
+        for value in values
+        for safe_value in [_safe_history_text(value)]
+        if safe_value is not None
+    ]
+
+
 def _is_int_like(value: Any) -> bool:
     if isinstance(value, bool):
         return False
@@ -719,6 +865,7 @@ def _validate_run_id(run_id: str) -> None:
         not run_id
         or run_id in {".", ".."}
         or _RUN_ID_PATTERN.fullmatch(run_id) is None
+        or _is_unsafe_json_value(run_id)
     ):
         raise ValueError("run_id must be a safe file stem")
 
@@ -818,6 +965,16 @@ class HistoryStore:
         ) or _prompt_manifest(runtime_config)
         prompt_manifest_hash = compute_prompt_manifest_hash(prompt_manifest)
         summary = _sanitize_summary(record.summary)
+        metrics = _sanitize_metric_records(record.metrics)
+        failure_counts = _sanitize_failure_counts(record.failure_counts)
+        schema_version = _safe_schema_version(record.schema_version)
+        if schema_version is None:
+            schema_version = _schema_version(runtime_config)
+        evaluator_version = _safe_history_text(
+            record.evaluator_version,
+            default=_evaluator_version(runtime_config),
+        )
+        question_ids = _safe_question_ids(record.question_ids)
         self.initialize()
         with self._connect() as connection:
             connection.execute(
@@ -843,16 +1000,16 @@ class HistoryStore:
                 """,
                 (
                     record.run_id,
-                    record.created_at,
-                    record.source,
-                    record.workspace_id,
-                    record.status,
-                    record.mode,
-                    record.schema_version,
-                    record.evaluator_version,
-                    record.result_path,
+                    _safe_history_text(record.created_at, default=_utc_now()),
+                    _safe_history_text(record.source, default="unknown"),
+                    _safe_history_text(record.workspace_id),
+                    _safe_history_text(record.status, default="completed"),
+                    _safe_history_mode(record.mode),
+                    schema_version,
+                    evaluator_version,
+                    _safe_history_text(record.result_path),
                     record.question_count,
-                    _json_text(record.question_ids),
+                    _json_text(question_ids),
                     _json_text(runtime_config),
                     _json_text(prompt_manifest),
                     prompt_manifest_hash,
@@ -888,12 +1045,12 @@ class HistoryStore:
                         metric.metric_value,
                         metric.metric_text,
                     )
-                    for metric in record.metrics
+                    for metric in metrics
                 ],
             )
             failure_rows = [
                 (record.run_id, system_id, failure_type, count)
-                for system_id, counts in record.failure_counts.items()
+                for system_id, counts in failure_counts.items()
                 for failure_type, count in counts.items()
             ]
             connection.executemany(
