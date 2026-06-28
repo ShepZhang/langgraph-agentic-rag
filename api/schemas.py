@@ -98,3 +98,46 @@ class EvaluationRunResponse(BaseModel):
     status: str
     summary: dict[str, Any]
     result_path: str
+
+
+class EvaluationHistoryRun(BaseModel):
+    """Stored evaluation history run metadata."""
+
+    run_id: str
+    created_at: str
+    source: str
+    workspace_id: str | None = None
+    status: str
+    mode: str
+    schema_version: int | None = None
+    evaluator_version: str | None = None
+    prompt_manifest_hash: str = ""
+    question_count: int = 0
+    result_path: str | None = None
+
+
+class EvaluationHistoryListResponse(BaseModel):
+    """Evaluation history run listing."""
+
+    runs: list[EvaluationHistoryRun]
+
+
+class EvaluationTrendRow(BaseModel):
+    """Evaluation history trend row."""
+
+    created_at: str
+    run_id: str
+    system_id: str
+    system_label: str
+    evaluator_version: str
+    prompt_manifest_hash: str
+    metric_name: str
+    metric_value: float | None = None
+
+
+class EvaluationTrendResponse(BaseModel):
+    """Evaluation history trend response."""
+
+    metric: str
+    system: str | None = None
+    rows: list[EvaluationTrendRow]
